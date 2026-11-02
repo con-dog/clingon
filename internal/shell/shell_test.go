@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +103,20 @@ PROMPT_COMMAND=starship_precmd
 	}
 	if strings.Contains(screen, "USERPROMPT$") || strings.Contains(screen, "STARSHIP$") {
 		t.Errorf("clingon's prompt should win:\n%s", screen)
+	}
+}
+
+// The prompt is two lines, so a long folder never squeezes what's typed: the
+// folder, then the mark alone, with what's typed after it.
+func TestPromptMarkIsOnALineOfItsOwn(t *testing.T) {
+	for shell, rc := range map[string]string{"zsh": ".zshrc", "bash": ".bash_profile"} {
+		screen := run(t, shell, rc, "", "echo typed-here", "echo done-"+shell)
+		if !regexp.MustCompile(`(?m)^❯ echo typed-here$`).MatchString(screen) {
+			t.Errorf("%s: the mark should start its own line:\n%s", shell, screen)
+		}
+		if !regexp.MustCompile(`(?m)^~\s*\n❯ `).MatchString(screen) {
+			t.Errorf("%s: the folder should be on the line above the mark:\n%s", shell, screen)
+		}
 	}
 }
 

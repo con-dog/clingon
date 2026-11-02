@@ -22,7 +22,7 @@ _clingon_prompt() {
   (( ok == 0 )) || mark='%F{204}'
   local aws=''
   [[ -z $AWS_PROFILE ]] || aws=" %F{208}aws:\${AWS_PROFILE//\%/%%}%f"
-  PROMPT="%B%F{99}%~%f%b%F{103}\${vcs_info_msg_0_//\%/%%}%f${aws} ${mark}❯%f "
+  PROMPT="%B%F{99}%~%f%b%F{103}\${vcs_info_msg_0_//\%/%%}%f${aws}"$'\n'"${mark}❯%f "
   RPROMPT=''
 }
 # Other prompts' hooks would only redraw theirs; clingon's runs last, so it

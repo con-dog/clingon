@@ -18,7 +18,7 @@ _clingon_prompt() {
   [ "${_clingon_ok:-0}" -eq 0 ] || mark='\[\e[38;5;204m\]'
   # The mark (❯) is in octal: macOS's bash 3.2 garbles it, typed as it is,
   # after coloured parts of a prompt in a UTF-8 locale.
-  PS1="\[\e[1;38;5;99m\]\w\[\e[0m\]${b:+\[\e[38;5;103m\] $b\[\e[0m\]}${a:+\[\e[38;5;208m\] aws:$a\[\e[0m\]} $mark\342\235\257\[\e[0m\] "
+  PS1="\[\e[1;38;5;99m\]\w\[\e[0m\]${b:+\[\e[38;5;103m\] $b\[\e[0m\]}${a:+\[\e[38;5;208m\] aws:$a\[\e[0m\]}\n$mark\342\235\257\[\e[0m\] "
 }
 # Other prompts' hooks (starship's) would only redraw theirs: clingon's
 # notes the exit status first and draws last.
