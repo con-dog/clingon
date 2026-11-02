@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+description: Start, continue and resume Claude Code, or ask it one-off questions
+version: 1.0.0
+requires: [claude]
+
+sections:
+  - name: Claude Code
+    logo: claude
+    color: "#d7875f"
+    category: AI
+    groups:
+      - name: Sessions
+        commands:
+          - name: Start Claude Code
+            cmd: claude
+            desc: "Starts an interactive Claude Code session in this folder."
+          - name: Continue last conversation
+            cmd: claude --continue
+            desc: "Picks up your most recent Claude Code conversation in this folder where you left off."
+          - name: Resume a conversation
+            cmd: claude --resume
+            desc: "Lets you choose a past Claude Code conversation to pick back up."
+          - name: Ask a one-off question
+            cmd: claude -p <prompt>
+            desc: "Asks Claude a single question and prints the answer, without starting a session. It skips the check that you trust this folder."
+            args:
+              - name: prompt
+                quote: true
+      - name: Setup
+        commands:
+          - name: Check installation
+            cmd: claude doctor
+            desc: "Checks your Claude Code install and settings for problems."
+          - name: MCP servers
+            cmd: claude mcp list
+            desc: "Lists the MCP servers Claude Code is set up to use, and whether each one connects."
+          - name: Update Claude Code
+            cmd: claude update
+            desc: "Updates Claude Code to its latest version."
+            risk: warn

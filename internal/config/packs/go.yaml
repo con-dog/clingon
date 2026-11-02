@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+description: Go modules, building, testing and tools
+version: 1.0.0
+requires: [go]
+
+sections:
+  - name: Go
+    logo: go
+    color: "#00afd7"
+    category: Code
+    groups:
+      - name: Build & test
+        when: [go.mod]
+        commands:
+          - name: Benchmarks
+            cmd: go test -run '^$' -bench . ./...
+            desc: "Runs the benchmarks in every package, skipping the ordinary tests."
+          - name: Build
+            cmd: go build ./...
+            desc: "Compiles every package to check it builds. With a single main package here, it also writes that program's binary."
+          - name: Format
+            cmd: gofmt -l -w .
+            desc: "Formats every Go file here the standard way, listing the ones it changed."
+            risk: warn
+          - name: Run
+            cmd: go run .
+            desc: "Builds and runs the program in this folder."
+          - name: Test
+            cmd: go test <flags> ./...
+            desc: "Runs the tests in every package."
+            args:
+              - name: flags
+                type: flags
+                options:
+                  - { value: -count=1, label: don't use cached results }
+                  - { value: -cover, label: coverage }
+                  - { value: -race, label: race detector }
+                  - { value: -v, label: verbose }
+          - name: Vet
+            cmd: go vet ./...
+            desc: "Checks the code for likely mistakes the compiler doesn't catch."
+      - name: Modules
+        commands:
+          - name: Add a dependency
+            cmd: go get <module>
+            when: [go.mod]
+            desc: "Adds a module to go.mod, or changes the version you use."
+            args:
+              - name: module
+                quote: true
+                desc: "Adding <module>."
+                placeholder: github.com/owner/module@latest
+          - name: Install a tool
+            cmd: go install <package>
+            desc: "Builds a command and puts it in $(go env GOPATH)/bin."
+            args:
+              - name: package
+                quote: true
+                desc: "Installing <package>."
+                placeholder: golang.org/x/tools/gopls@latest
+          - name: Start a module
+            cmd: go mod init <module>
+            desc: "Creates a go.mod here, making this folder a Go module."
+            args:
+              - name: module
+                quote: true
+                desc: "Called <module>."
+                placeholder: github.com/you/project
+          - name: Tidy
+            cmd: go mod tidy
+            when: [go.mod]
+            desc: "Adds missing requirements to go.mod and removes unused ones."
+          - name: Update dependencies
+            cmd: go get -u ./... && go mod tidy
+            when: [go.mod]
+            desc: "Updates every dependency to its newest minor or patch version."
+            risk: warn
+          - name: Why is this a dependency
+            cmd: go mod why -m <module>
+            when: [go.mod]
+            desc: "Shows which of your packages pulls a module in."
+            args:
+              - name: module
+                quote: true
+                desc: "For <module>."
+                placeholder: "github.com/owner/name"

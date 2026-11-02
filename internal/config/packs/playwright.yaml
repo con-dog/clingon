@@ -1,0 +1,117 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+description: Run, debug and record Playwright tests, view reports and traces, and install browsers
+version: 1.0.0
+requires: [npx]
+
+sections:
+  - name: Playwright
+    logo: window
+    color: "#5fd787"
+    category: Code
+    groups:
+      - name: Run tests
+        when: &config [playwright.config.ts, playwright.config.js, playwright.config.mts, playwright.config.mjs]
+        commands:
+          - name: Changed files only
+            cmd: npx playwright test --only-changed
+            desc: "Runs only the test files changed since the last commit, and those that import changed files."
+          - name: Headed
+            cmd: npx playwright test --headed
+            desc: "Runs the tests with the browser windows showing."
+          - name: Last failed
+            cmd: npx playwright test --last-failed
+            desc: "Runs again only the tests that failed last time."
+          - name: One project
+            cmd: npx playwright test --project <project>
+            desc: "Runs the tests for one project from the config, like one browser or device."
+            args:
+              - name: project
+                quote: true
+                desc: "For <project>."
+                placeholder: "chromium"
+          - name: Repeat to find flaky tests
+            cmd: npx playwright test --repeat-each <times>
+            desc: "Runs every test several times over, to catch ones that only fail sometimes."
+            args:
+              - name: times
+                desc: "<times> times each."
+                default: "10"
+                pattern: "[0-9]+"
+          - name: Test
+            cmd: npx playwright test
+            desc: "Runs every test, headless, in every project in the config."
+          - name: Test a file
+            cmd: npx playwright test <file>
+            desc: "Runs the tests in one file."
+            args:
+              - name: file
+                quote: true
+                desc: "From <file>."
+                placeholder: "tests/example.spec.ts"
+          - name: Tests matching a title
+            cmd: npx playwright test -g <title>
+            desc: "Runs only the tests whose title matches."
+            args:
+              - name: title
+                quote: true
+                desc: "Matching <title>."
+                placeholder: login
+          - name: Update snapshots
+            cmd: npx playwright test --update-snapshots
+            desc: "Runs the tests and replaces the saved screenshots and snapshots with what they show now."
+            risk: warn
+      - name: Debug
+        when: *config
+        commands:
+          - name: Debug a file
+            cmd: npx playwright test --debug <file>
+            desc: "Runs a file's tests one step at a time in the Playwright Inspector."
+            args:
+              - name: file
+                quote: true
+                desc: "From <file>."
+                placeholder: "tests/example.spec.ts"
+          - name: Record traces
+            cmd: npx playwright test --trace on
+            desc: "Runs the tests and records a trace of each, with screenshots, network and console, to open from the report."
+          - name: Show a trace
+            cmd: npx playwright show-trace <file>
+            desc: "Opens a recorded trace in the trace viewer, to step through what a test did."
+            args:
+              - name: file
+                quote: true
+                desc: "From <file>."
+                placeholder: "tests/example.spec.ts"
+          - name: Show report
+            cmd: npx playwright show-report
+            desc: "Opens the HTML report from the last run in your browser."
+          - name: UI mode
+            cmd: npx playwright test --ui
+            desc: "Opens a window to pick tests, run them, watch them and step back through each action."
+      - name: Setup
+        commands:
+          - name: Install browsers
+            cmd: npx playwright install <browsers>
+            desc: "Downloads the browsers Playwright uses."
+            risk: warn
+            args:
+              - name: browsers
+                type: flags
+                desc: "Only <browsers>."
+                options: [chromium, firefox, webkit]
+          - name: Record a test
+            cmd: npx playwright codegen <url>
+            desc: "Opens a browser and writes test code as you click around."
+            args:
+              - name: url
+                quote: true
+                desc: "Starting at <url>."
+                placeholder: http://localhost:3000
+          - name: Start a project
+            cmd: npm init playwright@latest
+            desc: "Adds Playwright to this project: the config, an example test and the browsers."
+            requires: [npm]
+          - name: Version
+            cmd: npx playwright --version
+            when: *config
+            desc: "Shows which version of Playwright this project uses."

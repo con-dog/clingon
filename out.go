@@ -1,0 +1,176 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/con-dog/clingon/internal/config"
+	"github.com/con-dog/clingon/internal/ui"
+	"golang.org/x/term"
+)
+
+// How clingon's commands print, in its palette: cards for anything with
+// rows (the welcome, doctor, check, lists), a marked line for a single
+// result. Colour goes when the output isn't a terminal (lipgloss sees to
+// that); lists print plain there too, for scripts.
+
+var (
+	nameStyle  = lipgloss.NewStyle().Foreground(ui.Pink).Bold(true)
+	headStyle  = lipgloss.NewStyle().Foreground(ui.Purple).Bold(true)
+	markStyle  = lipgloss.NewStyle().Foreground(ui.Pink)
+	greyStyle  = lipgloss.NewStyle().Foreground(ui.Grey)
+	faintStyle = lipgloss.NewStyle().Foreground(ui.Faint)
+	okStyle    = lipgloss.NewStyle().Foreground(ui.Green)
+	failStyle  = lipgloss.NewStyle().Foreground(ui.Red)
+	warnStyle  = lipgloss.NewStyle().Foreground(ui.Orange)
+)
+
+// A mark says what a row or line is: done or fine, failed, worth a look,
+// worth doing (its own glyph, in pink), or just so.
+type mark int
+
+const (
+	ok mark = iota
+	fail
+	warn
+	todo
+	info
+)
+
+func (k mark) render(glyph string) string {
+	switch k {
+	case ok:
+		return okStyle.Render("✓")
+	case fail:
+		return failStyle.Render("✗")
+	case warn:
+		return warnStyle.Render("!")
+	case todo:
+		return markStyle.Render(glyph)
+	}
+	return greyStyle.Render("·")
+}
+
+// stdout is where clingon's commands print: styles render full colour, and
+// this rounds them to what the terminal shows (Terminal.app has 256), or
+// drops colour when it isn't a terminal. Lip Gloss's own writer, unless
+// os.Stdout has changed since it was made (tests swap it).
+func stdout() io.Writer {
+	if f, ok := lipgloss.Writer.Forward.(*os.File); ok && f == os.Stdout {
+		return lipgloss.Writer
+	}
+	return colorprofile.NewWriter(os.Stdout, os.Environ())
+}
+
+// stderr is stdout's counterpart for errors and usage.
+func stderr() io.Writer { return colorprofile.NewWriter(os.Stderr, os.Environ()) }
+
+func outln(a ...any)               { _, _ = fmt.Fprintln(stdout(), a...) }
+func outf(format string, a ...any) { _, _ = fmt.Fprintf(stdout(), format, a...) }
+func errf(format string, a ...any) { _, _ = fmt.Fprintf(stderr(), format, a...) }
+
+// say prints a single result: `✓ installed git`.
+func say(k mark, format string, a ...any) {
+	outln(k.render("") + " " + fmt.Sprintf(format, a...))
+}
+
+// step prints what's about to run, for commands that run others.
+func step(text string) { outln(markStyle.Render("→") + " " + text) }
+
+// sayErr prints an error, to stderr.
+func sayErr(err error) {
+	_, _ = fmt.Fprintln(stderr(), failStyle.Render("✗")+" "+err.Error())
+}
+
+// A row of a card.
+type row struct {
+	mark   mark
+	glyph  string // todo's mark
+	label  string
+	detail string // cut short to fit
+	note   string // at the right, faint
+	nudge  bool   // worth doing, but not news: left out of the menu's status bar
+}
+
+// isTerm reports whether stdout is a terminal: lists print as cards there,
+// plain for scripts.
+func isTerm() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
+
+// cardWidth is how wide cards are drawn: the terminal's width, up to 100.
+func cardWidth() int {
+	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w >= 40 {
+		return min(w, 100)
+	}
+	return 80
+}
+
+// slot is a todo mark as the card draws it: in clingon's window, where
+// one can be a logo two cells wide, a symbol is its centred twin there, so
+// the marks line up down the card. Elsewhere it's left as it is.
+func slot(glyph string) string {
+	if c, ok := config.Centred[glyph]; ok && os.Getenv("CLINGON") != "" {
+		return c
+	}
+	return glyph
+}
+
+// card draws rows in a rounded box w cells wide, titled: a row each, its
+// mark, label, detail (cut short) and note.
+func card(title string, rows []row, w int) string {
+	labelW, noteW := 0, 0
+	for _, r := range rows {
+		labelW = max(labelW, ansi.StringWidth(r.label))
+		noteW = max(noteW, ansi.StringWidth(r.note))
+	}
+	inner := w - 4 // "│ " and " │"
+	detailW := inner - 3 - labelW - 2 - noteW - 2
+	if detailW < 12 { // too narrow for notes: the details matter more
+		noteW, detailW = 0, inner-3-labelW-2
+	}
+	t := headStyle.Render(title)
+	lines := []string{faintStyle.Render("╭─ ") + t + faintStyle.Render(" "+strings.Repeat("─", max(w-5-ansi.StringWidth(t), 0))+"╮")}
+	for _, r := range rows {
+		line := r.mark.render(slot(r.glyph)) + "  " + r.label + strings.Repeat(" ", labelW-ansi.StringWidth(r.label)) + "  "
+		line += greyStyle.Render(fit(r.detail, max(detailW, 0)))
+		if noteW > 0 {
+			line += "  " + faintStyle.Render(fmt.Sprintf("%*s", noteW, r.note))
+		}
+		pad := max(inner-ansi.StringWidth(line), 0)
+		lines = append(lines, faintStyle.Render("│ ")+line+strings.Repeat(" ", pad)+faintStyle.Render(" │"))
+	}
+	lines = append(lines, faintStyle.Render("╰"+strings.Repeat("─", max(w-2, 0))+"╯"))
+	return strings.Join(lines, "\n")
+}
+
+// fit pads or cuts s to exactly w cells.
+func fit(s string, w int) string {
+	s = ansi.Truncate(s, w, "…")
+	return s + strings.Repeat(" ", w-ansi.StringWidth(s))
+}
+
+// styleUsage colours a usage text: its first line's name, each `clingon …`
+// line's command in pink and what it does in grey.
+func styleUsage(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		switch {
+		case i == 0 && strings.HasPrefix(l, "clingon"):
+			name, rest, _ := strings.Cut(l, " ")
+			lines[i] = nameStyle.Render(name) + " " + greyStyle.Render(rest)
+		case strings.HasPrefix(l, "  clingon"):
+			cmd, what := l, ""
+			if j := strings.Index(l[2:], "   "); j >= 0 {
+				cmd, what = l[:j+2], l[j+2:]
+			}
+			lines[i] = markStyle.Render(cmd) + greyStyle.Render(what)
+		case strings.HasSuffix(l, ":") && !strings.HasPrefix(l, " "):
+			lines[i] = headStyle.Render(l)
+		}
+	}
+	return strings.Join(lines, "\n")
+}

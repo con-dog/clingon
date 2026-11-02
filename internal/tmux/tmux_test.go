@@ -1,0 +1,350 @@
+package tmux
+
+import (
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+// server starts a private tmux server whose one pane runs sh, and returns
+// a client for it and that pane's id. It's killed when the test ends.
+func server(t *testing.T) (*Client, string) { return serverWith(t, "sh") }
+
+// serverWith is server with another shell, e.g. "zsh -f".
+func serverWith(t *testing.T, shell string) (*Client, string) {
+	t.Helper()
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux isn't installed")
+	}
+	dir, err := os.MkdirTemp("", "cltmux") // short: socket paths max out near 104 bytes
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	c, err := New(filepath.Join(dir, "s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.setEnv("ENV=") // no shell startup files
+	pane, err := c.run("-f", "/dev/null", "new-session", "-d", "-s", "clingon", "-x", "120", "-y", "40",
+		// Set here, not in the environment: tmux may start this through
+		// bash ($SHELL), which unsets PS1 when it isn't interactive.
+		"-c", dir, "-P", "-F", "#{pane_id}", "--", "PS1='❯ ' exec "+shell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Kill)
+	// Started means its prompt is drawn: only then is its line editor up,
+	// taking pastes as pastes.
+	waitFor(t, "the shell to start", func() bool {
+		left, _, ok := c.cursorLine(pane)
+		return ok && strings.TrimSpace(left) != "" && c.State(pane).Busy == "" && c.Path(pane) != ""
+	})
+	return c, pane
+}
+
+func waitFor(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		if ok() {
+			return
+		}
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+func exists(path string) func() bool {
+	return func() bool { _, err := os.Stat(path); return err == nil }
+}
+
+func TestSendTypesIntoTheShell(t *testing.T) {
+	c, pane := server(t)
+	dir := c.Path(pane)
+
+	if err := c.Send(pane, "printf hi > one"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a plain command to run", exists(filepath.Join(dir, "one")))
+
+	// A trailing ; is part of the command, not a tmux separator.
+	if err := os.WriteFile(filepath.Join(dir, "x.txt"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Send(pane, `find . -name x.txt -exec touch {}.hit \;`); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "find -exec … \\; to run", exists(filepath.Join(dir, "x.txt.hit")))
+
+	// Several lines go in as one paste, and all run.
+	if err := c.Send(pane, "printf a > two\nprintf b > three"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "both lines to run", func() bool {
+		return exists(filepath.Join(dir, "two"))() && exists(filepath.Join(dir, "three"))()
+	})
+}
+
+func TestPathFollowsCd(t *testing.T) {
+	c, pane := server(t)
+	start := c.Path(pane)
+	if err := os.Mkdir(filepath.Join(start, "sub dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Send(pane, "cd 'sub dir'"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the cd", func() bool { return filepath.Base(c.Path(pane)) == "sub dir" })
+}
+
+func TestBusyAndWaitIdle(t *testing.T) {
+	c, pane := server(t)
+	if b := c.State(pane).Busy; b != "" {
+		t.Fatalf("at the prompt it isn't busy, got %q", b)
+	}
+	// A pipeline whose first part ends first: wait for all of it.
+	start := time.Now()
+	if err := c.Send(pane, "sleep 0.2 | sleep 2"); err != nil { // long enough to catch it busy, even on a loaded machine
+		t.Fatal(err)
+	}
+	waitFor(t, "it to be busy", func() bool { return c.State(pane).Busy == "sleep" })
+	if !c.WaitIdle(pane) {
+		t.Fatal("WaitIdle should know when it's finished")
+	}
+	if took := time.Since(start); took < 2*time.Second {
+		t.Fatalf("WaitIdle came back after %v, before the pipeline ended", took)
+	}
+	if b := c.State(pane).Busy; b != "" {
+		t.Fatalf("finished: not busy any more, got %q", b)
+	}
+}
+
+func TestFocusIfActive(t *testing.T) {
+	c, a := server(t)
+	b, err := c.run("split-window", "-d", "-P", "-F", "#{pane_id}", "-t", a, "sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := func() string { s, _ := c.run("display-message", "-p", "#{pane_id}"); return s }
+	if _, err := c.run("select-pane", "-t", a); err != nil {
+		t.Fatal(err)
+	}
+	c.FocusIfActive(a, b)
+	if active() != b {
+		t.Fatal("from had focus: it should move")
+	}
+	c.FocusIfActive(a, a)
+	if active() != b {
+		t.Fatal("from didn't have focus: it should stay put")
+	}
+}
+
+func TestLayout(t *testing.T) {
+	c, shell := server(t)
+	// A stand-in for clingon that just stays running as the menu.
+	self := filepath.Join(filepath.Dir(c.Socket), "fake-clingon")
+	if err := os.WriteFile(self, []byte("#!/bin/sh\nexec sleep 60\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.layout(self, shell, filepath.Dir(c.Socket), []string{"-e", "CLINGON=1"}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.run("list-panes", "-F", "#{pane_id} #{pane_width} #{pane_active} #{@spacer} #{pane_current_command}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spacers, menuW, shellW int
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line + " -")
+		w, _ := strconv.Atoi(f[1])
+		switch {
+		case f[3] == "1":
+			spacers++
+		case f[0] == shell:
+			shellW = w
+		case f[2] == "1": // the menu has focus
+			menuW = w
+		}
+	}
+	if spacers != 4 {
+		t.Errorf("want 4 spacer panes framing the others, got %d:\n%s", spacers, out)
+	}
+	if menuW == 0 || shellW == 0 || menuW > shellW {
+		t.Errorf("want the focused menu on the narrower left third: menu %d, shell %d:\n%s", menuW, shellW, out)
+	}
+}
+
+func TestSweepKeepsLiveSockets(t *testing.T) {
+	dir, err := os.MkdirTemp("", "clsweep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	dead := 1 << 22 // above any real pid
+	stale := filepath.Join(dir, "clingon-"+strconv.Itoa(dead))
+	if err := os.WriteFile(stale, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ours := filepath.Join(dir, "clingon-"+strconv.Itoa(os.Getpid()))
+	if err := os.WriteFile(ours, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A server still answering on a dead launcher's socket.
+	answering := filepath.Join(dir, "clingon-"+strconv.Itoa(dead+1))
+	l, err := net.Listen("unix", answering)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+
+	sweep(dir)
+	if exists(stale)() {
+		t.Error("a dead launch's socket should go")
+	}
+	if !exists(ours)() {
+		t.Error("a running launch's socket should stay")
+	}
+	if !exists(answering)() {
+		t.Error("a socket a server still answers on should stay")
+	}
+}
+
+func TestEscape(t *testing.T) {
+	for in, want := range map[string]string{`find . -exec rm {} \;`: `find . -exec rm {} \\;`, "a; b": "a; b", "ls": "ls"} {
+		if got := escape(in); got != want {
+			t.Errorf("escape(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestTypedOnReadsClingonsPrompt(t *testing.T) {
+	// As tmux captures them: trailing spaces trimmed.
+	c := &Client{started: true}
+	for left, want := range map[string]string{
+		"❯":                         "",
+		"~/code/app ❯":              "",
+		"~/code/app main ❯ npm run": "npm run",
+		"~ ❯ cat x | grep >":        "cat x | grep >",
+		"~ ❯ echo ❯ x":              "echo ❯ x",
+		"dquote>":                   "an unfinished command",
+		"> ":                        "an unfinished command",
+		"":                          "an unfinished command", // a typed line wrapped onto a new row, or read waiting
+		"git sta":                   "an unfinished command",
+	} {
+		if got := c.typedOn(left); got != want {
+			t.Errorf("typedOn(%q) = %q, want %q", left, got, want)
+		}
+	}
+	// Still starting up: only a prompt says anything.
+	starting := &Client{}
+	if got := starting.typedOn("Loading plugins..."); got != "" {
+		t.Errorf("starting up: got %q", got)
+	}
+	if got := starting.typedOn("~ ❯ git sta"); got != "git sta" {
+		t.Errorf("starting up, with a prompt: got %q", got)
+	}
+}
+
+func TestSendTabsAndLongCommandsArriveIntact(t *testing.T) {
+	// zsh: macOS's sh is bash 3.2, too old for bracketed paste, so a tab
+	// pasted into it still completes. zsh and bash 4.4+ take it as typed.
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skip("zsh isn't installed")
+	}
+	c, pane := serverWith(t, "zsh -f")
+	dir := c.Path(pane)
+	if err := c.Send(pane, "printf 'a\tb' > tabbed"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the tab command", func() bool { b, _ := os.ReadFile(filepath.Join(dir, "tabbed")); return len(b) > 0 })
+	if b, _ := os.ReadFile(filepath.Join(dir, "tabbed")); string(b) != "a\tb" {
+		t.Errorf("the tab should arrive as a tab, got %q", b)
+	}
+	long := "printf %s " + strings.Repeat("y", 17000) + " > long"
+	if err := c.Send(pane, long); err != nil {
+		t.Fatalf("a 17 KB command: %v", err)
+	}
+	waitFor(t, "the long command", func() bool { b, _ := os.ReadFile(filepath.Join(dir, "long")); return len(b) == 17000 })
+}
+
+func TestWaitIdleWaitsForEveryPartOfAList(t *testing.T) {
+	c, pane := server(t)
+	start := time.Now()
+	if err := c.Send(pane, "sleep 0.4; sleep 0.4; sleep 0.4"); err != nil {
+		t.Fatal(err)
+	}
+	if !c.WaitIdle(pane) {
+		t.Fatal("WaitIdle should know when it's done")
+	}
+	if took := time.Since(start); took < 1200*time.Millisecond {
+		t.Fatalf("came back after %v, before the last part ended", took)
+	}
+}
+
+func TestStateSeesTypingScrollingAndUnfinished(t *testing.T) {
+	c, pane := server(t)
+	dir := c.Path(pane)
+	c.WaitForPrompt(pane, 2*time.Second)
+	if st := c.State(pane); st != (State{}) {
+		t.Fatalf("at a fresh prompt: nothing going on, got %+v", st)
+	}
+	if _, err := c.run("send-keys", "-t", pane, "-l", "echo half"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the typing to show", func() bool { return c.State(pane).Typed == "echo half" })
+	if err := c.Clear(pane); err != nil {
+		t.Fatal(err)
+	}
+	if st := c.State(pane); st.Typed != "" {
+		t.Fatalf("Clear should leave an empty prompt, got %+v", st)
+	}
+	if err := c.Send(pane, "printf ok > after-clear"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a command right after Clear to run", exists(filepath.Join(dir, "after-clear")))
+
+	if _, err := c.run("send-keys", "-t", pane, "-l", `echo "open`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.run("send-keys", "-t", pane, "Enter"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the unfinished command to show", func() bool { return c.State(pane).Typed == "an unfinished command" })
+	_ = c.Clear(pane)
+	if st := c.State(pane); st.Typed != "" {
+		t.Fatalf("Clear should end an unfinished command too, got %+v", st)
+	}
+
+	// A quote left open by a command the menu sent.
+	if err := c.Send(pane, `echo "open`); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the open quote to show", func() bool { return c.State(pane).Typed == "an unfinished command" })
+	_ = c.Clear(pane)
+
+	if _, err := c.run("copy-mode", "-t", pane); err != nil {
+		t.Fatal(err)
+	}
+	if !c.State(pane).Scrolling {
+		t.Fatal("copy mode is scrolling")
+	}
+	if _, err := c.run("send-keys", "-t", pane, "q"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "scrolling to stop", func() bool { return !c.State(pane).Scrolling })
+}
+
+func TestJobNames(t *testing.T) {
+	ps := "  10 Ss+  -zsh\n  11 S    sleep\n  12 T    /opt/homebrew/bin/vim\n  13 S    sleep\n  14 Z    gone\n"
+	if got, want := jobNames(ps, "10"), []string{"sleep", "vim"}; !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got := jobNames("  10 Ss+  -zsh\n", "10"); len(got) != 0 {
+		t.Errorf("a shell alone has no jobs, got %q", got)
+	}
+}

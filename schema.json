@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/con-dog/clingon/main/schema.json",
+  "title": "clingon pack",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sections"],
+  "properties": {
+    "description": { "type": "string", "description": "Packs only: one line shown by `clingon pack`." },
+    "version": { "type": "string", "description": "Packs only: bump it when the pack changes, e.g. 1.1.0." },
+    "default": { "type": "boolean", "description": "Packs only: installed for new users." },
+    "requires": { "type": "array", "items": { "type": "string" }, "description": "Packs only: commands `clingon doctor` checks are on PATH." },
+    "sections": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/section" }
+    }
+  },
+  "definitions": {
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "description": "Shown in the top menu. Sections with the same name across files are merged." },
+        "icon": { "type": "string", "description": "One glyph shown before the name: a symbol like ★ ◆ ⚙, or an emoji." },
+        "logo": { "enum": ["amazon", "ansible", "apple", "argo", "box", "claude", "clingon", "cloud", "cloudflare", "cplusplus", "cpu", "database", "deno", "docker", "folder", "gemini", "git", "github", "globe", "go", "googlecloud", "hash", "helm", "java", "kubernetes", "mongodb", "nginx", "node", "ollama", "openai", "php", "play", "postgres", "pulumi", "python", "redis", "ruby", "rust", "server", "shield", "sqlite", "terminal", "terraform", "vault", "vercel", "window"], "description": "A brand logo shown before the name instead of the icon, from clingon's font." },
+        "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "The icon's or logo's colour, like #ff5f5f. One of the 256 standard terminal colours looks the same in every terminal (others are rounded to the nearest). Grey if omitted." },
+        "category": {
+          "enum": ["AI", "Code", "Databases", "Infrastructure", "System", "Other"],
+          "description": "Fixed heading the section is listed under on the main menu. Omitted means Other."
+        },
+        "commands": { "type": "array", "items": { "$ref": "#/definitions/command" }, "description": "Ungrouped commands, listed first." },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "commands"],
+            "properties": {
+              "name": { "type": "string" },
+              "requires": { "type": "array", "items": { "type": "string" }, "description": "The group is hidden unless all of these commands are on PATH." },
+              "when": { "type": "array", "items": { "type": "string" }, "description": "when for every command in the group that doesn't set its own." },
+              "commands": { "type": "array", "items": { "$ref": "#/definitions/command" } }
+            }
+          }
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "cmd"],
+      "properties": {
+        "name": { "type": "string" },
+        "cmd": { "type": "string", "description": "Shell command template. <name> is replaced by the arg called name." },
+        "desc": { "type": "string", "description": "What the command does, in a sentence. Shown in the Description area, and extended by each arg's desc as you fill them in." },
+        "risk": {
+          "enum": ["warn", "danger"],
+          "description": "warn: marked ⚠ and asks No/Yes before running. Use it for anything that changes or stops things but can be put right: merges, rebases, pushes, stopping or restarting, uninstalling, overwriting files you can make again, changing shared state. danger: marked ☠ in red; you type a random 4-letter code, then it asks No/Yes. Use it for anything that destroys data or shared state for good: deleting files or uncommitted work, hard resets, deleting remote branches, removing containers or volumes, overwriting a bucket, terraform apply, dropping, restoring or dumping databases."
+        },
+        "when": { "type": "array", "items": { "type": "string" }, "description": "Greyed out unless one of these files (globs allowed, e.g. *.tf) is in the shell's folder or a folder above it (start with ./ for this folder only), e.g. [.git] or [package.json]." },
+        "requires": { "type": "array", "items": { "type": "string" }, "description": "The command is hidden unless all of these are on PATH." },
+        "args": { "type": "array", "items": { "$ref": "#/definitions/arg" } }
+      }
+    },
+    "arg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+        "type": {
+          "enum": ["text", "choose", "flags", "secret"],
+          "description": "Inferred when omitted: options → choose, otherwise text."
+        },
+        "prompt": { "type": "string", "description": "Label shown when asking; defaults to name." },
+        "desc": { "type": "string", "description": "A sentence added to the command's description once this arg is filled. <name> is replaced by the value, e.g. \"From <container>.\"" },
+        "default": { "type": "string", "description": "Value used unless changed. For flags, the options ticked to begin with, joined by the separator." },
+        "placeholder": { "type": "string" },
+        "optional": { "type": "boolean" },
+        "options": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["value"],
+                "properties": { "value": { "type": "string" }, "label": { "type": "string" } }
+              }
+            ]
+          }
+        },
+        "join": { "type": "string", "description": "Separator for flags; default is a space." },
+        "quote": { "type": "boolean", "description": "Shell-quote the value, for free text that may contain spaces or quotes." },
+        "pattern": { "type": "string", "description": "A regular expression the whole typed value must match, e.g. [0-9]+ for a port." }
+      }
+    }
+  }
+}

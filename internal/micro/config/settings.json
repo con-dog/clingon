@@ -1,0 +1,19 @@
+{
+  "colorscheme": "clingon",
+  "keymenu": true,
+  "statusformatl": "$(filename) $(modified)",
+  "statusformatr": "Ctrl-S save · Ctrl-Q quit",
+  "diffgutter": false,
+  "cursorline": false,
+  "scrollbar": false,
+  "ruler": true,
+  "softwrap": true,
+  "tabsize": 2,
+  "tabstospaces": true,
+  "autoindent": true,
+  "matchbrace": true,
+  "eofnewline": true,
+  "savecursor": false,
+  "saveundo": false,
+  "mkparents": false
+}

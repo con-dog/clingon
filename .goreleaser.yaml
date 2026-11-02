@@ -1,0 +1,57 @@
+# Push a tag (v1.2.3) and CI runs this: binaries, a GitHub release and
+# the Homebrew formula (macOS only). Homebrew is the only way clingon
+# is distributed, so the formula must pull in everything it needs.
+version: 2
+project_name: clingon
+
+builds:
+  - env: [CGO_ENABLED=0]
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Clingon Mono (JetBrains Mono plus logos) is bundled in the binary; its licence
+    # goes with every copy.
+    files: [README.md, LICENSE, internal/window/font/OFL.txt, internal/window/font/logos/LICENSES.txt]
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: con-dog
+    name: clingon
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^chore:", "^ci:"]
+
+# A formula rather than a cask: unsigned binaries in casks get
+# quarantined. GoReleaser marks `brews` deprecated but it works.
+brews:
+  - repository:
+      owner: con-dog
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/con-dog/clingon
+    description: Menu of the commands you can never remember, next to a real shell
+    license: MIT
+    # clingon runs tmux (the panes) and micro (the pack editor) itself.
+    dependencies:
+      - name: tmux
+      - name: micro
+    caveats: |
+      clingon opens in a window of its own and installs one font, Clingon Mono,
+      for your user. In Terminal and iTerm2, macOS may ask once to let it control
+      them: that's only to open and style the window.
+    install: |
+      bin.install "clingon"
+      generate_completions_from_executable(bin/"clingon", "completion", shells: [:bash, :zsh])
+    test: system "#{bin}/clingon", "version"

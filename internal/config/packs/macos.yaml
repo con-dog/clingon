@@ -1,0 +1,115 @@
+
+description: macOS power, network, Finder, clipboard and software updates
+version: 1.0.0
+requires: [sw_vers]
+
+sections:
+  - name: macOS
+    logo: apple
+    color: "#eeeeee"
+    category: System
+    groups:
+      - name: Clipboard
+        commands:
+          - name: Copy a file's contents
+            cmd: pbcopy < <file>
+            desc: "Puts a file's text on the clipboard."
+            args:
+              - name: file
+                quote: true
+                desc: "From <file>."
+                placeholder: "path/to/file"
+          - name: Paste into a file
+            cmd: pbpaste > <file>
+            desc: "Writes what's on the clipboard to a file, replacing what's in it."
+            risk: danger
+            args:
+              - name: file
+                quote: true
+                desc: "Into <file>."
+                placeholder: notes.txt
+          - name: Show the clipboard
+            cmd: pbpaste
+            desc: "Prints what's on the clipboard."
+      - name: Finder
+        commands:
+          - name: Hide hidden files
+            cmd: defaults write com.apple.finder AppleShowAllFiles -bool false && killall Finder
+            desc: "Stops Finder showing files that start with a dot. Finder restarts to pick it up."
+            risk: warn
+          - name: Open this folder in Finder
+            cmd: open .
+            desc: "Shows the shell's folder in a Finder window."
+          - name: Show hidden files
+            cmd: defaults write com.apple.finder AppleShowAllFiles -bool true && killall Finder
+            desc: "Makes Finder show files that start with a dot. Finder restarts to pick it up."
+            risk: warn
+          - name: Trust a downloaded app
+            cmd: xattr -dr com.apple.quarantine <app>
+            desc: "Removes the quarantine mark macOS puts on downloads, so an app opens without the 'can't be opened' warning. Only do it for apps you trust."
+            risk: warn
+            args:
+              - name: app
+                quote: true
+                desc: "For <app>."
+                placeholder: "/Applications/Some.app"
+      - name: Network
+        commands:
+          - name: Flush DNS cache
+            cmd: sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder
+            desc: "Forgets cached DNS answers, for when a site moved but your Mac still goes to the old address."
+            risk: warn
+          - name: Turn Wi-Fi off
+            cmd: networksetup -setairportpower <device> off
+            desc: "Switches Wi-Fi off."
+            risk: warn
+            args:
+              - name: device
+                quote: true
+                placeholder: "Wi-Fi"
+          - name: Turn Wi-Fi on
+            cmd: networksetup -setairportpower <device> on
+            desc: "Switches Wi-Fi on."
+            args:
+              - name: device
+                quote: true
+                placeholder: "Wi-Fi"
+          - name: Wi-Fi details
+            cmd: ipconfig getsummary <device>
+            desc: "Shows the details of your Wi-Fi connection and your address. macOS may hide the network's name."
+            args:
+              - name: device
+                quote: true
+                placeholder: "Wi-Fi"
+      - name: Power
+        commands:
+          - name: Battery
+            cmd: pmset -g batt
+            desc: "Shows the battery's charge and whether it's charging."
+          - name: Keep awake
+            cmd: caffeinate -dims
+            desc: "Stops your Mac sleeping until you press Ctrl-C."
+          - name: Keep awake for a while
+            cmd: caffeinate -dims -t $(( <minutes> * 60 ))
+            desc: "Stops your Mac sleeping for a set time."
+            args:
+              - name: minutes
+                desc: "For <minutes> minutes."
+                default: "60"
+                pattern: "[0-9]+"
+          - name: Sleep now
+            cmd: pmset sleepnow
+            desc: "Puts your Mac to sleep straight away."
+            risk: warn
+      - name: Software
+        commands:
+          - name: Install all updates
+            cmd: sudo softwareupdate --install --all
+            desc: "Installs every available macOS update. Some need a restart."
+            risk: warn
+          - name: Updates available
+            cmd: softwareupdate --list
+            desc: "Lists the macOS updates you can install."
+          - name: Version
+            cmd: sw_vers
+            desc: "Shows which version of macOS this is."

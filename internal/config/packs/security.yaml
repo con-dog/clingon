@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+description: TLS certificates, JWTs and file checksums
+version: 1.0.0
+requires: [openssl]
+
+sections:
+  - name: Security
+    logo: shield
+    category: System
+    groups:
+      - name: Certificates
+        commands:
+          - name: A site's certificate
+            cmd: openssl s_client -connect <host>:<port> -servername <host> </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -text | grep -E '^(subject|issuer|notBefore|notAfter)|DNS:'
+            desc: "Shows who a site's TLS certificate is for, who issued it, and when it's valid."
+            args:
+              - name: host
+                desc: "For <host>"
+                placeholder: example.com
+              - name: port
+                desc: "on port <port>."
+                default: "443"
+                pattern: "[0-9]+"
+          - name: Read a certificate file
+            cmd: openssl x509 -in <file> -noout -text
+            desc: "Prints everything in a certificate file."
+            args:
+              - name: file
+                quote: true
+                desc: "From <file>."
+                placeholder: "path/to/file"
+          - name: Self-signed certificate
+            cmd: openssl req -x509 -newkey rsa:2048 -nodes -keyout <name>.key -out <name>.crt -days <days> -subj "/CN=<host>" -addext "subjectAltName=DNS:<host>"
+            desc: "Makes a certificate and key for local HTTPS. Files with the same names are replaced."
+            risk: warn
+            args:
+              - name: host
+                desc: "For <host>,"
+                default: localhost
+              - name: name
+                desc: "saved as <name>.crt and <name>.key,"
+                default: localhost
+              - name: days
+                desc: "valid for <days> days."
+                default: "365"
+                pattern: "[0-9]+"
+          - name: When does it expire
+            cmd: openssl s_client -connect <host>:443 -servername <host> </dev/null 2>/dev/null | openssl x509 -noout -enddate
+            desc: "Shows the date a site's TLS certificate runs out."
+            args:
+              - name: host
+                desc: "For <host>."
+                placeholder: example.com
+      - name: Checksums
+        commands:
+          - name: SHA-256 of a file
+            cmd: openssl dgst -sha256 <file>
+            desc: "Prints a file's SHA-256 checksum, to compare with a published one."
+            args:
+              - name: file
+                quote: true
+                desc: "Of <file>."
+                placeholder: "path/to/file"
+      - name: Tokens
+        requires: [python3]
+        commands:
+          - name: Decode a JWT
+            cmd: python3 -I -c 'import sys, json, base64; p = sys.argv[1].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))' <token>
+            desc: "Shows what's inside a JSON Web Token. It doesn't check the signature. The token is a secret: it never shows on screen or in your history."
+            args:
+              - name: token
+                type: secret
+                placeholder: eyJ…

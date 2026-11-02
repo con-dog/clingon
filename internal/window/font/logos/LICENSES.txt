@@ -1,0 +1,37 @@
+Where the logos and icons in this folder come from
+==================================================
+
+Brand logos (ansible, apple, argo, claude, cloudflare, cplusplus, deno,
+docker, gemini, git, github, googlecloud, helm, java, kubernetes,
+mongodb, nginx, node, ollama, openai, php, postgres, pulumi, python,
+redis, ruby, rust, sqlite, terraform, vault, vercel) are from
+Simple Icons 13.21.0 (https://simpleicons.org), released under CC0 1.0.
+The brands themselves are their owners' trademarks.
+
+clingon.svg (the C of its banner) and go.svg (a G) are clingon's own.
+
+Icons (amazon, box, cloud, cpu, database, folder, globe, hash, play,
+server, shield, terminal, window) are from Bootstrap Icons 1.11.3 (https://icons.getbootstrap.com),
+under the MIT licence:
+
+The MIT License (MIT)
+
+Copyright (c) 2019-2024 The Bootstrap Authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

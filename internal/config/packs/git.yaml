@@ -1,0 +1,423 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+description: First-time setup, everyday Git, branches, remotes, undo and stash
+version: 1.0.0
+requires: [git]
+
+sections:
+  - name: Git
+    logo: git
+    color: "#ff5f5f"
+    category: Code
+    groups:
+      - name: Everyday
+        when: [.git]
+        commands:
+          - name: Status
+            cmd: git status -sb
+            desc: "Shows your branch and which files are changed, staged or untracked."
+          - name: Switch branch
+            cmd: git switch <branch>
+            desc: "Switches to another branch."
+            args:
+              - name: branch
+                quote: true
+                desc: "Moving to <branch>."
+                placeholder: "main"
+          - name: New branch
+            cmd: git switch -c <name>
+            desc: "Creates a new branch from where you are and switches to it."
+            args:
+              - name: name
+                quote: true
+                desc: "Called <name>."
+                placeholder: feature/thing
+          - name: Commit everything
+            cmd: git add -A && git commit -m <message>
+            desc: "Stages every change, new and deleted files included, and commits it. New files means all of them, a .env you forgot to ignore too: check Status first."
+            risk: warn
+            args:
+              - name: message
+                quote: true
+                desc: "With the message \"<message>\"."
+          - name: Pretty log
+            cmd: git log --oneline --graph --decorate -n <count> <flags>
+            desc: "Shows recent commits as a compact graph with branch and tag names."
+            args:
+              - name: count
+                desc: "The last <count> commits."
+                default: "20"
+              - name: flags
+                type: flags
+                options:
+                  - { value: --all, label: all branches }
+                  - { value: --first-parent, label: first parent only }
+                  - { value: --stat, label: files changed }
+          - name: Pull (rebase)
+            cmd: git pull --rebase --autostash
+            desc: "Fetches new commits and replays yours on top, tucking uncommitted work away while it does."
+            risk: warn
+          - name: Diff
+            cmd: git diff
+            desc: "Shows your changes that aren't staged yet, line by line."
+          - name: Diff staged
+            cmd: git diff --staged
+            desc: "Shows what's staged: exactly what your next commit will contain."
+          - name: Push this branch
+            cmd: git push -u origin HEAD
+            desc: "Pushes this branch to origin, creating it there and tracking it if it's new."
+            risk: warn
+          - name: Fetch everything
+            cmd: git fetch --all --prune
+            desc: "Downloads new commits and branches from every remote, and forgets branches deleted there. Your files don't change."
+          - name: Go to repo root
+            cmd: root=$(git rev-parse --show-toplevel) && cd "$root"
+            desc: "Moves your shell to the top folder of this repository."
+      - name: Undo
+        when: [.git]
+        commands:
+          - name: Unstage file
+            cmd: git restore --staged <file>
+            desc: "Takes a file out of the next commit but keeps your changes to it."
+            args:
+              - name: file
+                quote: true
+                desc: "Unstaging <file>."
+                placeholder: "path/to/file"
+          - name: Undo last commit, keep changes
+            cmd: git reset --soft HEAD~1
+            desc: "Undoes the last commit but keeps its changes, staged and ready to commit again."
+            risk: warn
+          - name: Discard changes to file
+            cmd: git restore <file>
+            desc: "Throws away your uncommitted changes to a file."
+            risk: danger
+            args:
+              - name: file
+                quote: true
+                desc: "Putting <file> back as it was at the last commit."
+                placeholder: "path/to/file"
+          - name: Hard reset to origin
+            cmd: git fetch origin && git reset --hard origin/<branch>
+            desc: "Makes your branch exactly match the remote, throwing away local commits and changes."
+            risk: danger
+            args:
+              - name: branch
+                quote: true
+                desc: "Matching origin/<branch>."
+                placeholder: "main"
+          - name: Add to last commit
+            cmd: git commit --amend --no-edit
+            desc: "Folds your staged changes into the last commit, keeping its message. Don't use it on commits you've pushed and shared."
+            risk: warn
+          - name: Change last commit message
+            cmd: git commit --amend -m <message>
+            desc: "Rewrites the last commit's message. Don't use it on commits you've pushed and shared."
+            risk: warn
+            args:
+              - name: message
+                quote: true
+                desc: "To \"<message>\"."
+          - name: Delete untracked files
+            cmd: git clean -di
+            desc: "Deletes files git isn't tracking, after showing you the list and asking what to remove."
+            risk: danger
+      - name: Stash
+        when: [.git]
+        commands:
+          - name: Drop a stash
+            cmd: git stash drop <stash>
+            desc: "Deletes one stash entry. Its changes are gone unless you've applied them somewhere."
+            risk: danger
+            args:
+              - name: stash
+                quote: true
+                placeholder: "stash@{0}"
+          - name: List stashes
+            cmd: git stash list --format='%gd  %cr  %s'
+            desc: "Lists everything you've stashed, newest first."
+          - name: Stash with message
+            cmd: git stash push -u -m <message>
+            desc: "Puts all uncommitted changes, new files included, aside in the stash."
+            args:
+              - name: message
+                quote: true
+                desc: "Labelled \"<message>\"."
+          - name: Apply stash
+            cmd: git stash apply <stash>
+            desc: "Brings changes from the stash back into your files, keeping them in the stash too."
+            args:
+              - name: stash
+                quote: true
+                placeholder: "stash@{0}"
+          - name: Pop stash
+            cmd: git stash pop <stash>
+            desc: "Brings changes from the stash back into your files and removes them from the stash."
+            args:
+              - name: stash
+                quote: true
+                placeholder: "stash@{0}"
+      - name: Branches
+        when: [.git]
+        commands:
+          - name: Delete a remote branch
+            cmd: git push origin --delete <branch>
+            desc: "Deletes a branch on origin, for everyone who uses it."
+            risk: danger
+            args:
+              - name: branch
+                quote: true
+                desc: "Deleting origin/<branch>."
+                placeholder: "main"
+          - name: Recent branches
+            cmd: git branch --sort=-committerdate --format='%(committerdate:relative)%09%(refname:short)' | head -n 15
+            desc: "Lists your 15 most recently worked-on branches, newest first."
+          - name: Delete a branch
+            cmd: git branch -d <branch>
+            desc: "Deletes a local branch. Git refuses if it has commits that aren't merged anywhere."
+            risk: warn
+            args:
+              - name: branch
+                quote: true
+                desc: "Deleting <branch>."
+                placeholder: "main"
+          - name: Merge a branch
+            cmd: git merge <branch>
+            desc: "Brings another branch's commits into this one."
+            risk: warn
+            args:
+              - name: branch
+                quote: true
+                desc: "Merging <branch> in."
+                placeholder: "main"
+          - name: Rebase onto a branch
+            cmd: git rebase <branch>
+            desc: "Replays this branch's commits on top of another branch, as if you'd started from there."
+            risk: warn
+            args:
+              - name: branch
+                quote: true
+                desc: "Onto <branch>."
+                placeholder: "main"
+      - name: History
+        when: [.git]
+        commands:
+          - name: Find a lost commit
+            cmd: git reflog -n 50 --date=relative
+            desc: "Lists where HEAD has been lately, so you can find commits lost to a reset, rebase or deleted branch."
+          - name: Get a lost commit back
+            cmd: git branch <name> <commit>
+            desc: "Makes a new branch at a commit from the reflog, so a lost commit is safe again."
+            args:
+              - name: commit
+                quote: true
+                desc: "At <commit>"
+                placeholder: "a1b2c3d or HEAD~1"
+              - name: name
+                quote: true
+                desc: "called <name>."
+                placeholder: rescued
+          - name: Cherry-pick a commit
+            cmd: git cherry-pick <commit>
+            desc: "Copies one commit from anywhere onto this branch."
+            risk: warn
+            args:
+              - name: commit
+                quote: true
+                placeholder: "a1b2c3d or HEAD~1"
+          - name: Show a commit
+            cmd: git show <commit>
+            desc: "Shows a commit's message and every change it made."
+            args:
+              - name: commit
+                quote: true
+                placeholder: "a1b2c3d or HEAD~1"
+          - name: File history
+            cmd: git log --follow -p -- <file>
+            desc: "Shows every commit that changed a file, with its changes, following renames."
+            args:
+              - name: file
+                quote: true
+                desc: "For <file>."
+                placeholder: "path/to/file"
+          - name: Who changed each line
+            cmd: git blame <file>
+            desc: "Shows, for every line of a file, the commit and author that last changed it."
+            args:
+              - name: file
+                quote: true
+                desc: "In <file>."
+                placeholder: "path/to/file"
+      - name: Remotes
+        when: [.git]
+        commands:
+          - name: Add a remote
+            cmd: git remote add <name> <url>
+            desc: "Connects this repository to another copy of it somewhere else."
+            args:
+              - name: name
+                desc: "Called <name>"
+                default: origin
+              - name: url
+                quote: true
+                desc: "at <url>."
+                placeholder: git@github.com:owner/repo.git
+          - name: Change a remote's URL
+            cmd: git remote set-url <remote> <url>
+            desc: "Points a remote somewhere new, for example after a repository moves or to switch from HTTPS to SSH."
+            args:
+              - name: remote
+                quote: true
+                desc: "Moving <remote>"
+                placeholder: "origin"
+              - name: url
+                quote: true
+                desc: "to <url>."
+                placeholder: git@github.com:owner/repo.git
+          - name: Show remotes
+            cmd: git remote -v
+            desc: "Lists the remotes this repository pushes to and pulls from."
+      - name: Setup
+        commands:
+          - name: Clone a repo
+            cmd: git clone <url>
+            desc: "Downloads a repository and its history into a new folder here."
+            args:
+              - name: url
+                quote: true
+                desc: "From <url>."
+                placeholder: git@github.com:owner/repo.git
+          - name: Start a repo here
+            cmd: git init
+            desc: "Turns this folder into a new Git repository."
+          - name: Recommended settings
+            cmd: <settings>
+            desc: "Turns on settings most people want, for every repository."
+            args:
+              - name: settings
+                type: flags
+                join: " && "
+                options:
+                  - { value: git config --global fetch.prune true, label: fetch forgets branches deleted on the remote }
+                  - { value: git config --global init.defaultBranch main, label: new repos start on main }
+                  - { value: git config --global pull.rebase true, label: pull rebases instead of merging }
+                  - { value: git config --global push.autoSetupRemote true, label: first push of a branch sets up tracking }
+                  - { value: git config --global rerere.enabled true, label: remember how you fixed a conflict }
+                default: git config --global fetch.prune true && git config --global init.defaultBranch main && git config --global pull.rebase true && git config --global push.autoSetupRemote true
+          - name: Set your email
+            cmd: git config --global user.email <email>
+            desc: "Sets the email address recorded on your commits. Use the one your Git host knows you by."
+            args:
+              - name: email
+                quote: true
+                desc: "To <email>."
+                placeholder: you@example.com
+          - name: Set your name
+            cmd: git config --global user.name <name>
+            desc: "Sets the name recorded on your commits."
+            args:
+              - name: name
+                quote: true
+                desc: "To \"<name>\"."
+                placeholder: Your Name
+          - name: Set your editor
+            cmd: git config --global core.editor <editor>
+            desc: "Sets the editor Git opens for commit messages and rebases."
+            args:
+              - name: editor
+                desc: "To <editor>."
+                options:
+                  - { value: "'code --wait'", label: VS Code }
+                  - micro
+                  - nano
+                  - nvim
+                  - vim
+                default: nano
+          - name: Sign commits with SSH key
+            cmd: git config --global gpg.format ssh && git config --global user.signingkey <key> && git config --global commit.gpgsign true
+            desc: "Signs every commit with your SSH key, so your Git host can show it as verified. Add the key there as a signing key too."
+            risk: warn
+            args:
+              - name: key
+                quote: true
+                desc: "Using <key>."
+                placeholder: "~/.ssh/id_ed25519.pub"
+          - name: Your settings
+            cmd: git config --global --list --show-origin
+            desc: "Lists every global Git setting and the file it's in."
+      - name: Bisect
+        when: [.git]
+        commands:
+          - name: Start bisecting
+            cmd: git bisect start && git bisect bad && git bisect good <commit>
+            desc: "Finds the commit that broke something by binary search: this commit is marked bad, and you pick one that was still good."
+            args:
+              - name: commit
+                quote: true
+                desc: "<commit> was still good."
+                placeholder: "a1b2c3d or HEAD~1"
+          - name: This one's bad
+            cmd: git bisect bad
+            desc: "Marks the commit you're on as broken, and checks out the next one to test."
+          - name: This one's good
+            cmd: git bisect good
+            desc: "Marks the commit you're on as working, and checks out the next one to test."
+          - name: Stop bisecting
+            cmd: git bisect reset
+            desc: "Ends the search and takes you back to where you started."
+      - name: Tags
+        when: [.git]
+        commands:
+          - name: Delete a tag
+            cmd: git tag -d <tag>
+            desc: "Deletes a tag here. It stays on the remote if you've pushed it."
+            risk: warn
+            args:
+              - name: tag
+                quote: true
+                desc: "Deleting <tag>."
+                placeholder: "v1.0.0"
+          - name: List tags
+            cmd: git tag --sort=-creatordate --format='%(creatordate:short)  %(refname:short)' | head -n 30
+            desc: "Lists the 30 newest tags."
+          - name: New tag
+            cmd: git tag -a <tag> -m <message>
+            desc: "Tags the commit you're on, e.g. for a release."
+            args:
+              - name: tag
+                desc: "Called <tag>"
+                placeholder: v1.0.0
+                pattern: "[^ ~^:?*\\[]+"
+              - name: message
+                quote: true
+                desc: "with the message \"<message>\"."
+          - name: Push tags
+            cmd: git push origin --tags
+            desc: "Pushes every tag you have to origin."
+            risk: warn
+      - name: Worktrees
+        when: [.git]
+        commands:
+          - name: List worktrees
+            cmd: git worktree list
+            desc: "Lists the folders this repository is checked out in."
+          - name: New worktree
+            cmd: git worktree add <path> <branch>
+            desc: "Checks a branch out in a second folder, so you can work on two branches at once."
+            args:
+              - name: branch
+                quote: true
+                desc: "<branch>"
+                placeholder: "main"
+              - name: path
+                quote: true
+                desc: "in <path>."
+                placeholder: ../repo-feature
+          - name: Remove a worktree
+            cmd: git worktree remove <worktree>
+            desc: "Deletes a worktree's folder. Git refuses if it has changes you haven't committed."
+            risk: warn
+            args:
+              - name: worktree
+                quote: true
+                desc: "Removing <worktree>."
+                placeholder: "../my-feature"

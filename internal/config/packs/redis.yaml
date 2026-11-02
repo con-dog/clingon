@@ -1,0 +1,157 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+description: Connect to Redis, find and read keys, watch the server, snapshot and flush it with redis-cli
+version: 1.0.0
+requires: [redis-cli]
+
+sections:
+  - name: Redis
+    logo: redis
+    color: "#ff5f5f"
+    category: Databases
+    groups:
+      - name: Connect
+        commands:
+          - name: Connect
+            cmd: redis-cli
+            desc: "Opens a prompt on the local Redis server."
+          - name: Connect to a server
+            cmd: redis-cli -h <host> -p <port> <flags>
+            desc: "Opens a prompt on any Redis server."
+            args:
+              - name: host
+                desc: "On <host>"
+                default: 127.0.0.1
+              - name: port
+                desc: "port <port>."
+                default: "6379"
+                pattern: "[0-9]+"
+              - name: flags
+                type: flags
+                options:
+                  - { value: --askpass, label: ask for the password }
+                  - { value: --tls, label: connect over TLS }
+          - name: Connect with a URL
+            cmd: redis-cli --no-auth-warning -u <url>
+            desc: "Opens a prompt on any Redis server, from a redis:// URL. The URL is a secret: it never shows on screen or in your history."
+            args:
+              - name: url
+                type: secret
+                desc: "On the server at that URL."
+                placeholder: redis://user:password@host:6379/0
+          - name: Is it up
+            cmd: redis-cli ping
+            desc: "Answers PONG if the Redis server is running."
+      - name: Keys
+        commands:
+          - name: Find keys
+            cmd: redis-cli --scan --pattern <pattern>
+            desc: "Lists keys matching a pattern, without blocking the server like KEYS does."
+            args:
+              - name: pattern
+                quote: true
+                desc: "Matching <pattern>."
+                default: "*"
+          - name: Count keys
+            cmd: redis-cli dbsize
+            desc: "Says how many keys are in the current database."
+          - name: Get a value
+            cmd: redis-cli get <key>
+            desc: "Prints the value of a string key."
+            args:
+              - name: key
+                quote: true
+                desc: "Of <key>."
+          - name: Key type and expiry
+            cmd: redis-cli type <key> && redis-cli ttl <key>
+            desc: "Says what type a key is, then how many seconds it has left (-1 means it never expires)."
+            args:
+              - name: key
+                quote: true
+                desc: "For <key>."
+          - name: Set an expiry
+            cmd: redis-cli expire <key> <seconds>
+            desc: "Makes a key delete itself after a number of seconds."
+            risk: warn
+            args:
+              - name: key
+                quote: true
+                desc: "Expiring <key>"
+              - name: seconds
+                desc: "in <seconds> seconds."
+                default: "3600"
+                pattern: "[1-9][0-9]*"
+          - name: Delete a key
+            cmd: redis-cli unlink <key>
+            desc: "Deletes a key and its value for good."
+            risk: danger
+            args:
+              - name: key
+                quote: true
+                desc: "Deleting <key>."
+          - name: Biggest keys
+            cmd: redis-cli --bigkeys
+            desc: "Scans every key and reports the biggest of each type, without blocking the server."
+          - name: Keys using most memory
+            cmd: redis-cli --memkeys
+            desc: "Scans every key and reports the ones using the most memory."
+      - name: Server
+        commands:
+          - name: Memory use
+            cmd: redis-cli info memory
+            desc: "Shows how much memory Redis is using."
+          - name: Server info
+            cmd: redis-cli info <part>
+            desc: "Shows the server's version, uptime, clients, persistence and stats."
+            args:
+              - name: part
+                desc: "Showing the <part> part."
+                options: [server, clients, persistence, stats, replication, keyspace, all]
+                default: server
+          - name: Live stats
+            cmd: redis-cli --stat
+            desc: "Prints keys, memory, clients and requests every second until you press Ctrl-C."
+          - name: Latency
+            cmd: redis-cli --latency
+            desc: "Measures how long the server takes to answer, live, until you press Ctrl-C."
+          - name: Watch every command
+            cmd: redis-cli monitor
+            desc: "Prints every command the server runs as it happens, until you press Ctrl-C. It slows a busy server down."
+          - name: Connected clients
+            cmd: redis-cli client list
+            desc: "Lists every client connected to the server, with its address and last command."
+          - name: Slow queries
+            cmd: redis-cli slowlog get <count>
+            desc: "Shows recent commands that took longer than the server's slow-log limit."
+            args:
+              - name: count
+                desc: "The last <count>."
+                default: "10"
+                pattern: "[0-9]+"
+      - name: Snapshots and flushing
+        commands:
+          - name: Save a snapshot
+            cmd: redis-cli --rdb <file>
+            desc: "Downloads a snapshot of the whole Redis database to a file. It holds all its data, so keep it safe."
+            risk: warn
+            args:
+              - name: file
+                quote: true
+                desc: "To <file>."
+                placeholder: dump.rdb
+          - name: Save on the server
+            cmd: redis-cli bgsave
+            desc: "Tells the server to write its snapshot file to disk now, in the background."
+            risk: warn
+          - name: Empty a database
+            cmd: redis-cli -n <db> flushdb
+            desc: "Deletes every key in one Redis database."
+            risk: danger
+            args:
+              - name: db
+                desc: "Emptying database <db>."
+                default: "0"
+                pattern: "[0-9]+"
+          - name: Delete everything
+            cmd: redis-cli flushall
+            desc: "Deletes every key in every database on the Redis server."
+            risk: danger

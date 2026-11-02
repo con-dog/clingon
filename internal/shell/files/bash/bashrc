@@ -1,0 +1,30 @@
+# clingon's bash setup, used only for the shell inside clingon: it reads
+# your login files as a login shell would (your .bash_profile usually reads
+# your .bashrc), then gives the prompt clingon's look. Your own files are
+# never changed.
+[ -r /etc/profile ] && . /etc/profile
+if [ -r ~/.bash_profile ]; then . ~/.bash_profile
+elif [ -r ~/.bash_login ]; then . ~/.bash_login
+elif [ -r ~/.profile ]; then . ~/.profile
+fi
+[ -z "$CLINGON_BIN" ] || PATH=$CLINGON_BIN:$PATH # a local build stays first
+
+_clingon_status() { _clingon_ok=$?; }
+_clingon_prompt() {
+  local b a=$AWS_PROFILE mark='\[\e[38;5;212m\]'
+  b=$(git branch --show-current 2>/dev/null)
+  b=${b//\\/\\\\}; b=${b//\$/\\\$}; b=${b//\`/\\\`} # a branch name is text, never run
+  a=${a//\\/\\\\}; a=${a//\$/\\\$}; a=${a//\`/\\\`} # so is a profile name
+  [ "${_clingon_ok:-0}" -eq 0 ] || mark='\[\e[38;5;204m\]'
+  # The mark (❯) is in octal: macOS's bash 3.2 garbles it, typed as it is,
+  # after coloured parts of a prompt in a UTF-8 locale.
+  PS1="\[\e[1;38;5;99m\]\w\[\e[0m\]${b:+\[\e[38;5;103m\] $b\[\e[0m\]}${a:+\[\e[38;5;208m\] aws:$a\[\e[0m\]} $mark\342\235\257\[\e[0m\] "
+}
+# Other prompts' hooks (starship's) would only redraw theirs: clingon's
+# notes the exit status first and draws last.
+if [[ $(declare -p PROMPT_COMMAND 2>/dev/null) == "declare -a"* ]]; then
+  PROMPT_COMMAND=(_clingon_status "${PROMPT_COMMAND[@]/starship_precmd}" _clingon_prompt)
+else
+  PROMPT_COMMAND=${PROMPT_COMMAND//starship_precmd/:}
+  PROMPT_COMMAND="_clingon_status;${PROMPT_COMMAND:+$PROMPT_COMMAND;}_clingon_prompt"
+fi

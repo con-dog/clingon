@@ -1,0 +1,229 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+description: Create, build, test and publish .NET projects, and manage NuGet packages, EF Core migrations, user secrets, SDKs and tools
+version: 1.0.0
+requires: [dotnet]
+
+sections:
+  - name: .NET
+    logo: hash
+    color: "#875fd7"
+    category: Code
+    groups:
+      - name: Build & run
+        when: &project ['./*.csproj', './*.fsproj', './*.sln', './*.slnx']
+        commands:
+          - name: Build
+            cmd: dotnet build
+            desc: "Restores packages and compiles the project or solution."
+          - name: Clean
+            cmd: dotnet clean
+            desc: "Deletes what the last build made."
+            risk: warn
+          - name: Format
+            cmd: dotnet format
+            desc: "Reformats the code to match the project's .editorconfig style."
+            risk: warn
+          - name: Publish
+            cmd: dotnet publish -c <config> -r <rid> <flags>
+            desc: "Builds the app ready to deploy, into bin/<config>/…/publish."
+            risk: warn
+            args:
+              - name: config
+                desc: "As <config>"
+                options: [Release, Debug]
+                default: Release
+              - name: rid
+                desc: "for <rid>."
+                options: [linux-x64, linux-arm64, linux-musl-x64, osx-arm64, osx-x64, win-x64, win-arm64]
+              - name: flags
+                type: flags
+                options:
+                  - { value: --self-contained, label: include the .NET runtime }
+                  - { value: -p:PublishSingleFile=true, label: single file }
+          - name: Restore
+            cmd: dotnet restore
+            desc: "Downloads the NuGet packages the project needs."
+          - name: Run
+            cmd: dotnet run
+            desc: "Builds and runs the project in this folder."
+          - name: Watch and run
+            cmd: dotnet watch run
+            desc: "Runs the project and rebuilds or hot-reloads it whenever you save a file."
+      - name: Test
+        when: *project
+        commands:
+          - name: Test
+            cmd: dotnet test
+            desc: "Builds and runs every test project."
+          - name: Test matching
+            cmd: dotnet test --filter <filter>
+            desc: "Runs only the tests that match a filter."
+            args:
+              - name: filter
+                quote: true
+                desc: "Matching <filter>."
+                placeholder: FullyQualifiedName~OrderTests
+          - name: Watch tests
+            cmd: dotnet watch test
+            desc: "Runs the tests again whenever you save a file."
+      - name: New
+        commands:
+          - name: Add a project reference
+            cmd: dotnet add reference <project>
+            when: *project
+            desc: "Makes this project depend on another project."
+            args:
+              - name: project
+                quote: true
+                desc: "On <project>."
+                placeholder: "src/App/App.csproj"
+          - name: Add a project to the solution
+            cmd: dotnet sln add <project>
+            when: ['./*.sln', './*.slnx']
+            desc: "Adds a project to the solution file here."
+            args:
+              - name: project
+                quote: true
+                desc: "Adding <project>."
+                placeholder: "src/App/App.csproj"
+          - name: New from a template
+            cmd: dotnet new <template> -o <name>
+            desc: "Creates a new project or file from a template."
+            args:
+              - name: template
+                quote: true
+                desc: "From the <template> template"
+                placeholder: "console"
+              - name: name
+                quote: true
+                desc: "in <name>."
+                placeholder: MyApp
+          - name: New solution
+            cmd: dotnet new sln
+            desc: "Creates a solution file here named after the folder."
+      - name: Packages
+        when: *project
+        commands:
+          - name: Add a package
+            cmd: dotnet add package <package>
+            desc: "Adds a NuGet package to the project, at its latest version."
+            args:
+              - name: package
+                desc: "Adding <package>."
+                placeholder: Serilog
+          - name: Outdated packages
+            cmd: dotnet list package --outdated
+            desc: "Lists the packages that have newer versions."
+          - name: Remove a package
+            cmd: dotnet remove package <package>
+            desc: "Takes a NuGet package out of the project."
+            risk: warn
+            args:
+              - name: package
+                quote: true
+                desc: "Removing <package>."
+                placeholder: "Newtonsoft.Json"
+          - name: Vulnerable packages
+            cmd: dotnet list package --vulnerable --include-transitive
+            desc: "Lists the packages, direct or not, that have known security holes."
+      - name: Entity Framework
+        when: *project
+        commands:
+          - name: Add a migration
+            cmd: dotnet ef migrations add <name>
+            desc: "Writes a migration for the model changes since the last one."
+            args:
+              - name: name
+                desc: "Called <name>."
+                placeholder: AddOrders
+          - name: Drop the database
+            cmd: dotnet ef database drop
+            desc: "Deletes the database and all its data."
+            risk: danger
+          - name: List migrations
+            cmd: dotnet ef migrations list
+            desc: "Lists the migrations, marking those not applied to the database yet."
+          - name: Migrate to a migration
+            cmd: dotnet ef database update <migration>
+            desc: "Moves the database to a given migration, undoing any after it, which can delete columns and their data."
+            risk: danger
+            args:
+              - name: migration
+                quote: true
+                desc: "To <migration>."
+                placeholder: "AddUsers"
+          - name: Remove the last migration
+            cmd: dotnet ef migrations remove
+            desc: "Deletes the newest migration's files, if it isn't applied to the database yet."
+            risk: warn
+          - name: SQL script
+            cmd: dotnet ef migrations script --idempotent
+            desc: "Prints the SQL for every migration, safe to run on a database at any version."
+          - name: Update the database
+            cmd: dotnet ef database update
+            desc: "Applies every migration the database doesn't have yet."
+            risk: warn
+      - name: User secrets
+        when: ['./*.csproj', './*.fsproj']
+        commands:
+          - name: List secrets
+            cmd: dotnet user-secrets list
+            desc: "Shows the project's development secrets."
+          - name: Remove a secret
+            cmd: dotnet user-secrets remove <key>
+            desc: "Deletes one development secret."
+            risk: warn
+            args:
+              - name: key
+                quote: true
+                desc: "Removing <key>."
+                placeholder: "ConnectionStrings:Default"
+          - name: Set a secret
+            cmd: dotnet user-secrets set <key> <value>
+            desc: "Saves a development secret outside the project, so it never gets committed. The value is a secret: it never shows on screen or in your history."
+            args:
+              - name: key
+                quote: true
+                desc: "As <key>."
+                placeholder: ConnectionStrings:Default
+              - name: value
+                type: secret
+          - name: Start using secrets
+            cmd: dotnet user-secrets init
+            desc: "Gives the project a UserSecretsId so it can keep development secrets."
+      - name: SDKs & tools
+        commands:
+          - name: Check for updates
+            cmd: dotnet sdk check
+            desc: "Shows which installed SDKs and runtimes are out of date or out of support."
+          - name: Info
+            cmd: dotnet --info
+            desc: "Shows which SDK is in use here, and every SDK and runtime installed."
+          - name: Install a global tool
+            cmd: dotnet tool install --global <tool>
+            desc: "Installs a .NET tool for every project."
+            risk: warn
+            args:
+              - name: tool
+                desc: "Installing <tool>."
+                placeholder: dotnet-outdated-tool
+          - name: Install the EF Core tool
+            cmd: dotnet tool install --global dotnet-ef
+            desc: "Installs the dotnet ef command that Entity Framework migrations need."
+            risk: warn
+          - name: Installed SDKs
+            cmd: dotnet --list-sdks
+            desc: "Lists every .NET SDK installed and where."
+          - name: Trust the dev certificate
+            cmd: dotnet dev-certs https --trust
+            desc: "Makes a local HTTPS certificate and trusts it, so https://localhost works without warnings."
+            risk: warn
+          - name: Update a global tool
+            cmd: dotnet tool update --global <tool>
+            desc: "Updates a global .NET tool to its latest version."
+            risk: warn
+            args:
+              - name: tool
+                quote: true
+                desc: "Updating <tool>."
+                placeholder: "dotnet-ef"

@@ -1,0 +1,20 @@
+# Builds
+/clingon
+/dist/
+*.test
+
+# Test and profiling output
+*.out
+*.prof
+coverage.*
+
+# Environments made while trying commands out (Python › Make a virtualenv)
+.venv/
+node_modules/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

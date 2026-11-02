@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+description: Start, resume and script OpenAI Codex sessions, pick the model and sandbox, sign in and set up MCP servers
+version: 1.0.0
+requires: [codex]
+
+sections:
+  - name: Codex
+    logo: openai
+    color: "#eeeeee"
+    category: AI
+    groups:
+      - name: Sessions
+        commands:
+          - name: Start Codex
+            cmd: codex
+            desc: "Starts an interactive Codex session in this folder."
+          - name: Resume last session
+            cmd: codex resume --last
+            desc: "Picks up your most recent Codex session in this folder where you left off."
+          - name: Resume a session
+            cmd: codex resume
+            desc: "Lets you choose a past Codex session to pick back up."
+          - name: Run a one-off task
+            cmd: codex exec <flags> <prompt>
+            desc: "Gives Codex a single task to work through without a session, printing its progress and final answer."
+            risk: warn
+            args:
+              - name: prompt
+                quote: true
+              - name: flags
+                type: flags
+                options:
+                  - { value: --sandbox workspace-write, label: let it edit files in this folder }
+                  - { value: --json, label: print events as JSON lines }
+                  - { value: --skip-git-repo-check, label: run outside a Git repo }
+          - name: Start with a model
+            cmd: codex --model <model>
+            desc: "Starts an interactive Codex session using a model other than your default."
+            args:
+              - name: model
+                desc: "Using <model>."
+          - name: Start with a sandbox
+            cmd: codex --sandbox <sandbox>
+            desc: "Starts an interactive Codex session that can only touch what the sandbox allows."
+            risk: warn
+            args:
+              - name: sandbox
+                options:
+                  - { value: read-only, label: read files only }
+                  - { value: workspace-write, label: edit files in this folder }
+                  - { value: danger-full-access, label: no sandbox at all }
+      - name: Setup
+        commands:
+          - name: Log in
+            cmd: codex login
+            desc: "Signs Codex in with your ChatGPT account in the browser."
+          - name: Login status
+            cmd: codex login status
+            desc: "Shows whether Codex is signed in, and how."
+          - name: Log out
+            cmd: codex logout
+            desc: "Removes Codex's saved credentials from this machine."
+            risk: warn
+          - name: MCP servers
+            cmd: codex mcp list
+            desc: "Lists the MCP servers Codex is set up to use."
+          - name: Add MCP server
+            cmd: codex mcp add <name> -- <command>
+            desc: "Adds a local MCP server that Codex starts when it needs it."
+            risk: warn
+            args:
+              - name: name
+                desc: "Called <name>,"
+              - name: command
+                desc: "started with <command>."
+                placeholder: npx -y @modelcontextprotocol/server-filesystem .
+          - name: Remove MCP server
+            cmd: codex mcp remove <name>
+            desc: "Removes an MCP server from Codex's config."
+            risk: warn
+            args:
+              - name: name
+                desc: "Removing <name>."
