@@ -211,6 +211,8 @@ type Model struct {
 	word      textinput.Model             // where the confirm word is typed
 	wrong     bool                        // the confirm word typed didn't match
 	nameWhy   string                      // why the recipe's name was refused
+	listed    []config.Recipe             // the saved recipes the list was last drawn with
+	removing  string                      // the saved recipe being removed, until the shell's done
 	help      bool                        // the keys screen is showing
 	blurred   bool                        // focus is in the shell: the cursor's row is drawn quietly
 	news      *Headline                   // the top level's status bar
@@ -430,7 +432,9 @@ func (m *Model) showSection(s *config.Section) {
 			c := st.ref.cmd
 			items = append(items, item{title: c.Name, indent: true, where: st.ref.section, keywords: c.Cmd, risk: c.Risk, disabled: m.unavailable(c) != "", ref: st.ref})
 		}
-		if saved := m.savedRecipes(); len(saved) > 0 {
+		saved := m.savedRecipes()
+		m.listed = saved
+		if len(saved) > 0 {
 			items = heading(items, "Saved recipes")
 			for _, r := range saved {
 				items = append(items, item{title: r.Name, ref: savedRecipeRef{r}})
@@ -439,6 +443,10 @@ func (m *Model) showSection(s *config.Section) {
 			for _, r := range saved {
 				items = append(items, item{title: r.Name, ref: describeRecipeRef{r.Name}})
 			}
+			items = heading(items, "Remove recipes")
+			for _, r := range saved {
+				items = append(items, item{title: r.Name, risk: config.RiskWarn, ref: removeRecipeRef{r.Name}})
+			}
 		}
 	}
 	m.section = s
@@ -446,6 +454,9 @@ func (m *Model) showSection(s *config.Section) {
 	m.list.step = m.itemStep
 	if s == m.recipesSection() && len(m.recipe) > 0 {
 		m.list.cursor = 1 // Run recipe, under its heading
+	}
+	if s == m.recipesSection() && m.removing != "" {
+		m.landOnRemove()
 	}
 	m.checkTools()
 }
@@ -629,6 +640,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.reload() { // a reload has looked again already
 			m.lookAgain()
 		}
+		m.relistSaved()
 		var cmds []tea.Cmd
 		for _, in := range m.inputs() {
 			cmds = append(cmds, in.Focus())
@@ -664,6 +676,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.busy = ""
 		m.readShell()
+		m.relistSaved()
+		m.removing = ""
 		// Back to the menu only if the shell is really done: one left
 		// mid-command (a quote still open, say) needs the user there.
 		back := msg.ok && m.typed == "" && m.opt.FocusMenu != nil
@@ -1137,6 +1151,20 @@ func (m *Model) open() tea.Cmd {
 			m.list.cursor = i
 		}
 		return done
+	case removeRecipeRef:
+		if m.run != nil {
+			m.hint = "The recipe is running: x stops it"
+			return nil
+		}
+		if m.blocked() != "" {
+			m.readShell()
+		}
+		if m.blocked() != "" {
+			return nil // the status bar says so
+		}
+		cmd := m.removeCommand(r.name)
+		m.removing = r.name // No, or Yes, comes back to this row
+		return m.finish(pending{section: m.section.Name, sec: m.section, name: "Remove " + r.name, desc: removeDesc, risk: config.RiskWarn, cmd: cmd, shown: cmd})
 	}
 	return nil
 }
@@ -1149,6 +1177,46 @@ type savedRecipeRef struct{ config.Recipe }
 
 // describeRecipeRef is a saved recipe's other row: the shell says what it does.
 type describeRecipeRef struct{ name string }
+
+// removeRecipeRef is a saved recipe's last row: it asks, then deletes the recipe.
+type removeRecipeRef struct{ name string }
+
+const removeDesc = "Deletes this saved recipe. The commands in it stay where they are."
+
+func (m *Model) removeCommand(name string) string {
+	return m.opt.Self + " recipe remove " + shellQuote(name)
+}
+
+// landOnRemove puts the cursor on the Remove recipes row being dealt with. If
+// it's gone that's the one after it, or the last: on to remove another.
+func (m *Model) landOnRemove() {
+	last := -1
+	for i, it := range m.list.view {
+		r, ok := it.ref.(removeRecipeRef)
+		if !ok {
+			continue
+		}
+		last = i
+		if strings.ToLower(r.name) >= strings.ToLower(m.removing) { // they're sorted
+			break
+		}
+	}
+	if last >= 0 {
+		m.list.cursor = last
+	}
+}
+
+// relistSaved redraws the recipes' list if the saved ones aren't what it shows:
+// the shell has saved or removed one, from the menu or typed by hand. A filter
+// being typed is left alone, and it's looked at again next time.
+func (m *Model) relistSaved() {
+	if m.mode != modeBrowse || m.list.filtering || m.section == nil || m.section != m.recipesSection() {
+		return
+	}
+	if !slices.EqualFunc(m.listed, m.savedRecipes(), func(a, b config.Recipe) bool { return a.Name == b.Name }) {
+		m.relistRecipe()
+	}
+}
 
 func (m *Model) describeCommand(name string) string {
 	return m.opt.Self + " recipe describe " + shellQuote(name)
@@ -1328,7 +1396,7 @@ func (m *Model) relistRecipe() {
 	}
 	at := m.list.cursor
 	m.showSection(m.section)
-	if len(m.list.view) > 1 {
+	if len(m.list.view) > 1 && m.removing == "" {
 		m.list.cursor = min(at, len(m.list.view)-1)
 	}
 }
@@ -1763,6 +1831,7 @@ func (m *Model) goBack() tea.Cmd {
 	}
 	m.job, m.mode = nil, modeBrowse
 	m.refresh()
+	m.removing = ""
 	return nil
 }
 
@@ -2068,6 +2137,8 @@ func (m *Model) details() (cmd, desc string) {
 		return strings.Join(r.Steps, " "), "Makes this the current recipe and runs its " + plural(len(r.Steps), "step") + ", asking for any blanks as each is reached. Stops if one fails."
 	case describeRecipeRef:
 		return highlight(m.describeCommand(r.name)), "Lists this recipe's steps in the shell: what each one runs, what it does and what it will ask. Runs none of them."
+	case removeRecipeRef:
+		return highlight(m.removeCommand(r.name)), removeDesc + " " + warnNote
 	}
 	return "", ""
 }

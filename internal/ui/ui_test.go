@@ -1970,6 +1970,50 @@ func TestSavingARecipe(t *testing.T) {
 		t.Errorf("run %+v, cursor %d, want %d", m.run, m.list.cursor, describing)
 	}
 
+	// Removing one asks first, No first, and sends nothing unless it's Yes.
+	idle := func() { t.Helper(); m.Update(idleMsg{seq: m.runSeq, ok: true}) }
+	if !strings.Contains(m.view(), "REMOVE RECIPES") {
+		t.Errorf("should offer to remove it:\n%s", m.view())
+	}
+	idle()
+	saved = []config.Recipe{{Name: "A", Steps: saved[0].Steps}, {Name: "My flow", Steps: saved[0].Steps}, {Name: "Z", Steps: saved[0].Steps}}
+	m.showSection(m.section)
+	removeRow := func(name string) int {
+		return slices.IndexFunc(m.list.view, func(it item) bool { return it.ref == any(removeRecipeRef{name}) })
+	}
+	m.list.cursor = removeRow("My flow")
+	if it := m.list.selected(); it.risk != config.RiskWarn {
+		t.Errorf("should be marked as a warning: %+v", it)
+	}
+	sent = nil
+	right()
+	if m.mode != modeConfirm || m.yes || len(sent) != 0 {
+		t.Fatalf("should ask, No first: mode %v, yes %v, sent %v", m.mode, m.yes, sent)
+	}
+	right()
+	if len(sent) != 0 || m.mode != modeBrowse || m.list.cursor != removeRow("My flow") {
+		t.Errorf("No: sent %v, mode %v, cursor %d, want %d", sent, m.mode, m.list.cursor, removeRow("My flow"))
+	}
+	right()
+	m.Update(typed("y"))
+	sentIs("clingon recipe remove 'My flow'")
+
+	// When the shell's done it's off the list, and the cursor is on the next to remove.
+	saved = slices.Delete(saved, 1, 2)
+	idle()
+	if removeRow("My flow") != -1 || m.list.cursor != removeRow("Z") {
+		t.Errorf("cursor %d, want %d:\n%s", m.list.cursor, removeRow("Z"), m.view())
+	}
+
+	// Removed in the shell by hand, the list catches up as well.
+	saved = saved[:1]
+	idle()
+	if removeRow("Z") != -1 {
+		t.Errorf("Z was removed by hand:\n%s", m.view())
+	}
+	saved = []config.Recipe{{Name: "My flow", Steps: saved[0].Steps}}
+	m.showSection(m.section)
+
 	// A step whose command has gone stops it before anything runs.
 	saved = []config.Recipe{{Name: "Old", Steps: []string{"x-00000000"}}}
 	m.showSection(m.section)
