@@ -3,6 +3,7 @@ package ui
 import (
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -43,10 +44,14 @@ type picker struct {
 	iconW   int     // widest icon among items, so names line up
 	risky   [2]bool // some row has a risk mark, in items [0] and search [1]: every row keeps a slot for one, so names line up
 	cursor  int
-	blurred bool // focus is elsewhere: the cursor's row in grey, not pink
+	blurred bool           // focus is elsewhere: the cursor's row in grey, not pink
+	step    func(item) int // a command's place in the recipe (0 for none), if this list shows them
 	offset  int
 	height  int
 	filter  textinput.Model
+	// filtering is the menu's list only: / has opened its filter, so keys
+	// type into it. Pickers for an arg always filter.
+	filtering bool
 }
 
 func newPicker(items, search []item, multi bool) picker {
@@ -78,6 +83,7 @@ func (p *picker) searching() int {
 func (p *picker) query() string { return strings.TrimSpace(p.filter.Value()) }
 
 func (p *picker) clearFilter() {
+	p.filtering = false
 	p.filter.SetValue("")
 	p.refilter()
 }
@@ -341,6 +347,12 @@ func (p *picker) sticky() int {
 	return -1
 }
 
+// stepW is the width of a recipe number's badge.
+const stepW = 3
+
+// stepBadge is a recipe number, marked the same wherever it shows.
+func stepBadge(n int) string { return stepStyle.Render(" " + strconv.Itoa(n) + " ") }
+
 func (p *picker) row(it item, active bool, width int) string {
 	if it.rule {
 		return faintStyle.Render(strings.Repeat("─", width))
@@ -351,6 +363,16 @@ func (p *picker) row(it item, active bool, width int) string {
 			st = cursorStyle
 		}
 		return st.Render(ansi.Truncate(strings.ToUpper(it.title), width, "…"))
+	}
+	// Commands keep the last cells for their number's badge, set or not, so
+	// badges share a column and a name doesn't change where it's cut.
+	full := width
+	_, isCmd := it.ref.(cmdRef)
+	numbered := isCmd && p.step != nil
+	step := 0
+	if numbered {
+		width -= stepW + 2 // a cell either side, off the name and the frame
+		step = p.step(it)
 	}
 	cur := cursorStyle
 	if p.blurred {
@@ -391,6 +413,8 @@ func (p *picker) row(it item, active bool, width int) string {
 		title = dangerStyle.Render(title)
 	case active:
 		title = cur.Render(title)
+	case step > 0: // ties the name to its badge, across the gap
+		title = valueStyle.Render(title)
 	case it.missing != "":
 		title = dimStyle.Render(title)
 	}
@@ -400,10 +424,14 @@ func (p *picker) row(it item, active bool, width int) string {
 	if room := width - ansi.StringWidth(prefix) - ansi.StringWidth(it.title) - 3; it.where != "" && room > 4 {
 		title += dimStyle.Render(" · " + ansi.Truncate(it.where, room, "…"))
 	}
-	if active { // the cursor's row is a bar across the list
-		return onBg(prefix+title, raised, width)
+	line := prefix + title
+	if step > 0 {
+		line += strings.Repeat(" ", max(0, full-stepW-1-ansi.StringWidth(line))) + stepBadge(step) + " "
 	}
-	return prefix + title
+	if active { // the cursor's row is a bar across the list
+		return onBg(line, raised, full)
+	}
+	return line
 }
 
 // keyName is msg's key name, or "" for a burst of typed text. Fast typing

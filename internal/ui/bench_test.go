@@ -24,6 +24,7 @@ func BenchmarkTypingAtTheTop(b *testing.B) {
 	}
 	m := New(Options{Config: cfg, Dir: func() string { return b.TempDir() }})
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 50})
+	m.Update(typed("/"))
 	keys := []tea.KeyPressMsg{typed("d"), typed("o"), {Code: tea.KeyBackspace}, {Code: tea.KeyBackspace}}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

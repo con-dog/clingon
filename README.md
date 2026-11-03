@@ -30,12 +30,12 @@ clingon
 
 | Key | |
 |---|---|
-| type | filter — at the top level it searches every command |
+| `/` | filter: then type — at the top level it searches every command. `/` again stops |
 | `↑` `↓` | move |
 | `→` / `enter` | forward: open, next step, and finally run |
 | `←` | back a step |
 | `space` | tick an option in a checklist |
-| `esc` | clear the filter or back a step; at the top, close clingon and return to your terminal |
+| `esc` | stop filtering or back a step; at the top, close clingon and return to your terminal |
 | `ctrl-c` | cancel what you're doing (never closes clingon) |
 | `tab` | in the menu: hop right to the shell |
 | `S-Tab` | at the shell prompt: hop left to the menu (inside vim, ssh etc. it passes through) |

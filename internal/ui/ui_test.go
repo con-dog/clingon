@@ -309,6 +309,374 @@ func TestShellWarningClearsWithoutFocus(t *testing.T) {
 	}
 }
 
+func TestNumberKeysNumberCommands(t *testing.T) {
+	cfg := func() *config.Config {
+		return &config.Config{Sections: []config.Section{
+			{Name: "AWS", Icon: "•", Category: config.Other, Commands: []config.Command{
+				{Name: "List s3 buckets", Cmd: "aws s3 ls"},
+				{Name: "A name far too long to fit in the width of the panel", Cmd: "x"},
+				{Name: "Who am I", Cmd: "aws sts get-caller-identity"},
+			}},
+			{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Status", Cmd: "git status"}}},
+		}}
+	}
+	current := cfg()
+	m := New(Options{Config: current, Reload: func() (*config.Config, error) { current = cfg(); return current, nil }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	press := func(s string) { m.Update(typed(s)) }
+	down := func() { m.Update(tea.KeyPressMsg{Code: tea.KeyDown}) }
+	const width = 30
+	rowOf := func(title string) string {
+		t.Helper()
+		for _, it := range m.list.view {
+			if strings.HasPrefix(it.title, title) {
+				return ansi.Strip(m.list.row(it, false, width))
+			}
+		}
+		t.Fatalf("no row %q", title)
+		return ""
+	}
+	// endsIn checks the number's badge is in its column, a cell off the frame.
+	endsIn := func(title, n string) {
+		t.Helper()
+		row := rowOf(title)
+		if n == "" {
+			if last := strings.TrimRight(row, " "); strings.ContainsAny(last[len(last)-1:], "123456789") {
+				t.Errorf("%q should have no number: %q", title, row)
+			}
+			return
+		}
+		if ansi.StringWidth(row) != width || !strings.HasSuffix(row, " "+n+"  ") {
+			t.Errorf("%q should end in a badge for %s at cell %d: %q", title, n, width, row)
+		}
+	}
+
+	m.showSection(&m.opt.Config.Sections[0])
+	press("1")
+	down()
+	down()
+	press("2")
+	endsIn("List s3", "1")
+	endsIn("Who am I", "2")
+	endsIn("A name far", "")
+	if m.list.query() != "" {
+		t.Fatalf("numbering shouldn't reach the filter, got %q", m.list.query())
+	}
+
+	// A long name is cut short of the column, with or without a number.
+	m.list.move(-1)
+	before := rowOf("A name far")
+	press("3")
+	endsIn("A name far", "3")
+	if got := strings.TrimRight(rowOf("A name far"), " 3"); got != strings.TrimRight(before, " ") {
+		t.Errorf("a number shouldn't change where a name is cut: %q, then %q", before, got)
+	}
+	press("3") // the same number again takes it off
+	endsIn("A name far", "")
+
+	press("1") // a step holds one command, and the chain ends there
+	endsIn("A name far", "1")
+	endsIn("List s3", "")
+	endsIn("Who am I", "")
+	press("2") // no step 1 without it: nothing changes
+	endsIn("A name far", "1")
+
+	// Numbers carry across sections, into search, and through a reload.
+	m.showSection(&m.opt.Config.Sections[1])
+	press("2")
+	endsIn("Status", "2")
+	if !m.reload() {
+		t.Fatal("expected a reload")
+	}
+	endsIn("Status", "2")
+	m.showRoot("")
+	press("/")
+	press("s")
+	press("t")
+	press("a")
+	endsIn("Status", "2")
+}
+
+func TestNumberingEndsTheChainThere(t *testing.T) {
+	var cmds []config.Command
+	for _, name := range strings.Split("a b c d e f g h i j", " ") {
+		cmds = append(cmds, config.Command{Name: name, Cmd: name})
+	}
+	m := New(Options{Config: &config.Config{Sections: []config.Section{
+		{Name: "S", Icon: "•", Category: config.Other, Commands: cmds},
+	}}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	on := func(name, key string) {
+		t.Helper()
+		for i, it := range m.list.view {
+			if it.title == name {
+				m.list.cursor = i
+			}
+		}
+		m.Update(typed(key))
+	}
+	chain := func(want string) {
+		t.Helper()
+		var got []string
+		for i, s := range m.recipe {
+			got = append(got, fmt.Sprintf("%d%s", i+1, s.name))
+		}
+		if g := strings.Join(got, " "); g != want {
+			t.Errorf("got %q, want %q", g, want)
+		}
+	}
+	on("a", "5") // nothing yet: it has to start at 1
+	chain("")
+	if !strings.Contains(m.hint, "up to step 1") {
+		t.Errorf("a refused number should say why, got %q", m.hint)
+	}
+	for i, name := range strings.Split("a b c d e f g h i", " ") {
+		on(name, fmt.Sprint(i+1))
+	}
+	if m.hint != "" {
+		t.Errorf("the next key should clear the hint, got %q", m.hint)
+	}
+	chain("1a 2b 3c 4d 5e 6f 7g 8h 9i")
+
+	on("j", "9") // the last step: nothing after it to clear
+	chain("1a 2b 3c 4d 5e 6f 7g 8h 9j")
+	on("j", "2") // a new command at 2: it takes 2 and ends the chain
+	chain("1a 2j")
+	on("c", "5") // past the next free step: refused
+	chain("1a 2j")
+	on("c", "3")
+	chain("1a 2j 3c")
+	on("j", "2") // its own number: only that step goes, the rest close up
+	chain("1a 2c")
+	on("a", "1")
+	chain("1c")
+	on("c", "2") // it would leave step 1 empty: refused
+	chain("1c")
+	if !strings.Contains(m.hint, "up to step 1") {
+		t.Errorf("it can only be step 1, got %q", m.hint)
+	}
+
+	on("d", "2")
+	on("e", "3")
+	on("c", "2") // moving down: it leaves its step, the rest close up, then it ends the chain
+	chain("1d 2c")
+	on("e", "3")
+	on("e", "1") // moving up: the same
+	chain("1e")
+}
+
+// The filter opens with /, so letters and digits have a job only once it has.
+func TestSlashOpensTheFilter(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{
+		{Name: "AWS", Icon: "•", Category: config.Other, Commands: []config.Command{
+			{Name: "ec2 list", Cmd: "aws ec2"}, {Name: "s3 list", Cmd: "aws s3"},
+		}},
+	}}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	press := func(s string) { t.Helper(); m.Update(typed(s)) }
+	key := func(code rune) { t.Helper(); m.Update(tea.KeyPressMsg{Code: code}) }
+	queryIs := func(want string) {
+		t.Helper()
+		if got := m.list.filter.Value(); got != want {
+			t.Errorf("filter = %q, want %q", got, want)
+		}
+	}
+
+	// Not filtering: text goes nowhere, and a digit on a section does nothing.
+	for _, k := range []string{"e", "4", "ec2"} {
+		press(k)
+		queryIs("")
+		if m.hint != "Press / to filter" {
+			t.Errorf("%q should say how to filter, got %q", k, m.hint)
+		}
+	}
+	if view := ansi.Strip(m.browseView(60, 10)); !strings.Contains(view, "❯ / to filter") {
+		t.Errorf("the filter's line should say how to open it:\n%s", view)
+	}
+
+	// / opens it, without typing itself. Digits are search, not steps.
+	press("/")
+	queryIs("")
+	if m.hint != "" {
+		t.Errorf("hint should clear, got %q", m.hint)
+	}
+	if view := ansi.Strip(m.browseView(60, 10)); !strings.Contains(view, "type to filter") {
+		t.Errorf("an open filter is an input:\n%s", view)
+	}
+	press("e")
+	press("c")
+	press("2")
+	queryIs("ec2")
+	if it := m.list.selected(); it == nil || it.title != "ec2 list" {
+		t.Fatalf("it should search every command, at %+v", it)
+	}
+	if len(m.recipe) != 0 {
+		t.Fatalf("no numbering while filtering, got %v", m.recipe)
+	}
+	press("?") // text, while it's open
+	queryIs("ec2?")
+	if m.help {
+		t.Error("? is text while filtering")
+	}
+
+	// / again closes it, clearing what's typed. It only does that as a key of
+	// its own: in pasted text it's part of the search.
+	press("/")
+	queryIs("")
+	if m.list.filtering {
+		t.Error("a second / should stop filtering")
+	}
+	press("/")
+	m.Update(tea.PasteMsg{Content: "a/b"})
+	queryIs("a/b")
+	if !m.list.filtering {
+		t.Error("a / in pasted text shouldn't stop filtering")
+	}
+	press("/")
+	if m.list.filtering || m.section != nil {
+		t.Errorf("/ should only stop filtering: filtering %v, section %v", m.list.filtering, m.section)
+	}
+	press("/")
+	press("ec2")
+
+	// esc clears it and stops filtering, in one: digits are back to normal.
+	key(tea.KeyEscape)
+	queryIs("")
+	if m.list.filtering {
+		t.Error("esc should stop filtering")
+	}
+	if m.Quit {
+		t.Fatal("that esc shouldn't quit")
+	}
+
+	// In a section too: opened with nothing typed, esc just closes it.
+	m.showSection(&m.opt.Config.Sections[0])
+	press("/")
+	key(tea.KeyEscape)
+	if m.list.filtering || m.section == nil {
+		t.Fatalf("esc should only close the filter: filtering %v, section %v", m.list.filtering, m.section)
+	}
+	press("1")
+	if len(m.recipe) != 1 {
+		t.Fatalf("out of the filter, a digit numbers: %v", m.recipe)
+	}
+	press("/")
+	press("2") // in the filter, it doesn't
+	queryIs("2")
+	if len(m.recipe) != 1 {
+		t.Fatalf("in the filter, a digit is search: %v", m.recipe)
+	}
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}) // ctrl-c stops filtering too
+	if m.list.filtering || m.section == nil {
+		t.Fatalf("ctrl-c should only stop filtering: filtering %v", m.list.filtering)
+	}
+
+	// ← leaves the filter behind too.
+	m.showRoot("")
+	press("/")
+	press("aws")
+	key(tea.KeyLeft)
+	if m.list.filtering {
+		t.Error("← should stop filtering at the top")
+	}
+
+	// Fast typing can bring the / and what's after it in one message.
+	press("/ec2")
+	queryIs("ec2")
+	if !m.list.filtering {
+		t.Error("the burst should open the filter")
+	}
+	m.list.clearFilter()
+
+	// Pasted text does what typing would.
+	m.Update(tea.PasteMsg{Content: "ec2"})
+	queryIs("")
+	m.Update(tea.PasteMsg{Content: "/ec2"})
+	queryIs("ec2")
+	m.list.clearFilter()
+
+	// [ ] still jump, and the arrows still move, without a filter.
+	press("]")
+	key(tea.KeyDown)
+	queryIs("")
+
+	// A reload (coming back to the menu) keeps it open.
+	m.opt.Reload = func() (*config.Config, error) { return m.opt.Config, nil }
+	press("/")
+	press("ec")
+	if !m.reload() || !m.list.filtering {
+		t.Errorf("a reload should keep the filter open: %v", m.list.filtering)
+	}
+	queryIs("ec")
+}
+
+func TestStatusBarShowsTheRecipe(t *testing.T) {
+	shell := ShellState{}
+	m := New(Options{Config: &config.Config{Sections: []config.Section{
+		{Name: "AWS", Icon: "•", Category: config.Other, Commands: []config.Command{
+			{Name: "List buckets", Cmd: "aws s3 ls"}, {Name: "Who am I", Cmd: "aws sts get-caller-identity"},
+		}},
+		{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Status", Cmd: "git status"}}},
+		{Name: "Nope", Icon: "•", Category: config.Other, Needs: []string{"clingon-test-nope"}, Commands: []config.Command{{Name: "Go", Cmd: "x"}}},
+	}}, Send: func(string) error { return nil }, Shell: func() ShellState { return shell }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.news = &Headline{Text: "✓ some news"}
+	barIs := func(w int, want string) {
+		t.Helper()
+		line := m.statusBar(w)
+		if got := strings.TrimSpace(ansi.Strip(line)); got != want {
+			t.Errorf("at %d cells: got %q, want %q", w, got, want)
+		}
+		if got := ansi.StringWidth(line); got != w {
+			t.Errorf("the bar should be %d cells wide, got %d: %q", w, got, ansi.Strip(line))
+		}
+	}
+	barIs(80, "✓ some news")
+
+	// Across sections: listed by number, wherever you are.
+	m.showSection(&m.opt.Config.Sections[0])
+	m.Update(typed("1"))
+	m.showSection(&m.opt.Config.Sections[1])
+	m.Update(typed("2"))
+	want := "Recipe  1  List buckets →  2  Status"
+	barIs(80, want)
+	m.showRoot("")
+	barIs(80, want) // instead of the news
+
+	// Not enough room: names give way, numbers never do.
+	barIs(29, "Recipe  1  Lis… →  2  Sta…")
+	barIs(22, "Recipe  1  … →  2  …")
+	barIs(20, "Recipe  1   →  2")
+
+	// A warning about the shell still comes first, and passes.
+	shell = ShellState{Typed: "git sta"}
+	m.readShell()
+	barIs(80, "✎ Typed in the shell: git sta · running a command asks first")
+	shell = ShellState{}
+	m.readShell()
+	barIs(80, want)
+
+	// Missing tools aren't hidden by it: they share the bar.
+	m.showSection(&m.opt.Config.Sections[2])
+	line := ansi.Strip(m.statusBar(120))
+	if !strings.Contains(line, "✗ Needs clingon-test-nope") || !strings.Contains(line, want) {
+		t.Errorf("both should show, got %q", line)
+	}
+	if got := ansi.StringWidth(m.statusBar(120)); got != 120 {
+		t.Errorf("the split bar should be 120 cells wide, got %d", got)
+	}
+
+	// Taking the numbers off brings back what was there.
+	m.showSection(&m.opt.Config.Sections[0])
+	m.Update(typed("1"))
+	barIs(80, "Recipe  1  Status") // the rest close up
+	m.showSection(&m.opt.Config.Sections[1])
+	m.Update(typed("1"))
+	m.showRoot("")
+	barIs(80, "✓ some news")
+}
+
 func TestTypedShellAsksFirst(t *testing.T) {
 	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "List", Cmd: "ls"}}}
 	var sent []string

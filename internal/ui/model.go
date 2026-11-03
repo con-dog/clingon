@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -184,6 +185,7 @@ type Model struct {
 	builtin   []*config.Section
 	busy      string                      // what's running in the shell: nothing can be sent until it ends
 	looking   bool                        // a shellLookMsg is on its way
+	recipe    []recipeStep                // the numbered commands, in order: at most 9
 	quiet     bool                        // that's locked, but not worth a status bar's band yet
 	waiting   bool                        // a wait for the shell to finish (started on focus) is under way
 	scrolling bool                        // the shell is scrolled back: nothing can be sent until it stops
@@ -307,6 +309,7 @@ func (m *Model) showRoot(focus string) {
 	}
 	m.section = nil
 	m.list = newPicker(items, search, false)
+	m.list.step = m.itemStep
 	if m.opt.Headline != nil {
 		h := m.opt.Headline()
 		m.news = &h
@@ -360,7 +363,7 @@ func (m *Model) reload() bool {
 		return false
 	}
 	m.errMsg, m.hint = "", ""
-	query := m.list.filter.Value()
+	query, filtering := m.list.filter.Value(), m.list.filtering
 	var at string
 	if it := m.list.selected(); it != nil {
 		at = it.title
@@ -374,6 +377,7 @@ func (m *Model) reload() bool {
 	} else {
 		m.showRoot("")
 	}
+	m.list.filtering = filtering
 	m.list.filter.SetValue(query)
 	m.list.refilter()
 	for i, it := range m.list.view {
@@ -403,6 +407,7 @@ func (m *Model) showSection(s *config.Section) {
 	}
 	m.section = s
 	m.list = newPicker(items, nil, false)
+	m.list.step = m.itemStep
 	m.checkTools()
 }
 
@@ -481,7 +486,7 @@ func (m *Model) regrey() {
 // lookAgain is for coming back to the menu, perhaps after a cd: the top
 // level is rebuilt (the project may differ), a section just regreys.
 func (m *Model) lookAgain() {
-	if m.mode != modeBrowse || m.list.query() != "" {
+	if m.mode != modeBrowse || m.list.filtering {
 		return
 	}
 	if m.section == nil {
@@ -678,7 +683,7 @@ func (m *Model) cancel() tea.Cmd {
 	switch {
 	case m.mode != modeBrowse:
 		m.pending, m.job, m.mode = nil, nil, modeBrowse
-	case m.list.query() != "":
+	case m.list.filtering:
 		m.list.clearFilter()
 	case m.section != nil:
 		m.showRoot(m.section.Name)
@@ -748,7 +753,7 @@ func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch keyName(msg) {
 	case "esc":
 		switch {
-		case m.list.query() != "":
+		case m.list.filtering:
 			m.list.clearFilter()
 		case m.section != nil:
 			m.showRoot(m.section.Name)
@@ -760,21 +765,140 @@ func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 		switch {
 		case m.section != nil:
 			m.showRoot(m.section.Name)
-		case m.list.query() != "":
+		case m.list.filtering:
 			m.list.clearFilter()
 		}
 		return nil
 	case "right", "enter":
 		return m.open()
+	case "/":
+		if m.list.filtering { // opening it is below, with the rest of what's typed
+			m.list.clearFilter()
+			return nil
+		}
 	case "?":
-		if m.list.query() == "" {
+		if !m.list.filtering {
 			m.help = true
 			return nil
 		}
 	}
 	m.errMsg, m.hint = "", ""
+	if !m.list.filtering {
+		switch k := keyName(msg); {
+		case strings.HasPrefix(msg.Text, "/"): // fast typing can bring more with it
+			m.list.filtering = true
+			if msg.Text == "/" {
+				return nil
+			}
+			msg = typed(msg.Text[1:])
+		case m.numberKey(msg):
+			return nil
+		case msg.Text != "" && k != "[" && k != "]": // nothing's listening for text
+			m.hint = "Press / to filter"
+			return nil
+		}
+	}
 	return m.list.update(msg)
 }
+
+// numberKey is 1-9 on a command, giving it that step in the recipe. Steps run
+// 1, 2, 3 with no holes, so a number past the next free one is refused.
+func (m *Model) numberKey(msg tea.KeyPressMsg) bool {
+	k := keyName(msg)
+	if len(k) != 1 || k < "1" || k > "9" {
+		return false
+	}
+	it := m.list.selected()
+	if it == nil {
+		return false
+	}
+	r, ok := it.ref.(cmdRef)
+	if !ok {
+		return false
+	}
+	n, had := int(k[0]-'0'), m.stepOf(r)
+	furthest := len(m.recipe) + 1
+	if had > 0 { // it would leave its own step first
+		furthest--
+	}
+	if n != had && n > furthest {
+		m.hint = fmt.Sprintf("No gaps in a recipe: this can go up to step %d", furthest)
+		return true
+	}
+	m.setStep(r, n)
+	return true
+}
+
+// recipeStep is a command with a number: its name is kept for the status bar,
+// which shows it from any list.
+type recipeStep struct{ key, name string }
+
+// setStep makes a command step n, and the chain ends there: every later step
+// is cleared, and whichever had n makes way. It first leaves any step it has,
+// the steps after closing up. Its own number just does that, so a double press
+// can't lose the rest of the chain.
+func (m *Model) setStep(r cmdRef, n int) {
+	had := m.stepOf(r)
+	if had > 0 {
+		m.recipe = slices.Delete(m.recipe, had-1, had)
+	}
+	if had != n {
+		m.recipe = append(m.recipe[:n-1], recipeStep{recipeKey(r), r.cmd.Name})
+	}
+}
+
+// stepOf is a command's step in the recipe, or 0.
+func (m *Model) stepOf(r cmdRef) int {
+	key := recipeKey(r)
+	for i, s := range m.recipe {
+		if s.key == key {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// itemStep is stepOf for a list's row, or 0 if it isn't a command.
+func (m *Model) itemStep(it item) int {
+	if r, ok := it.ref.(cmdRef); ok {
+		return m.stepOf(r)
+	}
+	return 0
+}
+
+// recipeBar lists the numbered commands in order, as the list marks them, on
+// the quiet band. With too little room names are shortened, longest first, so
+// every number still shows.
+func (m *Model) recipeBar(w int) string {
+	longest, total := 0, 0
+	for _, s := range m.recipe {
+		nw := ansi.StringWidth(s.name)
+		longest, total = max(longest, nw), total+nw
+	}
+	const label = "Recipe"
+	const arrow = " →"
+	n := len(m.recipe)
+	room := w - 2 - len(label) - n*(1+stepW+1) - (n-1)*ansi.StringWidth(arrow)
+	limit := longest
+	for ; limit > 0 && total > room; limit-- {
+		total = 0
+		for _, s := range m.recipe {
+			total += min(ansi.StringWidth(s.name), limit-1)
+		}
+	}
+	line := dimStyle.Render(label)
+	for i, s := range m.recipe {
+		if i > 0 {
+			line += faintStyle.Render(arrow)
+		}
+		line += " " + stepBadge(i+1) + " " + valueStyle.Render(ansi.Truncate(s.name, limit, "…"))
+	}
+	return onBg(" "+ansi.Truncate(line, max(w-2, 0), "…"), raised, w)
+}
+
+// recipeKey names a command: a reload replaces the config it points into, so
+// its place in the recipe can't hang on the pointer.
+func recipeKey(r cmdRef) string { return r.section + "\x00" + r.cmd.Name + "\x00" + r.cmd.Cmd }
 
 // open acts on the highlighted row.
 func (m *Model) open() tea.Cmd {
@@ -1209,10 +1333,11 @@ func (m *Model) helpView(w int) string {
 		{"→ or enter", "open, or go on to the next blank"},
 		{"←", "back"},
 		{"[ ]", "jump to the previous or next heading"},
-		{"type", "filter the list (on the top level, every command)"},
+		{"/", "filter (on the top level, every command); again stops"},
 		{"esc", "clear the filter, go back, or quit at the top"},
 		{"ctrl-c", "cancel what you're doing"},
 		{"space", "tick or untick, in a checklist"},
+		{"1-9", "recipe step: clears later ones; again removes it"},
 		{"y n", "answer a risky command's question"},
 		{"tab/shift-tab", "switch panes: tab to the shell, shift-tab back"},
 		{"?", "this screen"},
@@ -1731,9 +1856,12 @@ func (m *Model) footer(w int) string {
 	}
 	switch m.mode {
 	case modeBrowse:
-		keys = []string{"→ go", "← back", "[ ] jump", "tab/shift-tab switch panes", "? help"}
+		keys = []string{"→ go", "← back", "/ filter", "[ ] jump", "tab/shift-tab panes", "? help"}
 		if m.section == nil {
-			keys = []string{"→ go", "[ ] jump", "esc quit", "tab/shift-tab switch panes", "? help"}
+			keys = []string{"→ go", "/ filter", "[ ] jump", "esc quit", "tab/shift-tab panes", "? help"}
+		}
+		if m.list.filtering {
+			keys = []string{"→ go", "← back", "/ stop filtering", "[ ] jump", "tab/shift-tab panes"}
 		}
 	case modeFill:
 		j := m.job
@@ -1786,6 +1914,16 @@ func (m *Model) statusBar(w int) string {
 		s = m.pending.sec
 	case m.job != nil:
 		s = m.job.ref.sec
+	}
+	if len(m.recipe) > 0 { // wherever you've gone, you can see what you've numbered
+		if s != nil {
+			if miss := m.missingFor(s); len(miss) > 0 { // both: the recipe gets what's left of the bar
+				msg := "✗ " + upperFirst(config.Needs(miss))
+				left := min(ansi.StringWidth(msg)+2, w/2)
+				return bar(red, msg, left) + m.recipeBar(w-left)
+			}
+		}
+		return m.recipeBar(w)
 	}
 	if s == nil { // the top level: news, not problems
 		if m.news == nil {
@@ -1890,7 +2028,11 @@ func (m *Model) blurInputs() {
 
 func (m *Model) browseView(w, h int) string {
 	m.list.blurred = m.blurred
-	return inputView(&m.list.filter, w) + "\n\n" + m.list.render(w, h-2)
+	filter := accentStyle.Render("❯ /") + faintStyle.Render(" to filter")
+	if m.list.filtering {
+		filter = inputView(&m.list.filter, w)
+	}
+	return filter + "\n\n" + m.list.render(w, h-2)
 }
 
 // preview renders the command with filled values, the current arg (showing
