@@ -1115,8 +1115,8 @@ func (m *Model) runStep() tea.Cmd {
 }
 
 // stepDone moves the recipe on from a step that's finished: to the next, or
-// it stops there, keeping the recipe, if that step didn't work out. A finished
-// recipe clears.
+// it stops there if that step didn't work out. Either way the recipe stays, to
+// run again: only x clears it.
 func (m *Model) stepDone(ok bool) tea.Cmd {
 	n, name := m.run.at+1, m.recipe[m.run.at].ref.cmd.Name
 	why := ""
@@ -1136,8 +1136,7 @@ func (m *Model) stepDone(ok bool) tea.Cmd {
 	if m.run.at++; m.run.at < len(m.recipe) {
 		return m.runStep()
 	}
-	m.run, m.recipe = nil, nil
-	m.relistRecipe()
+	m.run = nil
 	m.hint = fmt.Sprintf("✓ Recipe finished: %s", plural(n, "step"))
 	return nil
 }

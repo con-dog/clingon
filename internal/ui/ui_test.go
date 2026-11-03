@@ -843,12 +843,20 @@ func TestRunningARecipe(t *testing.T) {
 	done(true)
 	sentIs("one two")
 	done(true)
-	if m.run != nil || len(m.recipe) != 0 {
-		t.Fatalf("a finished recipe clears: run %+v, recipe %v", m.run, m.recipe)
+	if m.run != nil || len(m.recipe) != 2 {
+		t.Fatalf("a finished recipe stays: run %+v, recipe %v", m.run, m.recipe)
 	}
 	if !strings.Contains(m.hint, "finished: 2 steps") {
 		t.Errorf("hint = %q", m.hint)
 	}
+	start() // and runs again
+	done(true)
+	done(true)
+	sentIs("one two one two")
+	if m.run != nil || len(m.recipe) != 2 {
+		t.Fatalf("still there after a second run: run %+v, recipe %v", m.run, m.recipe)
+	}
+	sent = []string{"one", "two"}
 	// Finished, the commands are as they were.
 	m.showSection(&m.opt.Config.Sections[0])
 	on("other")
