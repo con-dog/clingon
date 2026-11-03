@@ -1083,6 +1083,67 @@ func TestFillInNamesTheCommand(t *testing.T) {
 	}
 }
 
+func TestRiskyScreensNameTheCommand(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "Burn it", Cmd: "burn", Risk: config.RiskDanger},
+		{Name: "First", Cmd: "first"},
+		{Name: "Stop it", Cmd: "stop", Risk: config.RiskWarn},
+	}}}}, Send: func(string) error { return nil }, WaitIdle: func() bool { return true }, Builtin: func() []*config.Section {
+		return []*config.Section{{Name: RecipesSection, Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Current recipe"}}}}
+	}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	on := func(name string) {
+		t.Helper()
+		m.showSection(&m.opt.Config.Sections[0])
+		for i, it := range m.list.view {
+			if it.title == name {
+				m.list.cursor = i
+			}
+		}
+	}
+	lines := func(h int) []string { return strings.Split(ansi.Strip(m.confirmView(60, h)), "\n") }
+
+	on("Stop it")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	got := lines(20)
+	if got[0] != "STOP IT" || got[1] != "" || !strings.Contains(got[2], "This command is risky") {
+		t.Errorf("warn: %q", got)
+	}
+	if got := lines(5); !strings.Contains(got[0], "This command is risky") || len(got) != 4 {
+		t.Errorf("no room: the question and answers come first: %q", got)
+	}
+	m.Update(typed("n"))
+
+	// A dangerous one, through both of its screens.
+	on("Burn it")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	got = lines(20)
+	if got[0] != "BURN IT" || got[1] != "" || got[2] != "burn" || !strings.Contains(got[4], dangerGlyph+" It can't be undone") {
+		t.Errorf("danger: %q", got)
+	}
+	m.Update(typed(m.pending.code))
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	got = lines(20)
+	if got[0] != "BURN IT" || !strings.Contains(got[2], "Last check") {
+		t.Errorf("last check: %q", got)
+	}
+	m.Update(typed("n"))
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m.mode, m.pending = modeBrowse, nil
+
+	// As a step of a recipe, it says which.
+	on("First")
+	m.Update(typed("1"))
+	on("Stop it")
+	m.Update(typed("2"))
+	m.Update(typed("r"))
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.Update(idleMsg{seq: m.run.seq, ok: true})
+	if got := lines(20); got[0] != "STOP IT · step 2 of 2" {
+		t.Errorf("as a step: %q", got)
+	}
+}
+
 func TestStatusBarShowsTheRecipe(t *testing.T) {
 	shell := ShellState{}
 	m := New(Options{Config: &config.Config{Sections: []config.Section{

@@ -1743,7 +1743,7 @@ func (m *Model) view() string {
 	case m.mode == modeFill:
 		body = m.fillView(w, avail)
 	case m.mode == modeConfirm:
-		body = m.confirmView(w)
+		body = m.confirmView(w, avail)
 	}
 	if avail <= 0 {
 		body = "" // no room (MaxHeight(0) would mean no limit at all)
@@ -2312,7 +2312,7 @@ func (m *Model) fillView(w, h int) string {
 	lines := []string{cursorStyle.Render(a.Label()) + dimStyle.Render(meta)}
 	used := 1
 	if h >= 6 { // what's being filled in, room allowing: the blank comes first
-		lines = append([]string{m.fillHeader(w), ""}, lines...)
+		lines = append([]string{m.commandHeader(j.ref.cmd.Name, w), ""}, lines...)
 		used = 3
 	}
 
@@ -2329,14 +2329,14 @@ func (m *Model) fillView(w, h int) string {
 	return strings.Join(lines, "\n")
 }
 
-// fillHeader names the command being filled in, and how far through the
-// recipe it is, if it's a step of one.
-func (m *Model) fillHeader(w int) string {
+// commandHeader names the command being filled in or confirmed, and how far
+// through the recipe it is, if it's a step of one.
+func (m *Model) commandHeader(name string, w int) string {
 	step := ""
 	if m.run != nil {
 		step = fmt.Sprintf(" · step %d of %d", m.run.at+1, len(m.recipe))
 	}
-	name := ansi.Truncate(strings.ToUpper(m.job.ref.cmd.Name), max(w-ansi.StringWidth(step), 1), "…")
+	name = ansi.Truncate(strings.ToUpper(name), max(w-ansi.StringWidth(step), 1), "…")
 	return headerStyle.Render(name) + dimStyle.Render(step)
 }
 
@@ -2346,7 +2346,17 @@ func (m *Model) noticeView(w int) string {
 		m.notice.text + "\n\n" + dimStyle.Render(fmt.Sprintf("Back in %ds · any key to go back now", m.notice.left)))
 }
 
-func (m *Model) confirmView(w int) string {
+// confirmView asks about a risky command, under its name, room allowing:
+// the question and its answers matter more.
+func (m *Model) confirmView(w, h int) string {
+	body := m.confirmBody(w)
+	if strings.Count(body, "\n")+3 > h {
+		return body
+	}
+	return m.commandHeader(m.pending.name, w) + "\n\n" + body
+}
+
+func (m *Model) confirmBody(w int) string {
 	row := func(on bool, s string) string {
 		if on {
 			return cursorStyle.Render("› " + s)
@@ -2356,8 +2366,8 @@ func (m *Model) confirmView(w int) string {
 	p := m.pending
 	if p.risk == config.RiskDanger {
 		if !p.typed {
-			out := dangerStyle.Render(dangerGlyph+" "+p.name) + "\n" + highlight(p.shown) + "\n\n" +
-				"It can't be undone. Type " + dangerStyle.Render(p.code) + " to go on:\n\n" + inputView(&m.word, w)
+			out := highlight(p.shown) + "\n\n" +
+				dangerStyle.Render(dangerGlyph) + " It can't be undone. Type " + dangerStyle.Render(p.code) + " to go on:\n\n" + inputView(&m.word, w)
 			if m.wrong {
 				out += "\n" + errStyle.Render("That wasn't the code: here's a new one. Or esc to go back.")
 			}
