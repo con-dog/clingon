@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
 description: AWS setup, profiles and SSO, S3, EC2/SSM sessions, ECS, EKS and CloudWatch logs
-version: 1.0.0
+version: 1.1.0
 requires: [aws]
 
 sections:
@@ -12,6 +12,7 @@ sections:
       - name: Identity
         commands:
           - name: Use profile
+            id: aws-feafb459
             cmd: export AWS_PROFILE=<profile>
             desc: "Sets which AWS account and credentials this shell uses for every aws command after it."
             args:
@@ -20,12 +21,15 @@ sections:
                 desc: "From now on that's <profile>."
                 placeholder: "default"
           - name: Stop using a profile
+            id: aws-b4eefb2b
             cmd: unset AWS_PROFILE
             desc: "Goes back to your default AWS profile in this shell."
           - name: Who am I
+            id: aws-12ec2490
             cmd: aws sts get-caller-identity
             desc: "Shows which AWS account, user or role your current credentials belong to."
           - name: Who am I as a profile
+            id: aws-48896b1e
             cmd: aws sts get-caller-identity --profile <profile>
             desc: "Shows which AWS account, user or role a profile's credentials belong to, without switching to it."
             args:
@@ -34,9 +38,11 @@ sections:
                 desc: "For the <profile> profile."
                 placeholder: "default"
           - name: List profiles
+            id: aws-5eea3cc7
             cmd: aws configure list-profiles
             desc: "Lists the name of every profile in your AWS config, SSO ones included."
           - name: SSO login
+            id: aws-042c2d6c
             cmd: aws sso login --profile <profile>
             desc: "Signs you in through AWS SSO in your browser and caches fresh credentials."
             args:
@@ -45,15 +51,18 @@ sections:
                 desc: "For the <profile> profile."
                 placeholder: "default"
           - name: SSO logout
+            id: aws-3f863007
             cmd: aws sso logout
             desc: "Signs you out of AWS SSO by clearing its cached sign-ins for every profile, not just the current one."
             risk: warn
       - name: S3
         commands:
           - name: List buckets
+            id: aws-e208997a
             cmd: aws s3 ls
             desc: "Lists every S3 bucket in the account."
           - name: Browse bucket
+            id: aws-c6b5a49f
             cmd: aws s3 ls s3://<bucket>/ --human-readable <flags>
             desc: "Lists what's in an S3 bucket, with readable file sizes."
             args:
@@ -66,6 +75,7 @@ sections:
                 options:
                   - { value: --recursive --summarize, label: recursive with totals }
           - name: Sync folder to bucket
+            id: aws-23535592
             cmd: aws s3 sync <dir> s3://<bucket>/<prefix> <flags>
             desc: "Uploads a local folder to S3, copying only files that are new or changed."
             risk: danger
@@ -89,6 +99,7 @@ sections:
       - name: Compute & logs
         commands:
           - name: Connect kubectl to EKS
+            id: aws-7de0c715
             cmd: aws eks update-kubeconfig --name <cluster>
             desc: "Adds an EKS cluster to your kubeconfig and makes it kubectl's current context."
             requires: [kubectl]
@@ -98,9 +109,11 @@ sections:
                 desc: "For <cluster>."
                 placeholder: "my-cluster"
           - name: Running instances
+            id: aws-f12a6f70
             cmd: aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'Reservations[].Instances[].[InstanceId,InstanceType,Tags[?Key==`Name`]|[0].Value]' --output table
             desc: "Lists running EC2 instances with their ID, type and Name tag."
           - name: Shell into instance (SSM)
+            id: aws-cb5c6f56
             cmd: aws ssm start-session --target <instance>
             desc: "Opens a shell on an EC2 instance through SSM: no SSH keys or open ports needed. Anything you run there affects that machine."
             risk: danger
@@ -110,6 +123,7 @@ sections:
                 quote: true
                 placeholder: "i-0123456789abcdef0"
           - name: Tail log group
+            id: aws-3bdce9d4
             cmd: aws logs tail <group> --follow --since <since>
             desc: "Streams a CloudWatch log group live."
             args:
@@ -124,9 +138,11 @@ sections:
       - name: ECS
         commands:
           - name: List clusters
+            id: aws-a07d89a1
             cmd: aws ecs list-clusters
             desc: "Lists the ECS clusters in this account and region."
           - name: List services
+            id: aws-878c6cdd
             cmd: aws ecs list-services --cluster <cluster>
             desc: "Lists the services running in an ECS cluster."
             args:
@@ -135,6 +151,7 @@ sections:
                 desc: "In <cluster>."
                 placeholder: "my-cluster"
           - name: List tasks
+            id: aws-9574679f
             cmd: aws ecs list-tasks --cluster <cluster> --service-name <service>
             desc: "Lists the running tasks of an ECS service."
             args:
@@ -147,6 +164,7 @@ sections:
                 desc: "for <service>."
                 placeholder: "my-service"
           - name: Describe tasks
+            id: aws-f5802fd4
             cmd: aws ecs describe-tasks --cluster <cluster> --tasks <task>
             desc: "Shows a task's status, containers, health and why it stopped, if it did."
             args:
@@ -159,6 +177,7 @@ sections:
                 desc: "for <task>."
                 placeholder: "task ID or ARN, from List tasks"
           - name: Describe a service
+            id: aws-77da1743
             cmd: aws ecs describe-services --cluster <cluster> --services <service>
             desc: "Shows a service's task counts, deployments and recent events."
             args:
@@ -171,6 +190,7 @@ sections:
                 desc: "for <service>."
                 placeholder: "my-service"
           - name: Shell into a task
+            id: aws-6b7a93ad
             cmd: aws ecs execute-command --cluster <cluster> --task <task> --container <container> --interactive --command /bin/sh
             desc: "Opens a shell inside a live container, where anything you run affects that service. It needs ECS Exec turned on for the service."
             risk: danger
@@ -189,6 +209,7 @@ sections:
                 desc: "container <container>."
                 placeholder: "web"
           - name: Redeploy a service
+            id: aws-c6cc92b6
             cmd: aws ecs update-service --cluster <cluster> --service <service> --force-new-deployment
             desc: "Replaces every task of a live service with new ones, restarting it."
             risk: danger
@@ -202,6 +223,7 @@ sections:
                 desc: "redeploying <service>."
                 placeholder: "my-service"
           - name: Stop a task
+            id: aws-3209defa
             cmd: aws ecs stop-task --cluster <cluster> --task <task>
             desc: "Stops a running task straight away. On a live service, that can drop what it's serving."
             risk: danger
@@ -217,9 +239,11 @@ sections:
       - name: Setup
         commands:
           - name: Current settings
+            id: aws-c72fa6bd
             cmd: aws configure list
             desc: "Shows which profile, credentials and region aws commands use right now, and where each comes from."
           - name: Set default region
+            id: aws-ef69cd4a
             cmd: aws configure set region <region> --profile <profile>
             desc: "Sets the region a profile uses when a command doesn't say."
             args:
@@ -232,6 +256,7 @@ sections:
                 options: [ap-northeast-1, ap-south-1, ap-southeast-1, ap-southeast-2, ca-central-1, eu-central-1, eu-north-1, eu-west-1, eu-west-2, eu-west-3, sa-east-1, us-east-1, us-east-2, us-west-1, us-west-2]
                 default: us-east-1
           - name: Set up access keys
+            id: aws-3ebba29c
             cmd: aws configure --profile <profile>
             desc: "Saves an access key, secret and default region for a profile, asking for each."
             risk: warn
@@ -240,5 +265,6 @@ sections:
                 desc: "For the <profile> profile."
                 default: default
           - name: Set up SSO
+            id: aws-f00ad38c
             cmd: aws configure sso
             desc: "Creates a profile that signs in through AWS IAM Identity Center (SSO), asking a few questions first."

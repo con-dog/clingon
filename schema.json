@@ -52,6 +52,7 @@
       "required": ["name", "cmd"],
       "properties": {
         "name": { "type": "string" },
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*-[0-9a-f]{8}$", "description": "What saved recipes call this command, like aws-1a2b3c4d. Keep it when renaming the command." },
         "cmd": { "type": "string", "description": "Shell command template. <name> is replaced by the arg called name." },
         "desc": { "type": "string", "description": "What the command does, in a sentence. Shown in the Description area, and extended by each arg's desc as you fill them in." },
         "risk": {

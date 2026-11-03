@@ -1816,3 +1816,166 @@ func TestLeavingAndComingBackOnEveryScreen(t *testing.T) {
 		}
 	}
 }
+
+func TestSavingARecipe(t *testing.T) {
+	cmds := []config.Command{{Name: "one", Cmd: "one"}, {Name: "two", ID: "s-22222222", Cmd: "two"}}
+	var sent []string
+	var saved []config.Recipe
+	failed := false
+	m := New(Options{
+		Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: cmds}}},
+		Send:   func(c string) error { sent = append(sent, c); return nil }, WaitIdle: func() bool { return true },
+		LastFailed: func() bool { return failed }, Shell: func() ShellState { return ShellState{} },
+		Recipes: func() []config.Recipe { return saved }, Self: "clingon",
+		Builtin: func() []*config.Section {
+			return []*config.Section{{Name: RecipesSection, Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Current recipe"}}}}
+		}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	sec := &m.opt.Config.Sections[0]
+	oneID := sec.CommandID(&sec.Commands[0])
+	saveCmd := "clingon recipe save 'My flow' " + oneID + " s-22222222"
+	on := func(name string) {
+		t.Helper()
+		for i, it := range m.list.view {
+			if it.title == name {
+				m.list.cursor = i
+				return
+			}
+		}
+		t.Fatalf("no row %q", name)
+	}
+	right := func() { t.Helper(); m.Update(tea.KeyPressMsg{Code: tea.KeyRight}) }
+	left := func() { t.Helper(); m.Update(tea.KeyPressMsg{Code: tea.KeyLeft}) }
+	down := func() { t.Helper(); m.Update(tea.KeyPressMsg{Code: tea.KeyDown}) }
+	done := func() { t.Helper(); m.Update(idleMsg{seq: m.run.seq, ok: true}) }
+	sentIs := func(want string) {
+		t.Helper()
+		if got := strings.Join(sent, " | "); got != want {
+			t.Errorf("sent %q, want %q", got, want)
+		}
+	}
+	number := func() {
+		t.Helper()
+		m.showSection(sec)
+		on("one")
+		m.Update(typed("1"))
+		on("two")
+		m.Update(typed("2"))
+		sent, m.errMsg, m.hint = nil, "", ""
+		m.Update(typed("r"))
+	}
+	number()
+
+	// Run recipe asks, and No is first: it just runs.
+	right()
+	if m.mode != modeSave || len(sent) != 0 || !strings.Contains(m.view(), "Save this recipe first?") {
+		t.Fatalf("should ask first: mode %v, sent %v", m.mode, sent)
+	}
+	right()
+	sentIs("one")
+	done()
+	done()
+	sentIs("one | two")
+	if m.run != nil || len(saved) != 0 {
+		t.Fatalf("run %+v, saved %v", m.run, saved)
+	}
+
+	// Yes asks for a name, and ← steps back through the questions, sending nothing.
+	sent = nil
+	right()
+	down()
+	right()
+	if m.mode != modeSaveName || !strings.Contains(m.view(), "Name this recipe") {
+		t.Fatalf("mode %v: should ask for a name", m.mode)
+	}
+	right() // no name yet
+	if m.mode != modeSaveName || m.run != nil {
+		t.Fatal("a name is needed")
+	}
+	left()
+	if m.mode != modeSave || !m.yes {
+		t.Fatalf("← from the name: mode %v, yes %v", m.mode, m.yes)
+	}
+	left()
+	if m.mode != modeBrowse || m.run != nil || len(sent) != 0 || len(m.recipe) != 2 {
+		t.Fatalf("← from the question: mode %v, run %+v, sent %v", m.mode, m.run, sent)
+	}
+
+	// A name that's taken is refused there and then.
+	saved = []config.Recipe{{Name: "My Flow", Steps: []string{"x-00000000"}}}
+	right()
+	m.Update(typed("y"))
+	m.Update(typed("my flow"))
+	right()
+	if m.mode != modeSaveName || !strings.Contains(m.view(), "already have") {
+		t.Fatalf("mode %v: a taken name should be refused", m.mode)
+	}
+	saved = nil
+
+	// The save is a command in the shell, by ID, and the steps follow it.
+	m.word.SetValue("")
+	m.Update(typed("My  flow"))
+	if !strings.Contains(ansi.Strip(m.infoPane(60)), "clingon recipe save") {
+		t.Errorf("the command should show as it's named:\n%s", m.infoPane(60))
+	}
+	right()
+	sentIs(saveCmd)
+	saved = []config.Recipe{{Name: "My flow", Steps: []string{oneID, "s-22222222"}}}
+	done()
+	sentIs(saveCmd + " | one")
+	done()
+	done()
+	sentIs(saveCmd + " | one | two")
+	if m.run != nil || len(m.recipe) != 2 {
+		t.Fatalf("run %+v, recipe %d steps", m.run, len(m.recipe))
+	}
+
+	// Now it's saved there's nothing to ask, and it's listed.
+	sent = nil
+	on("Run recipe")
+	right()
+	if m.mode == modeSave {
+		t.Error("the same steps are saved already: shouldn't ask")
+	}
+	sentIs("one")
+	done()
+	done()
+	if !strings.Contains(m.view(), "SAVED RECIPES") {
+		t.Errorf("should list it:\n%s", m.view())
+	}
+
+	// Its row makes it the current recipe, in place of what's numbered, and runs it.
+	m.Update(typed("x"))
+	sent, m.hint = nil, ""
+	on("My flow")
+	right()
+	sentIs("one")
+	if len(m.recipe) != 2 || m.run == nil {
+		t.Fatalf("recipe %d steps, run %+v", len(m.recipe), m.run)
+	}
+	done()
+	done()
+
+	// A step whose command has gone stops it before anything runs.
+	saved = []config.Recipe{{Name: "Old", Steps: []string{"x-00000000"}}}
+	m.showSection(m.section)
+	sent = nil
+	on("Old")
+	right()
+	if len(sent) != 0 || m.run != nil || !strings.Contains(m.errMsg, "gone") {
+		t.Errorf("sent %v, run %+v, err %q", sent, m.run, m.errMsg)
+	}
+
+	// A save that fails stops there: no steps run, and the recipe stays.
+	saved, failed, sent = nil, true, nil
+	m.errMsg = ""
+	on("Run recipe")
+	right()
+	m.Update(typed("y"))
+	m.Update(typed("Again"))
+	right()
+	done()
+	if len(sent) != 1 || m.run != nil || !strings.Contains(m.errMsg, "not saved") || len(m.recipe) != 2 {
+		t.Errorf("sent %v, run %+v, err %q, recipe %d steps", sent, m.run, m.errMsg, len(m.recipe))
+	}
+}

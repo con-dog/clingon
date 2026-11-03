@@ -326,3 +326,26 @@ func TestParseCrashFromBubbleTea(t *testing.T) {
 		t.Errorf("got %q, %q", reason, trace)
 	}
 }
+
+func TestRecipeCommands(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	run := func(args ...string) (string, error) { return output(t, func() error { return recipeCmd(args) }) }
+	if out, err := run("save", "My AWS ECS flow", "aws-1a2b3c4d", "docker-5e6f7a8b"); err != nil || !strings.Contains(out, "My AWS ECS flow") {
+		t.Fatalf("save: %q %v", out, err)
+	}
+	if out, _ := run("list"); !strings.Contains(out, "My AWS ECS flow\taws-1a2b3c4d docker-5e6f7a8b") {
+		t.Errorf("list: %q", out)
+	}
+	if _, err := run("save", "My AWS ECS flow", "aws-1a2b3c4d"); err == nil {
+		t.Error("the same name twice should be refused")
+	}
+	if _, err := run("save", "No steps"); err == nil {
+		t.Error("no steps should be refused")
+	}
+	if _, err := run("remove", "My AWS ECS flow"); err != nil {
+		t.Error(err)
+	}
+	if _, err := run("remove", "My AWS ECS flow"); err == nil {
+		t.Error("removing it twice should say so")
+	}
+}

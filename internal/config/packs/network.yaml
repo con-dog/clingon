@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
 description: Ports, HTTP requests and checking what's reachable
-version: 1.0.0
+version: 1.1.0
 requires: [lsof, curl, ping]
 default: true
 
@@ -13,9 +13,11 @@ sections:
       - name: Ports
         commands:
           - name: What's listening
+            id: network-8a117db7
             cmd: lsof -nP -iTCP -sTCP:LISTEN
             desc: "Lists your programs listening for network connections, and on which port. Other users' programs only show with sudo."
           - name: Who's on port
+            id: network-0fecd847
             cmd: lsof -nP -iTCP:<port> -sTCP:LISTEN || echo "Nothing of yours is listening on port <port>."
             desc: "Shows which of your programs is listening on a port. Other users' programs only show with sudo."
             args:
@@ -24,6 +26,7 @@ sections:
                 placeholder: "3000"
                 pattern: "[0-9]+"
           - name: Kill whatever is on port
+            id: network-1a91a745
             cmd: pids=$(lsof -t -iTCP:<port> -sTCP:LISTEN); if [ -n "$pids" ]; then echo "$pids" | xargs kill && echo "Stopped what was on port <port>."; else echo "Nothing of yours is listening on port <port>."; fi
             desc: "Stops whichever of your programs is listening on a port."
             risk: warn
@@ -36,6 +39,7 @@ sections:
       - name: HTTP
         commands:
           - name: Response headers
+            id: network-3d52ab13
             cmd: curl -sSI <url>
             desc: "Fetches just a URL's response headers: status, redirects, caching and so on."
             args:
@@ -44,6 +48,7 @@ sections:
                 desc: "From <url>."
                 placeholder: https://example.com
           - name: Status code only
+            id: network-95e73f3d
             cmd: curl -o /dev/null -sS -w '%{http_code}\n' <url>
             desc: "Requests a URL and prints only the HTTP status code."
             args:
@@ -52,6 +57,7 @@ sections:
                 desc: "For <url>."
                 placeholder: https://example.com
           - name: Time a request
+            id: network-6f511473
             cmd: curl -o /dev/null -sS -w 'dns %{time_namelookup}s  connect %{time_connect}s  ttfb %{time_starttransfer}s  total %{time_total}s\n' <url>
             desc: "Times a request: DNS lookup, connecting, first byte and total."
             args:
@@ -60,6 +66,7 @@ sections:
                 desc: "Timing <url>."
                 placeholder: https://example.com
           - name: Download a file
+            id: network-92ef10f9
             cmd: curl -fLO <url>
             desc: "Downloads a file into this folder, following redirects."
             risk: warn
@@ -69,6 +76,7 @@ sections:
                 desc: "From <url>."
                 placeholder: https://example.com/file.zip
           - name: POST some JSON
+            id: network-7fd0a99d
             cmd: "curl -sS -X POST -H 'Content-Type: application/json' -d <json> <url>"
             desc: "Sends JSON to a URL in a POST request and prints the response."
             risk: warn
@@ -82,6 +90,7 @@ sections:
                 desc: "Sending <json>."
                 default: "{}"
           - name: Serve this folder
+            id: network-8c254820
             cmd: python3 -I -m http.server --bind 127.0.0.1 <port>
             desc: "Serves the files in this folder over HTTP, to this machine only, until you press Ctrl-C."
             risk: warn
@@ -91,6 +100,7 @@ sections:
                 desc: "At http://localhost:<port>."
                 default: "8000"
           - name: Serve this folder on your network
+            id: network-0fce7ab6
             cmd: python3 -I -m http.server <port>
             desc: "Serves the files in this folder over HTTP until you press Ctrl-C. Anyone on your network can read them while it runs."
             risk: warn
@@ -100,12 +110,14 @@ sections:
                 desc: "At port <port> of this machine's address."
                 default: "8000"
           - name: My public IP
+            id: network-b4457f7b
             cmd: curl -s https://ifconfig.me && echo
             desc: "Shows the public IP address the internet sees you coming from."
 
       - name: Reachability
         commands:
           - name: Ping a host
+            id: network-7cdfcd9d
             cmd: ping -c 4 <host>
             desc: "Checks that a host answers, and how quickly, with four pings."
             args:
@@ -113,6 +125,7 @@ sections:
                 desc: "Pinging <host>."
                 placeholder: example.com
           - name: DNS lookup
+            id: network-0c1579d8
             cmd: dig +short <domain>
             desc: "Looks up the IP addresses a domain name points to."
             requires: [dig]
@@ -122,6 +135,7 @@ sections:
                 desc: "For <domain>."
                 placeholder: example.com
           - name: Is a port open
+            id: network-43866119
             cmd: nc -z -v -G 5 <host> <port>
             desc: "Checks whether you can connect to a port on another machine."
             requires: [nc, ipconfig]   # macOS: nc needs -G to give up connecting
@@ -133,6 +147,7 @@ sections:
                 desc: "on port <port>."
                 placeholder: "443"
           - name: Trace the route
+            id: network-f5555d5c
             cmd: traceroute <host>
             desc: "Shows each network hop between you and a host, and how long each takes."
             requires: [traceroute]
@@ -141,6 +156,7 @@ sections:
                 desc: "To <host>."
                 placeholder: example.com
           - name: My local IP
+            id: network-b579db1e
             cmd: ipconfig getifaddr "$(route -n get default | awk '/interface:/ { print $2 }')"
             desc: "Shows this Mac's IP address on your local network."
             requires: [ipconfig]

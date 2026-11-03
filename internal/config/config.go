@@ -72,6 +72,7 @@ const (
 
 type Command struct {
 	Name     string   `yaml:"name"`
+	ID       string   `yaml:"id"` // what recipes call it, for good: see CommandID
 	Cmd      string   `yaml:"cmd"`
 	Desc     string   `yaml:"desc"`
 	Risk     string   `yaml:"risk"`     // "", RiskWarn or RiskDanger: how hard it is to run by mistake
@@ -426,6 +427,11 @@ func (c *Config) Validate() []error {
 		for g := range s.Groups {
 			if r, ok := Hidden(s.Groups[g].Name); ok {
 				bad(s.Name, "group %q has a character that can hide or change what's on screen (%U)", s.Groups[g].Name, r)
+			}
+		}
+		for _, cmd := range s.All() {
+			if cmd.ID != "" && !commandIDRe.MatchString(cmd.ID) {
+				bad(s.Name, "%s: id %q should be a name and 8 hex digits, like aws-1a2b3c4d", cmd.Name, cmd.ID)
 			}
 		}
 		if strings.Contains(s.Name, "/") {

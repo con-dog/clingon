@@ -346,3 +346,55 @@ func commandCmd(args []string) error {
 	os.Exit(2)
 	return nil
 }
+
+const recipeUsage = `Usage:
+  clingon recipe save NAME ID...
+  clingon recipe remove NAME
+  clingon recipe list
+
+A recipe runs commands in order. The menu saves one for you when you run it, from
+Clingon › Recipes, and lists it there; each ID is one of its commands.
+`
+
+func recipeCmd(args []string) error {
+	if len(args) == 0 {
+		outf("%s", styleUsage(recipeUsage))
+		return nil
+	}
+	switch args[0] {
+	case "save":
+		if len(args) < 3 {
+			return errors.New("usage: clingon recipe save NAME ID...")
+		}
+		if err := config.SaveRecipe(args[1], args[2:]); err != nil {
+			return err
+		}
+		say(ok, "saved recipe %q", args[1])
+		return nil
+	case "remove", "rm":
+		if len(args) != 2 {
+			return errors.New("usage: clingon recipe remove NAME")
+		}
+		if err := config.RemoveRecipe(args[1]); err != nil {
+			return err
+		}
+		say(ok, "removed recipe %q", args[1])
+		return nil
+	case "list", "ls":
+		rs, err := config.Recipes()
+		if err != nil {
+			return err
+		}
+		if len(rs) == 0 {
+			say(info, "no saved recipes yet: run one from Clingon › Recipes, and save it")
+			return nil
+		}
+		for _, r := range rs {
+			fmt.Printf("%s\t%s\n", r.Name, strings.Join(r.Steps, " "))
+		}
+		return nil
+	}
+	errf("%s", styleUsage(recipeUsage))
+	os.Exit(2)
+	return nil
+}

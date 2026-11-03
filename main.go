@@ -32,6 +32,7 @@ Usage:
   clingon print    pick a command and print it instead, e.g. eval "$(clingon print)"
   clingon pack     list, add and remove packs; make and edit your own
   clingon command  add, remove and list commands in your own packs
+  clingon recipe   save, remove and list recipes (sequences of commands)
   clingon edit     open your pack in micro
   clingon check    check your packs for mistakes
   clingon doctor   check tmux, your packs and each pack's tools
@@ -78,6 +79,8 @@ func main() {
 		err = packCmd(os.Args[2:])
 	case "command", "commands", "cmd":
 		err = commandCmd(os.Args[2:])
+	case "recipe", "recipes":
+		err = recipeCmd(os.Args[2:])
 	case "init":
 		err = config.NewPack(defaultPack())
 		if err == nil {
@@ -239,7 +242,12 @@ func menu(args []string) error {
 		// unless the user has moved elsewhere themselves.
 		WaitIdle:   func() bool { return c.WaitIdle(*pane) },
 		LastFailed: func() bool { return c.LastFailed(*pane) },
-		FocusMenu:  func() { c.FocusIfActive(*pane, os.Getenv("TMUX_PANE")) },
+		Recipes: func() []config.Recipe {
+			rs, _ := config.Recipes() // a broken file: `clingon recipe list` says what's wrong with it
+			return rs
+		},
+		Self:      selfCommand(),
+		FocusMenu: func() { c.FocusIfActive(*pane, os.Getenv("TMUX_PANE")) },
 		Shell: func() ui.ShellState {
 			st := c.State(*pane)
 			return ui.ShellState{Busy: st.Busy, Scrolling: st.Scrolling, Typed: st.Typed, Starting: st.Starting}

@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
 description: Get around, look at, find, archive, copy and clean up files
-version: 1.0.0
+version: 1.1.0
 requires: [find, grep, tar, rsync, less, diff]
 default: true
 
@@ -12,6 +12,7 @@ sections:
       - name: Navigate
         commands:
           - name: Go to folder
+            id: files-2b37a5f3
             cmd: cd <dir>
             desc: "Moves your shell into a folder. It stays there afterwards."
             args:
@@ -20,6 +21,7 @@ sections:
                 desc: "Into <dir>."
                 placeholder: "path/to/folder"
           - name: Make a folder and go into it
+            id: files-fbdd5f4a
             cmd: mkdir -p <dir> && cd <dir>
             desc: "Creates a folder, and any missing parents, then moves into it."
             args:
@@ -30,6 +32,7 @@ sections:
       - name: Look around
         commands:
           - name: List files
+            id: files-d24e25b3
             cmd: ls -lah <flags> <dir>
             desc: "Lists everything in a folder, hidden files included, with sizes, dates and permissions."
             args:
@@ -44,6 +47,7 @@ sections:
                 desc: "In <dir>."
                 default: .
           - name: Folder tree
+            id: files-ff058ee0
             cmd: find <dir> -maxdepth <depth> -not -path '*/.*' -not -path '*/node_modules*' | sort | sed 's|[^/]*/|  |g'
             desc: "Shows the folders and files below a folder as an indented tree, skipping hidden ones and node_modules."
             args:
@@ -56,6 +60,7 @@ sections:
                 options: ["2", "3", "1"]
                 default: "2"
           - name: Recently changed files
+            id: files-00197510
             cmd: find <dir> -type f -mmin -<minutes> -not -path '*/.git/*' -not -path '*/node_modules/*'
             desc: "Lists files changed recently, handy for finding what a build or a tool just wrote."
             args:
@@ -70,6 +75,7 @@ sections:
                 desc: "Under <dir>."
                 default: .
           - name: Peek at a file
+            id: files-bb277a24
             cmd: head -n <lines> <file>
             desc: "Prints the first lines of a file."
             args:
@@ -81,6 +87,7 @@ sections:
                 desc: "The first <lines>."
                 default: "40"
           - name: Read a file
+            id: files-b83651ba
             cmd: less <file>
             desc: "Opens a file to scroll and search through. Press q to quit, / to search."
             args:
@@ -89,6 +96,7 @@ sections:
                 desc: "Reading <file>."
                 placeholder: "path/to/file"
           - name: Follow a file
+            id: files-8660a044
             cmd: tail -f <file>
             desc: "Prints new lines as they're added to a file, like a log. Ctrl-C stops."
             args:
@@ -97,6 +105,7 @@ sections:
                 desc: "Following <file>."
                 placeholder: "path/to/file"
           - name: Compare two files
+            id: files-4096fe0a
             cmd: diff -u <a> <b>
             desc: "Shows the lines that differ between two files."
             args:
@@ -111,6 +120,7 @@ sections:
                 desc: "and <b>."
                 placeholder: "path/to/other-file"
           - name: Count lines of code
+            id: files-b1079cfd
             cmd: find . -type f -name '*.'<ext> -not -path '*/node_modules/*' -not -path '*/.git/*' -print0 | xargs -0 wc -l | sort -n | tail -n 20
             desc: "Counts lines in every file of one type and lists the 20 biggest, with the total."
             args:
@@ -122,6 +132,7 @@ sections:
       - name: Find
         commands:
           - name: Find files by name
+            id: files-00dbf7ca
             cmd: find <dir> -iname '*'<pattern>'*' -not -path '*/node_modules/*' -not -path '*/.git/*'
             desc: "Finds files and folders whose name contains some text, skipping node_modules and .git."
             args:
@@ -133,6 +144,7 @@ sections:
                 desc: "Searching <dir>."
                 default: .
           - name: Search text in files
+            id: files-a15d8a8d
             cmd: grep -rn <flags> -- <pattern> <dir> || echo "No matches."
             desc: "Searches inside files for some text and shows every match with its line number."
             args:
@@ -153,6 +165,7 @@ sections:
       - name: Archives & copy
         commands:
           - name: Make tarball
+            id: files-9f15d476
             cmd: tar -czf <name>.tar.gz <path>
             desc: "Packs a file or folder into a compressed .tar.gz archive."
             risk: warn
@@ -165,6 +178,7 @@ sections:
                 quote: true
                 desc: "Into <name>.tar.gz."
           - name: Extract archive
+            id: files-9b40ecf5
             cmd: tar -xf <archive>
             desc: "Unpacks an archive into this folder."
             risk: warn
@@ -174,6 +188,7 @@ sections:
                 desc: "Unpacking <archive>."
                 placeholder: "backup.tar.gz"
           - name: Copy with progress
+            id: files-4dd54b48
             cmd: rsync -ah --progress <src> <dest>
             desc: "Copies files or folders with a progress bar. Run it again and it only copies what changed."
             risk: warn
@@ -186,6 +201,7 @@ sections:
                 quote: true
                 desc: "To <dest>."
           - name: Move or rename
+            id: files-1b54f52c
             cmd: mv -i <src> <dest>
             desc: "Moves or renames a file or folder, asking before it overwrites anything."
             args:
@@ -197,6 +213,7 @@ sections:
                 quote: true
                 desc: "To <dest>."
           - name: Duplicate
+            id: files-f6f0756f
             cmd: cp -Ri <src> <dest>
             desc: "Copies a file or folder to a new name, asking before it overwrites anything."
             args:
@@ -208,6 +225,7 @@ sections:
                 quote: true
                 desc: "To <dest>."
           - name: Make a shortcut
+            id: files-7218ad57
             cmd: ln -s <target> <link>
             desc: "Creates a symbolic link: a shortcut that points at another file or folder."
             args:
@@ -223,6 +241,7 @@ sections:
       - name: Cleanup & permissions
         commands:
           - name: Delete files matching
+            id: files-ee88568f
             cmd: find <dir> -type f -name <pattern> -print -delete
             desc: "Permanently deletes every file matching a pattern, listing each one as it goes."
             risk: danger
@@ -236,6 +255,7 @@ sections:
                 desc: "Under <dir>."
                 default: .
           - name: Make executable
+            id: files-eeba4baa
             cmd: chmod +x <file>
             desc: "Makes a file runnable as a program."
             args:

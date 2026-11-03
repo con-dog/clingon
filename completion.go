@@ -27,6 +27,7 @@ _clingon() {
     'print:pick a command and print it'
     'pack:list, add and remove packs'
     'command:add, remove and list your own commands'
+    'recipe:save, remove and list recipes'
     'edit:open your pack in micro'
     'check:check your packs for mistakes'
     'doctor:check tmux, your packs and their tools'
@@ -53,6 +54,7 @@ _clingon() {
       esac
       ;;
     command|commands|cmd) (( CURRENT == 3 )) && compadd add remove list ;;
+    recipe|recipes) (( CURRENT == 3 )) && compadd save remove list ;;
     doctor) (( CURRENT == 3 )) && compadd -- ${(f)"$(clingon pack list --remote --names 2>/dev/null | cut -f1)"} ;;
     completion) (( CURRENT == 3 )) && compadd zsh bash ;;
   esac
@@ -68,11 +70,12 @@ fi
 const bashCompletion = `_clingon() {
   local cur=${COMP_WORDS[COMP_CWORD]} words=
   case $COMP_CWORD in
-    1) words="print pack command edit check doctor crash update welcome completion version help" ;;
+    1) words="print pack command recipe edit check doctor crash update welcome completion version help" ;;
     2)
       case ${COMP_WORDS[1]} in
         pack|packs) words="list available add create remove update edit sections" ;;
         command|commands|cmd) words="add remove list" ;;
+        recipe|recipes) words="save remove list" ;;
         doctor) words=$(clingon pack list --remote --names 2>/dev/null | cut -f1) ;;
         completion) words="zsh bash" ;;
       esac

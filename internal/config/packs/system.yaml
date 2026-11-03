@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
 description: Processes, shell environment, disk space and handy generators
-version: 1.0.0
+version: 1.1.0
 requires: [ps, pkill, df, du, base64]
 default: true
 
@@ -13,6 +13,7 @@ sections:
         requires: [jq]
         commands:
           - name: Pick out a field
+            id: system-900f003a
             cmd: jq -r <path> <file>
             desc: "Prints one value from a JSON file."
             args:
@@ -25,6 +26,7 @@ sections:
                 desc: "the value at <path>."
                 placeholder: .name
           - name: Pretty-print a file
+            id: system-aab41d95
             cmd: jq -C . <file> | less -R
             desc: "Shows a JSON file indented and coloured."
             args:
@@ -35,12 +37,15 @@ sections:
       - name: Processes
         commands:
           - name: Top memory users
+            id: system-d1a14a89
             cmd: ps aux | sort -rnk 4 | head -n 15
             desc: "Lists the 15 processes using the most memory."
           - name: Top CPU users
+            id: system-840b527e
             cmd: ps aux | sort -rnk 3 | head -n 15
             desc: "Lists the 15 processes using the most CPU."
           - name: Stop a running program
+            id: system-0a1dcd7b
             cmd: pkill -x <name> || echo "No running program called "<name>"."
             desc: "Stops every running copy of a program."
             risk: warn
@@ -50,11 +55,13 @@ sections:
                 desc: "Stopping <name>."
                 placeholder: "program name"
           - name: Uptime and load
+            id: system-9017815a
             cmd: uptime
             desc: "Shows how long this machine has been up and how busy it is."
       - name: Shell & env
         commands:
           - name: Search shell history
+            id: system-425c2197
             cmd: fc -l 1 | grep -i -- <text> || echo "No matches."
             desc: "Searches the commands you've run before in this shell."
             args:
@@ -62,6 +69,7 @@ sections:
                 quote: true
                 desc: "Containing \"<text>\"."
           - name: Find env var
+            id: system-28a0e6a4
             cmd: env | grep -i -- <name> || echo "No matches."
             desc: "Shows environment variables whose name or value contains some text."
             args:
@@ -70,6 +78,7 @@ sections:
                 desc: "Containing \"<name>\"."
                 placeholder: "program name"
           - name: Set env var
+            id: system-9ef85c54
             cmd: export <name>=<value>
             desc: "Sets an environment variable for this shell and everything you run from it."
             args:
@@ -80,6 +89,7 @@ sections:
                 quote: true
                 desc: "to <value>."
           - name: Unset env var
+            id: system-7f57f654
             cmd: unset <name>
             desc: "Removes an environment variable from this shell."
             args:
@@ -88,6 +98,7 @@ sections:
                 desc: "Removing <name>."
                 placeholder: "program name"
           - name: Add folder to PATH
+            id: system-f6936652
             cmd: export PATH="<dir>:$PATH"
             desc: "Puts a folder first on your PATH for this shell, so its programs run by name."
             args:
@@ -95,29 +106,35 @@ sections:
                 desc: "Adding <dir>."
                 default: $PWD
           - name: Where is a command
+            id: system-a29cad81
             cmd: type -a <name>
             desc: "Shows everything a command name could run: programs, aliases and functions."
             args:
               - name: name
                 desc: "Looking up <name>."
           - name: PATH, one per line
+            id: system-20b12f9b
             cmd: echo "$PATH" | tr ':' '\n'
             desc: "Lists each folder your shell searches for commands, in order."
           - name: Time a command
+            id: system-f7b50313
             cmd: time <command>
             desc: "Runs a command and reports how long it took."
             args:
               - name: command
                 desc: "Timing <command>."
           - name: Reload shell
+            id: system-466fc2cf
             cmd: if [ -n "$CLINGON" ]; then exec clingon _shell; else exec "$SHELL" -l; fi
             desc: "Restarts your shell in place so it picks up changes to your config files."
       - name: Disk
         commands:
           - name: Free space
+            id: system-c2eb2c8d
             cmd: df -h
             desc: "Shows how full each disk is."
           - name: Biggest things here
+            id: system-3ac725e7
             cmd: find . -mindepth 1 -maxdepth 1 -exec du -sh {} + 2>/dev/null | sort -rh | head -n <count>
             desc: "Lists the biggest files and folders here, largest first."
             args:
@@ -125,6 +142,7 @@ sections:
                 desc: "The top <count>."
                 default: "15"
           - name: Folder size
+            id: system-4bb79b67
             cmd: du -sh <dir>
             desc: "Shows how much space a folder takes up, everything inside it included."
             args:
@@ -135,6 +153,7 @@ sections:
       - name: Utilities
         commands:
           - name: Random secret
+            id: system-30c3105e
             cmd: openssl rand -base64 <bytes> | tr -d '\n'; echo
             desc: "Prints a random secret, good for API keys, tokens and passwords."
             requires: [openssl]
@@ -144,16 +163,20 @@ sections:
                 options: ["32", "16", "64"]
                 default: "32"
           - name: New UUID
+            id: system-c6b6486d
             cmd: uuidgen
             desc: "Prints a new random UUID."
             requires: [uuidgen]
           - name: Time now (ISO)
+            id: system-288a385c
             cmd: date -u +%Y-%m-%dT%H:%M:%SZ
             desc: "Prints the current time in UTC, in ISO 8601 format."
           - name: Time now (Unix)
+            id: system-eb5a48fe
             cmd: date +%s
             desc: "Prints the current Unix time: seconds since 1 January 1970."
           - name: Base64 encode
+            id: system-72a3a0b7
             cmd: printf %s <text> | base64
             desc: "Encodes some text as base64."
             args:
@@ -161,6 +184,7 @@ sections:
                 quote: true
                 desc: "Encoding \"<text>\"."
           - name: Base64 decode
+            id: system-e8379df3
             cmd: printf %s <text> | base64 --decode; echo
             desc: "Decodes base64 back into text."
             args:

@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
 description: Sign-in, repos, pull requests, issues and CI runs with the GitHub CLI
-version: 1.0.0
+version: 1.1.0
 requires: [gh]
 
 sections:
@@ -13,6 +13,7 @@ sections:
         when: [.git]
         commands:
           - name: Rerun failed jobs
+            id: github-fca5f0ee
             cmd: gh run rerun <run> --failed
             desc: "Runs only the failed jobs of a CI run again."
             risk: warn
@@ -21,6 +22,7 @@ sections:
                 quote: true
                 placeholder: "run ID, from List runs"
           - name: Watch CI run
+            id: github-652fb56b
             cmd: gh run watch <run>
             desc: "Follows a CI run live until it finishes."
             args:
@@ -31,13 +33,16 @@ sections:
         when: [.git]
         commands:
           - name: New issue
+            id: github-36df7f1a
             cmd: gh issue create
             desc: "Opens a new issue on this repository, asking for its title and body."
             risk: warn
           - name: Open issues
+            id: github-1ad205b1
             cmd: gh issue list
             desc: "Lists this repository's open issues."
           - name: View an issue
+            id: github-96a6b469
             cmd: gh issue view <issue> --comments
             desc: "Shows an issue and its comments."
             args:
@@ -47,9 +52,11 @@ sections:
       - name: Gists
         commands:
           - name: My gists
+            id: github-7b57082e
             cmd: gh gist list
             desc: "Lists your gists."
           - name: New gist from a file
+            id: github-46c6a2b8
             cmd: gh gist create <file> <flags>
             desc: "Uploads a file as a gist and prints its link. Gists are secret unless you make them public."
             risk: warn
@@ -66,6 +73,7 @@ sections:
         when: [.git]
         commands:
           - name: Check out pull request
+            id: github-d7771138
             cmd: gh pr checkout <pr>
             desc: "Checks out a pull request's branch locally so you can try it."
             args:
@@ -73,6 +81,7 @@ sections:
                 quote: true
                 placeholder: "123"
           - name: Create pull request
+            id: github-d959ea2d
             cmd: gh pr create --fill <flags>
             desc: "Opens a pull request for this branch, using your commits for its title and body."
             risk: warn
@@ -83,6 +92,7 @@ sections:
                   - { value: --draft, label: draft }
                   - { value: --web, label: finish in the browser }
           - name: Merge pull request
+            id: github-58c53dd0
             cmd: gh pr merge <pr> <how> <flags>
             desc: "Merges a pull request on GitHub."
             risk: warn
@@ -102,15 +112,18 @@ sections:
                 options:
                   - { value: --delete-branch, label: delete its branch too }
           - name: My PRs and reviews
+            id: github-04dd9c9c
             cmd: gh pr status
             desc: "Shows your open pull requests and the ones waiting for your review."
           - name: Open PR in browser
+            id: github-52df8829
             cmd: gh pr view --web
             desc: "Opens this branch's pull request on GitHub."
       - name: Releases
         when: [.git]
         commands:
           - name: Download a release
+            id: github-4cf623db
             cmd: gh release download <tag>
             desc: "Downloads a release's files into this folder."
             risk: warn
@@ -120,9 +133,11 @@ sections:
                 desc: "From <tag>."
                 placeholder: "v1.0.0"
           - name: List releases
+            id: github-04890b51
             cmd: gh release list
             desc: "Lists this repository's releases, newest first."
           - name: New release
+            id: github-c8c8970f
             cmd: gh release create <tag> --generate-notes <flags>
             desc: "Publishes a release on GitHub for a tag, with notes written from the pull requests since the last one."
             risk: warn
@@ -139,6 +154,7 @@ sections:
       - name: Repos
         commands:
           - name: Clone one of my repos
+            id: github-15bba7c2
             cmd: gh repo clone <repo>
             desc: "Downloads one of your repositories into a new folder here."
             args:
@@ -146,10 +162,12 @@ sections:
                 quote: true
                 placeholder: "owner/name"
           - name: Open repo in browser
+            id: github-a525cce8
             cmd: gh browse
             when: [.git]
             desc: "Opens this repository on GitHub in your browser."
           - name: Publish this folder
+            id: github-20a9a672
             cmd: gh repo create --source . --remote origin --push <visibility>
             when: [.git]
             desc: "Creates a GitHub repository named after this folder and pushes your commits to it. Commit something first."
@@ -164,6 +182,7 @@ sections:
       - name: Setup
         commands:
           - name: Add SSH key to GitHub
+            id: github-12b5d8f8
             cmd: gh ssh-key add <key> --title "$(hostname)"
             desc: "Uploads your public SSH key so you can push and pull over SSH."
             risk: warn
@@ -173,11 +192,14 @@ sections:
                 desc: "Uploading <key>."
                 placeholder: "key ID"
           - name: Am I signed in
+            id: github-704adcdd
             cmd: gh auth status
             desc: "Shows which GitHub accounts you're signed in to and how."
           - name: Sign in
+            id: github-44a214b6
             cmd: gh auth login
             desc: "Signs you in to GitHub through your browser, asking a few questions first."
           - name: Use gh for git passwords
+            id: github-edccf01b
             cmd: gh auth setup-git
             desc: "Lets git push and pull over HTTPS using your gh sign-in, so it never asks for a password."

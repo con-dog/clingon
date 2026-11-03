@@ -1,6 +1,6 @@
 
 description: macOS power, network, Finder, clipboard and software updates
-version: 1.0.0
+version: 1.1.0
 requires: [sw_vers]
 
 sections:
@@ -12,6 +12,7 @@ sections:
       - name: Clipboard
         commands:
           - name: Copy a file's contents
+            id: macos-f3be166f
             cmd: pbcopy < <file>
             desc: "Puts a file's text on the clipboard."
             args:
@@ -20,6 +21,7 @@ sections:
                 desc: "From <file>."
                 placeholder: "path/to/file"
           - name: Paste into a file
+            id: macos-11b8ecba
             cmd: pbpaste > <file>
             desc: "Writes what's on the clipboard to a file, replacing what's in it."
             risk: danger
@@ -29,22 +31,27 @@ sections:
                 desc: "Into <file>."
                 placeholder: notes.txt
           - name: Show the clipboard
+            id: macos-c0286b92
             cmd: pbpaste
             desc: "Prints what's on the clipboard."
       - name: Finder
         commands:
           - name: Hide hidden files
+            id: macos-339fafda
             cmd: defaults write com.apple.finder AppleShowAllFiles -bool false && killall Finder
             desc: "Stops Finder showing files that start with a dot. Finder restarts to pick it up."
             risk: warn
           - name: Open this folder in Finder
+            id: macos-9195759d
             cmd: open .
             desc: "Shows the shell's folder in a Finder window."
           - name: Show hidden files
+            id: macos-5423adfd
             cmd: defaults write com.apple.finder AppleShowAllFiles -bool true && killall Finder
             desc: "Makes Finder show files that start with a dot. Finder restarts to pick it up."
             risk: warn
           - name: Trust a downloaded app
+            id: macos-925c4923
             cmd: xattr -dr com.apple.quarantine <app>
             desc: "Removes the quarantine mark macOS puts on downloads, so an app opens without the 'can't be opened' warning. Only do it for apps you trust."
             risk: warn
@@ -56,10 +63,12 @@ sections:
       - name: Network
         commands:
           - name: Flush DNS cache
+            id: macos-2e5753e8
             cmd: sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder
             desc: "Forgets cached DNS answers, for when a site moved but your Mac still goes to the old address."
             risk: warn
           - name: Turn Wi-Fi off
+            id: macos-f5b6cb44
             cmd: networksetup -setairportpower <device> off
             desc: "Switches Wi-Fi off."
             risk: warn
@@ -68,6 +77,7 @@ sections:
                 quote: true
                 placeholder: "Wi-Fi"
           - name: Turn Wi-Fi on
+            id: macos-39a2c466
             cmd: networksetup -setairportpower <device> on
             desc: "Switches Wi-Fi on."
             args:
@@ -75,6 +85,7 @@ sections:
                 quote: true
                 placeholder: "Wi-Fi"
           - name: Wi-Fi details
+            id: macos-36e8bbc9
             cmd: ipconfig getsummary <device>
             desc: "Shows the details of your Wi-Fi connection and your address. macOS may hide the network's name."
             args:
@@ -84,12 +95,15 @@ sections:
       - name: Power
         commands:
           - name: Battery
+            id: macos-80bed48f
             cmd: pmset -g batt
             desc: "Shows the battery's charge and whether it's charging."
           - name: Keep awake
+            id: macos-06dda47a
             cmd: caffeinate -dims
             desc: "Stops your Mac sleeping until you press Ctrl-C."
           - name: Keep awake for a while
+            id: macos-2484014e
             cmd: caffeinate -dims -t $(( <minutes> * 60 ))
             desc: "Stops your Mac sleeping for a set time."
             args:
@@ -98,18 +112,22 @@ sections:
                 default: "60"
                 pattern: "[0-9]+"
           - name: Sleep now
+            id: macos-c0426ad9
             cmd: pmset sleepnow
             desc: "Puts your Mac to sleep straight away."
             risk: warn
       - name: Software
         commands:
           - name: Install all updates
+            id: macos-df2f1166
             cmd: sudo softwareupdate --install --all
             desc: "Installs every available macOS update. Some need a restart."
             risk: warn
           - name: Updates available
+            id: macos-5c678bf1
             cmd: softwareupdate --list
             desc: "Lists the macOS updates you can install."
           - name: Version
+            id: macos-398ade84
             cmd: sw_vers
             desc: "Shows which version of macOS this is."

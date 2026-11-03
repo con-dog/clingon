@@ -290,6 +290,7 @@ func addCommand(sec *yaml.Node, pack, section, name, cmd, desc string) error {
 	}
 	c := &yaml.Node{Kind: yaml.MappingNode}
 	mapSet(c, "name", str(name))
+	mapSet(c, "id", str(newCommandID(section, "", name)))
 	mapSet(c, "cmd", str(cmd))
 	if desc != "" {
 		mapSet(c, "desc", str(desc))

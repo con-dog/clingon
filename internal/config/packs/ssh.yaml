@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
 description: SSH hosts, tunnels, keys and first-time setup
-version: 1.0.0
+version: 1.1.0
 requires: [ssh, ssh-keygen]
 default: true
 
@@ -13,6 +13,7 @@ sections:
       - name: Connect
         commands:
           - name: Connect to host
+            id: ssh-1172d252
             cmd: ssh <host>
             desc: "Opens a shell on a remote machine from your SSH config."
             args:
@@ -21,6 +22,7 @@ sections:
                 desc: "On <host>."
                 placeholder: "my-server"
           - name: Tunnel a port
+            id: ssh-eaaf94fe
             cmd: ssh -N -L <local>:localhost:<remote> <host>
             desc: "Makes a port on a remote machine reachable on your own localhost, until you press Ctrl-C."
             args:
@@ -38,6 +40,7 @@ sections:
       - name: Keys
         commands:
           - name: Copy my key to host
+            id: ssh-ae6ec41a
             cmd: ssh-copy-id <host>
             desc: "Installs your public key on a host so you can log in without a password."
             risk: warn
@@ -47,6 +50,7 @@ sections:
                 desc: "On <host>."
                 placeholder: "my-server"
           - name: New SSH key
+            id: ssh-ad08c095
             cmd: ssh-keygen -t ed25519 -C <comment>
             desc: "Creates a new ed25519 SSH key pair in ~/.ssh."
             args:
@@ -55,6 +59,7 @@ sections:
                 desc: "Labelled \"<comment>\"."
                 placeholder: you@laptop
           - name: Add key to agent
+            id: ssh-c1f0ba33
             cmd: ssh-add --apple-use-keychain <key>
             desc: "Unlocks a key once and saves its passphrase in your keychain, so you aren't asked again."
             requires: [ipconfig]   # macOS
@@ -64,6 +69,7 @@ sections:
                 desc: "Adding <key>."
                 placeholder: "~/.ssh/id_ed25519"
           - name: Copy my public key
+            id: ssh-2966f66e
             cmd: pbcopy < <key>
             desc: "Copies a public key to the clipboard, ready to paste into GitHub or a server's settings."
             requires: [pbcopy]
@@ -73,6 +79,7 @@ sections:
                 desc: "Copying <key>."
                 placeholder: "~/.ssh/id_ed25519"
           - name: Show my public key
+            id: ssh-dbb5dcd7
             cmd: cat <key>
             desc: "Prints a public key, the half you give to GitHub and servers."
             args:
@@ -84,6 +91,7 @@ sections:
       - name: Setup
         commands:
           - name: Add a host
+            id: ssh-8f3d4b58
             cmd: mkdir -p ~/.ssh && printf '\nHost %s\n  HostName %s\n  User %s\n' <alias> <hostname> <user> >> ~/.ssh/config
             desc: "Adds a machine to your SSH config under a short name, which ssh and the host lists here then know."
             risk: warn
@@ -98,5 +106,6 @@ sections:
                 desc: "logging in as <user>."
                 placeholder: ubuntu
           - name: Test GitHub login
+            id: ssh-900f3b23
             cmd: ssh -T git@github.com
             desc: "Checks that GitHub accepts your SSH key. It greets you by username if it does."

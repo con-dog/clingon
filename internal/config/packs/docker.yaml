@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
 description: Docker setup, containers, images and Compose
-version: 1.0.0
+version: 1.1.0
 requires: [docker]
 
 sections:
@@ -13,9 +13,11 @@ sections:
       - name: Containers
         commands:
           - name: Running containers
+            id: docker-f445cf10
             cmd: docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
             desc: "Lists running containers with their image, status and ports."
           - name: Shell into container
+            id: docker-c0d6db09
             cmd: docker exec -it <container> <shell>
             desc: "Opens an interactive shell inside a running container."
             args:
@@ -28,6 +30,7 @@ sections:
                 options: [sh, bash, zsh]
                 default: sh
           - name: Follow logs
+            id: docker-8fe4b94a
             cmd: docker logs -f --tail <lines> <container>
             desc: "Streams a container's logs live as they're written."
             args:
@@ -40,6 +43,7 @@ sections:
                 options: ["100", "1000", all]
                 default: "100"
           - name: Restart container
+            id: docker-9220393f
             cmd: docker restart <container>
             desc: "Stops a container and starts it again, keeping its configuration."
             risk: warn
@@ -49,6 +53,7 @@ sections:
                 desc: "Restarting <container>."
                 placeholder: "web"
           - name: Remove container
+            id: docker-766987f6
             cmd: docker rm <flags> <container>
             desc: "Deletes a container for good."
             risk: danger
@@ -63,6 +68,7 @@ sections:
                   - { value: -f, label: force (stop if running) }
                   - { value: -v, label: also remove anonymous volumes }
           - name: Stop container
+            id: docker-9f5655f1
             cmd: docker stop <container>
             desc: "Stops a running container. It keeps its data and can be started again."
             risk: warn
@@ -72,6 +78,7 @@ sections:
                 desc: "Stopping <container>."
                 placeholder: "web"
           - name: Copy a file out
+            id: docker-31110672
             cmd: docker cp <container>:<path> <dest>
             desc: "Copies a file or folder out of a container. Anything already at the destination is replaced."
             risk: warn
@@ -89,6 +96,7 @@ sections:
                 desc: "to <dest>."
                 default: .
           - name: Copy a file in
+            id: docker-dd5bda07
             cmd: docker cp <file> <container>:<path>
             desc: "Copies a file into a container. Anything already at that path is replaced."
             risk: warn
@@ -106,6 +114,7 @@ sections:
                 desc: "at <path>."
                 placeholder: /tmp/
           - name: Inspect container
+            id: docker-9aa77780
             cmd: docker inspect <container>
             desc: "Shows everything Docker knows about a container: its config, mounts, network and state."
             args:
@@ -114,12 +123,14 @@ sections:
                 desc: "For <container>."
                 placeholder: "web"
           - name: Container stats
+            id: docker-1c682463
             cmd: docker stats --no-stream
             desc: "Shows each running container's CPU, memory, network and disk use right now."
 
       - name: Images
         commands:
           - name: Run image
+            id: docker-14d24cbf
             cmd: docker run --rm -it <flags> <image> <command>
             desc: "Starts a throwaway container from an image and drops you into it. It's deleted when you exit."
             args:
@@ -138,6 +149,7 @@ sections:
                 optional: true
                 placeholder: e.g. sh
           - name: Build image
+            id: docker-03ff7d92
             cmd: docker build -t <tag> .
             when: [./Dockerfile]
             desc: "Builds an image from the Dockerfile in this folder."
@@ -147,6 +159,7 @@ sections:
                 desc: "Tagged <tag>."
                 placeholder: myapp:dev
           - name: Prune unused data
+            id: docker-8199229e
             cmd: docker system prune -af <volumes>
             desc: "Deletes every stopped container, unused image, network and build cache to free disk space."
             risk: danger
@@ -156,9 +169,11 @@ sections:
                 options:
                   - { value: --volumes, label: anonymous volumes too }
           - name: Disk usage
+            id: docker-73e7b349
             cmd: docker system df
             desc: "Shows how much disk space images, containers, volumes and build cache take up."
           - name: Pull image
+            id: docker-5943629d
             cmd: docker pull <image>
             desc: "Downloads an image from its registry."
             args:
@@ -167,6 +182,7 @@ sections:
                 desc: "Pulling <image>."
                 placeholder: postgres:17
           - name: List images
+            id: docker-532c5486
             cmd: docker images
             desc: "Lists the images on this machine with their tags and sizes."
 
@@ -174,6 +190,7 @@ sections:
         when: [compose.yaml, compose.yml, docker-compose.yml, docker-compose.yaml]
         commands:
           - name: Up (detached)
+            id: docker-76474a3e
             cmd: docker compose up -d <services>
             desc: "Starts your Compose services in the background, building or pulling images if needed."
             risk: warn
@@ -183,6 +200,7 @@ sections:
                 optional: true
                 placeholder: "web db, or enter for all"
           - name: Follow service logs
+            id: docker-e25a223a
             cmd: docker compose logs -f --tail 100 <service>
             desc: "Streams one Compose service's logs live, starting from the last 100 lines."
             args:
@@ -191,6 +209,7 @@ sections:
                 desc: "From <service>."
                 placeholder: "web"
           - name: Down
+            id: docker-b5ae3664
             cmd: docker compose down <flags>
             desc: "Stops your Compose services and removes their containers and networks."
             risk: warn
@@ -200,13 +219,16 @@ sections:
                 options:
                   - { value: --remove-orphans, label: remove orphan containers }
           - name: Down and delete volumes
+            id: docker-549c2f37
             cmd: docker compose down -v
             desc: "Stops your Compose services and deletes their containers, networks and volumes: any data in those volumes, like a database's, is gone."
             risk: danger
           - name: Status
+            id: docker-61b52909
             cmd: docker compose ps
             desc: "Shows your Compose services' containers and whether they're running."
           - name: Rebuild and start
+            id: docker-c123c4ea
             cmd: docker compose up -d --build <services>
             desc: "Rebuilds your Compose images from source, then starts the services in the background."
             risk: warn
@@ -216,6 +238,7 @@ sections:
                 optional: true
                 placeholder: "web db, or enter for all"
           - name: Restart a service
+            id: docker-9dd11a14
             cmd: docker compose restart <service>
             desc: "Restarts one Compose service's containers without rebuilding them."
             risk: warn
@@ -225,6 +248,7 @@ sections:
                 desc: "Restarting <service>."
                 placeholder: "web"
           - name: Shell into a service
+            id: docker-470f1738
             cmd: docker compose exec <service> sh
             desc: "Opens a shell inside a running Compose service."
             args:
@@ -236,9 +260,11 @@ sections:
       - name: Setup
         commands:
           - name: Check it works
+            id: docker-4e39bac6
             cmd: docker run --rm hello-world
             desc: "Runs Docker's tiny test image, which prints a message if everything is set up."
           - name: Log in to a registry
+            id: docker-18c7e9ec
             cmd: docker login <registry>
             desc: "Signs you in to a registry so you can push images and pull private ones."
             args:
@@ -247,6 +273,7 @@ sections:
                 optional: true
                 placeholder: "ghcr.io, or enter for Docker Hub"
           - name: Start Docker
+            id: docker-a36b728a
             cmd: open -a Docker
             desc: "Starts Docker Desktop. docker commands work once its whale icon stops animating."
             requires: [open, ipconfig]   # macOS
@@ -254,6 +281,7 @@ sections:
       - name: Networks
         commands:
           - name: Inspect a network
+            id: docker-25d1e9e0
             cmd: docker network inspect <network>
             desc: "Shows a network's settings and which containers are on it."
             args:
@@ -262,9 +290,11 @@ sections:
                 desc: "For <network>."
                 placeholder: "my-network"
           - name: List networks
+            id: docker-89ae7820
             cmd: docker network ls
             desc: "Lists Docker's networks."
           - name: Remove unused networks
+            id: docker-ae88048d
             cmd: docker network prune -f
             desc: "Deletes every network no container is using."
             risk: warn
@@ -272,9 +302,11 @@ sections:
       - name: Volumes
         commands:
           - name: List volumes
+            id: docker-53f23a4d
             cmd: docker volume ls
             desc: "Lists Docker's volumes, where containers keep data that outlives them."
           - name: Remove a volume
+            id: docker-58423803
             cmd: docker volume rm <volume>
             desc: "Deletes a volume and every file in it."
             risk: danger
@@ -284,10 +316,12 @@ sections:
                 desc: "Deleting <volume>."
                 placeholder: "my-volume"
           - name: Remove unused volumes
+            id: docker-a5f841fb
             cmd: docker volume prune -af
             desc: "Deletes every volume no container is using, and every file in them."
             risk: danger
           - name: Volume details
+            id: docker-f9593d15
             cmd: docker volume inspect <volume>
             desc: "Shows where a volume lives and how it was made."
             args:

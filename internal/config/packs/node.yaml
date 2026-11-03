@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
 description: npm, pnpm, yarn and bun, each where its lockfile is
-version: 1.0.0
+version: 1.1.0
 requires: [node]
 
 # One group per package manager. Each only shows if you have that manager,
@@ -17,6 +17,7 @@ sections:
         when: [bun.lock, bun.lockb]
         commands:
           - name: Add a package
+            id: node-86fdc0ab
             cmd: bun add <flags> <package>
             desc: "Adds a package to package.json and installs it."
             args:
@@ -27,15 +28,19 @@ sections:
                 options:
                   - { value: -d, label: dev dependency }
           - name: Clean install (CI)
+            id: node-d5e92305
             cmd: bun install --frozen-lockfile
             desc: "Installs exactly what bun.lock lists, and fails if package.json has moved on from it. Best for CI."
           - name: Install dependencies
+            id: node-03c81b32
             cmd: bun install
             desc: "Installs every dependency in package.json."
           - name: Outdated packages
+            id: node-b55f069e
             cmd: bun outdated
             desc: "Lists dependencies with newer versions available."
           - name: Remove a package
+            id: node-124adb11
             cmd: bun remove <package>
             desc: "Takes a dependency out of package.json and node_modules."
             risk: warn
@@ -45,6 +50,7 @@ sections:
                 desc: "Removing <package>."
                 placeholder: "lodash"
           - name: Run a script
+            id: node-91ca062a
             cmd: bun run <script>
             desc: "Runs one of the scripts in package.json."
             args:
@@ -52,15 +58,18 @@ sections:
                 quote: true
                 placeholder: "test"
           - name: Run tests
+            id: node-38c7d061
             cmd: bun test
             desc: "Runs the tests with bun's test runner."
           - name: Update dependencies
+            id: node-e22b4bfc
             cmd: bun update
             desc: "Updates dependencies to the newest versions package.json allows."
             risk: warn
       - name: New project
         commands:
           - name: Run a package without installing
+            id: node-9d51752b
             cmd: npx <package>
             desc: "Downloads a package's command if needed and runs it."
             requires: [npx]
@@ -69,14 +78,17 @@ sections:
                 desc: "Running <package>."
                 placeholder: create-vite@latest
           - name: Start a bun project
+            id: node-eeda89e7
             cmd: bun init -y
             desc: "Creates package.json, tsconfig.json and an index.ts here, set up for bun."
             requires: [bun]
           - name: Start a pnpm project
+            id: node-45d3b948
             cmd: pnpm init && pnpm install
             desc: "Creates a package.json and lockfile here, for pnpm."
             requires: [pnpm]
           - name: Start an npm project
+            id: node-2d52fbf5
             cmd: npm init -y && npm install
             desc: "Creates a package.json and lockfile here, with the usual defaults."
             requires: [npm]
@@ -85,6 +97,7 @@ sections:
         when: [package-lock.json, npm-shrinkwrap.json]
         commands:
           - name: Add a package
+            id: node-b923d3bf
             cmd: npm install <flags> <package>
             desc: "Adds a package to package.json and installs it."
             args:
@@ -95,20 +108,25 @@ sections:
                 options:
                   - { value: -D, label: dev dependency }
           - name: Clean install (CI)
+            id: node-767206f2
             cmd: npm ci
             desc: "Deletes node_modules and installs exactly what package-lock.json lists. Best for CI and clean checkouts."
             risk: warn
           - name: Clean reinstall
+            id: node-f655ba84
             cmd: rm -rf node_modules && npm install
             desc: "Deletes node_modules and installs every dependency again from scratch."
             risk: warn
           - name: Install dependencies
+            id: node-f076916a
             cmd: npm install
             desc: "Installs every dependency in package.json."
           - name: Outdated packages
+            id: node-690e4eea
             cmd: npm outdated
             desc: "Lists dependencies with newer versions available."
           - name: Remove a package
+            id: node-93ff0469
             cmd: npm uninstall <package>
             desc: "Takes a dependency out of package.json and node_modules."
             risk: warn
@@ -118,6 +136,7 @@ sections:
                 desc: "Removing <package>."
                 placeholder: "lodash"
           - name: Run a script
+            id: node-939f6622
             cmd: npm run <script>
             desc: "Runs one of the scripts in package.json."
             args:
@@ -125,15 +144,19 @@ sections:
                 quote: true
                 placeholder: "test"
           - name: Run tests
+            id: node-8cab96ab
             cmd: npm test
             desc: "Runs the project's test script."
           - name: Security audit
+            id: node-6adb17c1
             cmd: npm audit
             desc: "Checks your dependencies for known security problems."
           - name: Top-level dependencies
+            id: node-d7fb5474
             cmd: npm ls --depth=0
             desc: "Lists the project's direct dependencies and the versions installed."
           - name: Update dependencies
+            id: node-d7160988
             cmd: npm update
             desc: "Updates dependencies to the newest versions package.json allows."
             risk: warn
@@ -142,6 +165,7 @@ sections:
         when: [pnpm-lock.yaml]
         commands:
           - name: Add a package
+            id: node-2a8d9c88
             cmd: pnpm add <flags> <package>
             desc: "Adds a package to package.json and installs it."
             args:
@@ -152,15 +176,19 @@ sections:
                 options:
                   - { value: -D, label: dev dependency }
           - name: Clean install (CI)
+            id: node-bfd7eb10
             cmd: pnpm install --frozen-lockfile
             desc: "Installs exactly what pnpm-lock.yaml lists, and fails if package.json has moved on from it. Best for CI."
           - name: Install dependencies
+            id: node-ac489ee7
             cmd: pnpm install
             desc: "Installs every dependency in package.json."
           - name: Outdated packages
+            id: node-b96dbcbb
             cmd: pnpm outdated
             desc: "Lists dependencies with newer versions available."
           - name: Remove a package
+            id: node-d546d697
             cmd: pnpm remove <package>
             desc: "Takes a dependency out of package.json and node_modules."
             risk: warn
@@ -170,6 +198,7 @@ sections:
                 desc: "Removing <package>."
                 placeholder: "lodash"
           - name: Run a package without installing
+            id: node-782add24
             cmd: pnpm dlx <package>
             desc: "Downloads a package's command if needed and runs it."
             args:
@@ -177,6 +206,7 @@ sections:
                 desc: "Running <package>."
                 placeholder: create-vite@latest
           - name: Run a script
+            id: node-5ada0695
             cmd: pnpm run <script>
             desc: "Runs one of the scripts in package.json."
             args:
@@ -184,15 +214,19 @@ sections:
                 quote: true
                 placeholder: "test"
           - name: Run tests
+            id: node-89a5311a
             cmd: pnpm test
             desc: "Runs the project's test script."
           - name: Security audit
+            id: node-0f11b772
             cmd: pnpm audit
             desc: "Checks your dependencies for known security problems."
           - name: Top-level dependencies
+            id: node-c2510c94
             cmd: pnpm list --depth=0
             desc: "Lists the project's direct dependencies and the versions installed."
           - name: Update dependencies
+            id: node-a28ac6f4
             cmd: pnpm update
             desc: "Updates dependencies to the newest versions package.json allows."
             risk: warn
@@ -201,6 +235,7 @@ sections:
         when: [yarn.lock]
         commands:
           - name: Add a package
+            id: node-f8659029
             cmd: yarn add <flags> <package>
             desc: "Adds a package to package.json and installs it."
             args:
@@ -211,9 +246,11 @@ sections:
                 options:
                   - { value: -D, label: dev dependency }
           - name: Install dependencies
+            id: node-501f28ff
             cmd: yarn install
             desc: "Installs every dependency in package.json."
           - name: Remove a package
+            id: node-9cb13eea
             cmd: yarn remove <package>
             desc: "Takes a dependency out of package.json and node_modules."
             risk: warn
@@ -223,6 +260,7 @@ sections:
                 desc: "Removing <package>."
                 placeholder: "lodash"
           - name: Run a script
+            id: node-5f299ef4
             cmd: yarn run <script>
             desc: "Runs one of the scripts in package.json."
             args:
@@ -230,9 +268,11 @@ sections:
                 quote: true
                 placeholder: "test"
           - name: Run tests
+            id: node-502b2547
             cmd: yarn test
             desc: "Runs the project's test script."
           - name: Why is this installed
+            id: node-5b2443be
             cmd: yarn why <package>
             desc: "Shows which of your dependencies pulls a package in."
             args:

@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
 description: Virtualenvs, pip, pytest and uv
-version: 1.0.0
+version: 1.1.0
 requires: [python3]
 
 sections:
@@ -12,13 +12,16 @@ sections:
       - name: pip & venv
         commands:
           - name: Activate virtualenv
+            id: python-2ba82614
             cmd: . .venv/bin/activate
             when: [./.venv]
             desc: "Switches this shell to the project's .venv, so python and pip use it."
           - name: Deactivate virtualenv
+            id: python-d0e7e1e0
             cmd: deactivate
             desc: "Switches this shell back to your system Python."
           - name: Install a package
+            id: python-23050cca
             cmd: python3 -m pip install <package>
             desc: "Installs a package into the active Python. Outside a virtualenv, Homebrew's Python refuses."
             args:
@@ -27,6 +30,7 @@ sections:
                 desc: "Installing <package>."
                 placeholder: requests
           - name: Install requirements
+            id: python-45a5e9c8
             cmd: python3 -m pip install -r <file>
             when: ['./requirements*.txt']
             desc: "Installs every package a requirements file lists. Outside a virtualenv, Homebrew's Python refuses."
@@ -36,21 +40,26 @@ sections:
                 desc: "From <file>."
                 placeholder: "path/to/file"
           - name: Make a virtualenv
+            id: python-ecdd8ad4
             cmd: python3 -m venv .venv && . .venv/bin/activate
             desc: "Creates a private Python environment in .venv and switches this shell to it."
           - name: Outdated packages
+            id: python-611441ce
             cmd: python3 -m pip list --outdated
             desc: "Lists installed packages that have newer versions available."
           - name: Save requirements
+            id: python-57b8f27f
             cmd: python3 -m pip freeze > requirements.txt
             desc: "Writes every installed package and its exact version to requirements.txt, replacing what's there."
             risk: warn
       - name: Run
         commands:
           - name: Python shell
+            id: python-facce6e4
             cmd: python3
             desc: "Starts an interactive Python prompt. Ctrl-D leaves it."
           - name: Run a script
+            id: python-9937aeab
             cmd: python3 <script>
             desc: "Runs a Python file."
             args:
@@ -59,6 +68,7 @@ sections:
                 desc: "Running <script>."
                 placeholder: "test"
           - name: Run tests
+            id: python-c75a901c
             cmd: python3 -m pytest <flags>
             desc: "Runs the project's tests with pytest."
             args:
@@ -72,6 +82,7 @@ sections:
         requires: [uv]
         commands:
           - name: Add a package
+            id: python-ca6f5405
             cmd: uv add <package>
             when: [pyproject.toml]
             desc: "Adds a dependency to pyproject.toml and installs it."
@@ -81,6 +92,7 @@ sections:
                 desc: "Adding <package>."
                 placeholder: requests
           - name: Run in the project
+            id: python-6e44614d
             cmd: uv run <command>
             when: [pyproject.toml]
             desc: "Runs a command inside the project's environment, syncing it first."
@@ -89,9 +101,11 @@ sections:
                 desc: "Running <command>."
                 placeholder: python main.py
           - name: Start a project
+            id: python-030aad5a
             cmd: uv init
             desc: "Creates a pyproject.toml and starter files in this folder."
           - name: Sync environment
+            id: python-8814d042
             cmd: uv sync
             when: [pyproject.toml]
             desc: "Makes .venv match the lockfile exactly, installing and removing packages as needed."

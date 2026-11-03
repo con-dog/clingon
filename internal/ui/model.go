@@ -39,6 +39,10 @@ type Options struct {
 	// LastFailed says whether the command that just finished failed, so a
 	// recipe stops there. Nil: it's taken to have worked.
 	LastFailed func() bool
+	// Recipes lists the saved recipes, and Self is clingon as the shell runs it,
+	// which is what saves one. Recipes nil: recipes aren't saved.
+	Recipes func() []config.Recipe
+	Self    string
 	// Shell says what the shell is doing: running something, scrolled back,
 	// or with something typed at its prompt. ClearShell throws away what's
 	// typed; FocusShell moves focus there. All nil in print mode.
@@ -94,9 +98,11 @@ const (
 	modeBrowse mode = iota
 	modeFill
 	modeConfirm
-	modeTrust // asking whether to trust a project pack
-	modeTyped // the shell has something typed: go there, or clear it and run
-	modeQuit  // jobs would end with the session: stay, or quit
+	modeTrust    // asking whether to trust a project pack
+	modeTyped    // the shell has something typed: go there, or clear it and run
+	modeQuit     // jobs would end with the session: stay, or quit
+	modeSave     // about to run the recipe: save it first?
+	modeSaveName // what to save it as
 )
 
 // projectRef is the top-level row for a project pack that isn't in use:
@@ -204,6 +210,7 @@ type Model struct {
 	project   *config.Project             // the project pack for the shell's folder, if any
 	word      textinput.Model             // where the confirm word is typed
 	wrong     bool                        // the confirm word typed didn't match
+	nameWhy   string                      // why the recipe's name was refused
 	help      bool                        // the keys screen is showing
 	blurred   bool                        // focus is in the shell: the cursor's row is drawn quietly
 	news      *Headline                   // the top level's status bar
@@ -422,6 +429,12 @@ func (m *Model) showSection(s *config.Section) {
 		for _, st := range m.recipe {
 			c := st.ref.cmd
 			items = append(items, item{title: c.Name, indent: true, where: st.ref.section, keywords: c.Cmd, risk: c.Risk, disabled: m.unavailable(c) != "", ref: st.ref})
+		}
+		if saved := m.savedRecipes(); len(saved) > 0 {
+			items = heading(items, "Saved recipes")
+			for _, r := range saved {
+				items = append(items, item{title: r.Name, ref: savedRecipeRef{r}})
+			}
 		}
 	}
 	m.section = s
@@ -705,6 +718,10 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.typedKey(msg)
 		case modeQuit:
 			return m, m.quitKey(msg)
+		case modeSave:
+			return m, m.saveKey(msg)
+		case modeSaveName:
+			return m, m.saveNameKey(msg)
 		case modeBrowse:
 			return m, m.browseKey(msg)
 		case modeFill:
@@ -720,7 +737,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.job.pick.filter, cmd = m.job.pick.filter.Update(msg)
 	case m.mode == modeFill:
 		m.job.input, cmd = m.job.input.Update(msg)
-	case m.mode == modeConfirm && m.pending != nil && m.pending.risk == config.RiskDanger && !m.pending.typed:
+	case m.mode == modeSaveName, m.mode == modeConfirm && m.pending != nil && m.pending.risk == config.RiskDanger && !m.pending.typed:
 		m.word, cmd = m.word.Update(msg)
 	default:
 		m.list.filter, cmd = m.list.filter.Update(msg)
@@ -909,7 +926,7 @@ const RecipesSection = "Recipes"
 
 // recipeStep is a command with a number.
 type recipeStep struct {
-	key string // its recipeKey
+	key string // its ID
 	ref cmdRef
 }
 
@@ -938,11 +955,23 @@ func (m *Model) recipesListed(s *config.Section) *config.Section {
 // refindRecipe points the recipe at a reloaded config, whose commands are new
 // copies. A command that's gone leaves the recipe, and the rest close up.
 func (m *Model) refindRecipe() {
+	now := m.commandsByID()
+	kept := m.recipe[:0]
+	for _, st := range m.recipe {
+		if r, ok := now[st.key]; ok {
+			kept = append(kept, recipeStep{st.key, r})
+		}
+	}
+	m.recipe = kept
+}
+
+// commandsByID is every command there is to put in a recipe.
+func (m *Model) commandsByID() map[string]cmdRef {
 	now := map[string]cmdRef{}
 	add := func(s *config.Section) {
 		for _, c := range s.All() {
 			r := cmdRef{s.Name, s, c}
-			now[recipeKey(r)] = r
+			now[r.id()] = r
 		}
 	}
 	for _, s := range m.builtin {
@@ -956,13 +985,7 @@ func (m *Model) refindRecipe() {
 			add(&m.project.Config.Sections[i])
 		}
 	}
-	kept := m.recipe[:0]
-	for _, st := range m.recipe {
-		if r, ok := now[st.key]; ok {
-			kept = append(kept, recipeStep{st.key, r})
-		}
-	}
-	m.recipe = kept
+	return now
 }
 
 // setStep makes a command step n, and the chain ends there: every later step
@@ -975,13 +998,16 @@ func (m *Model) setStep(r cmdRef, n int) {
 		m.recipe = slices.Delete(m.recipe, had-1, had)
 	}
 	if had != n {
-		m.recipe = append(m.recipe[:n-1], recipeStep{recipeKey(r), r})
+		m.recipe = append(m.recipe[:n-1], recipeStep{r.id(), r})
 	}
 }
 
 // stepOf is a command's step in the recipe, or 0.
 func (m *Model) stepOf(r cmdRef) int {
-	key := recipeKey(r)
+	if len(m.recipe) == 0 { // the usual case, asked for every row drawn
+		return 0
+	}
+	key := r.id()
 	for i, s := range m.recipe {
 		if s.key == key {
 			return i + 1
@@ -1031,9 +1057,9 @@ func (m *Model) recipeBar(w int) string {
 	return onBg(" "+ansi.Truncate(line, max(w-2, 0), "…"), raised, w)
 }
 
-// recipeKey names a command: a reload replaces the config it points into, so
-// its place in the recipe can't hang on the pointer.
-func recipeKey(r cmdRef) string { return r.section + "\x00" + r.cmd.Name + "\x00" + r.cmd.Cmd }
+// id names a command: a reload replaces the config it points into, so its place
+// in the recipe can't hang on the pointer.
+func (r cmdRef) id() string { return r.sec.CommandID(r.cmd) }
 
 // open acts on the highlighted row.
 func (m *Model) open() tea.Cmd {
@@ -1066,14 +1092,126 @@ func (m *Model) open() tea.Cmd {
 			m.hint = "The recipe is running: x stops it"
 			return nil
 		}
-		m.run = &recipeRun{}
-		return m.runStep()
+		if m.opt.Recipes != nil && !m.recipeSaved() {
+			m.mode, m.yes = modeSave, false
+			return nil
+		}
+		return m.startRecipe()
+	case savedRecipeRef:
+		if m.run != nil {
+			m.hint = "The recipe is running: x stops it"
+			return nil
+		}
+		now := m.commandsByID()
+		var steps []recipeStep
+		for i, id := range r.Steps {
+			c, ok := now[id]
+			if !ok {
+				m.errMsg = fmt.Sprintf("✗ %s can't run: the command for step %d is gone (%s)", r.Name, i+1, id)
+				return nil
+			}
+			steps = append(steps, recipeStep{id, c})
+		}
+		m.recipe = steps
+		m.showSection(m.section)
+		return m.startRecipe()
 	}
 	return nil
 }
 
 // runRecipeRef is the row that runs the recipe.
 type runRecipeRef struct{}
+
+// savedRecipeRef is a saved recipe's row: it becomes the recipe, and runs.
+type savedRecipeRef struct{ config.Recipe }
+
+func (m *Model) startRecipe() tea.Cmd {
+	m.run = &recipeRun{}
+	return m.runStep()
+}
+
+func (m *Model) savedRecipes() []config.Recipe {
+	if m.opt.Recipes == nil {
+		return nil
+	}
+	return m.opt.Recipes()
+}
+
+func (m *Model) recipeIDs() []string {
+	ids := make([]string, len(m.recipe))
+	for i, st := range m.recipe {
+		ids[i] = st.key
+	}
+	return ids
+}
+
+// recipeSaved says whether these same steps are saved already: then there's
+// nothing to ask, however many times it's run.
+func (m *Model) recipeSaved() bool {
+	ids := m.recipeIDs()
+	return slices.ContainsFunc(m.savedRecipes(), func(r config.Recipe) bool { return slices.Equal(r.Steps, ids) })
+}
+
+// saveKey handles "save this recipe?": No (first) runs it, Yes asks for a name.
+func (m *Model) saveKey(msg tea.KeyPressMsg) tea.Cmd {
+	switch keyName(msg) {
+	case "up", "down", "ctrl+p", "ctrl+n", "ctrl+k", "ctrl+j", "tab":
+		m.yes = !m.yes
+		return nil
+	case "esc", "left":
+		m.mode = modeBrowse
+		return nil
+	case "enter", "right":
+		if m.yes {
+			return m.askName()
+		}
+	case "y", "Y":
+		return m.askName()
+	case "n", "N":
+	default:
+		return nil
+	}
+	m.mode = modeBrowse
+	return m.startRecipe()
+}
+
+func (m *Model) askName() tea.Cmd {
+	m.mode, m.nameWhy = modeSaveName, ""
+	m.word = newInput(accentStyle, "My AWS ECS flow")
+	return m.word.Focus()
+}
+
+// saveNameKey takes the recipe's name. Saving is a command like any other, there
+// to see in the shell, and it goes first: the recipe's steps follow when it's done.
+func (m *Model) saveNameKey(msg tea.KeyPressMsg) tea.Cmd {
+	switch keyName(msg) {
+	case "esc", "left":
+		m.mode, m.yes = modeSave, true
+		return nil
+	case "enter", "right":
+		name := recipeName(m.word.Value())
+		if name == "" {
+			return nil // the box's placeholder says what goes there
+		}
+		if config.HasRecipe(m.savedRecipes(), name) {
+			m.nameWhy = "You already have a recipe called that."
+			return nil
+		}
+		cmd := m.saveCommand(shellQuote(name))
+		m.run = &recipeRun{saving: true}
+		return m.finish(pending{section: m.section.Name, sec: m.section, name: "Save recipe", cmd: cmd, shown: cmd})
+	}
+	m.nameWhy = ""
+	return typeInto(&m.word, msg)
+}
+
+// recipeName tidies what was typed (or pasted) into one line.
+func recipeName(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// saveCommand is the command that saves the recipe under name, already quoted.
+func (m *Model) saveCommand(name string) string {
+	return m.opt.Self + " recipe save " + name + " " + strings.Join(m.recipeIDs(), " ")
+}
 
 // startCommand asks for what a command needs, if anything, and runs it.
 func (m *Model) startCommand(r cmdRef) tea.Cmd {
@@ -1091,6 +1229,8 @@ type recipeRun struct {
 	at   int  // the step going now, an index into the recipe
 	sent bool // it's in the shell; before that it's still being filled in or confirmed
 	seq  int  // the wait for it to finish
+	// saving: what's in the shell is the save, with step 1 still to come.
+	saving bool
 }
 
 // runStep starts the step the run is at, like any other command: blanks are
@@ -1127,6 +1267,16 @@ func (m *Model) stepDone(ok bool) tea.Cmd {
 		why = "the shell is still waiting for the rest of it"
 	case m.opt.LastFailed != nil && m.opt.LastFailed():
 		why = "it failed"
+	}
+	if m.run.saving {
+		m.run.saving = false
+		if why != "" {
+			m.errMsg = "✗ Recipe not saved, so not run: " + why
+			m.run = nil
+			return nil
+		}
+		m.refresh() // it's on the list now
+		return m.runStep()
 	}
 	if why != "" {
 		m.errMsg = fmt.Sprintf("✗ Recipe stopped at step %d, %s: %s · x clears it", n, name, why)
@@ -1737,6 +1887,10 @@ func (m *Model) view() string {
 		body = m.typedView(w)
 	case m.mode == modeQuit:
 		body = m.quitView(w)
+	case m.mode == modeSave:
+		body = m.saveView(w)
+	case m.mode == modeSaveName:
+		body = m.saveNameView(w)
 	case m.mode == modeBrowse:
 		body = m.browseView(w, avail)
 	case m.mode == modeFill:
@@ -1862,6 +2016,12 @@ func (m *Model) details() (cmd, desc string) {
 		j, a := m.job, m.arg()
 		cmd = m.preview(j.ref.cmd, j.vals, j.step, j.current(a))
 		return cmd, j.describe()
+	case modeSaveName:
+		name := "<name>"
+		if v := recipeName(m.word.Value()); v != "" {
+			name = shellQuote(v)
+		}
+		return highlight(m.saveCommand(name)), "Saves the recipe under this name, then runs it."
 	}
 	it := m.list.selected()
 	if it == nil {
@@ -1875,6 +2035,8 @@ func (m *Model) details() (cmd, desc string) {
 		return m.preview(r.cmd, nil, -1, ""), describe(r.cmd, nil, nil, -1, "", "")
 	case runRecipeRef:
 		return "", "Runs " + plural(len(m.recipe), "step") + " in order, asking for any blanks as each is reached. Stops if one fails."
+	case savedRecipeRef:
+		return strings.Join(r.Steps, " "), "Makes this the current recipe and runs its " + plural(len(r.Steps), "step") + ", asking for any blanks as each is reached. Stops if one fails."
 	}
 	return "", ""
 }
@@ -2113,8 +2275,10 @@ func (m *Model) footer(w int) string {
 		if p := m.pending; p.risk == config.RiskDanger && !p.typed {
 			keys = []string{"type the code", "enter go on", "← back"}
 		}
-	case modeTrust, modeTyped, modeQuit:
+	case modeTrust, modeTyped, modeQuit, modeSave:
 		keys = []string{"↑↓ choose", "enter select", "y yes", "n no"}
+	case modeSaveName:
+		keys = []string{"→ save and run", "← back"}
 	}
 	for i, k := range keys { // the key in pink, what it does in grey
 		key, what, _ := strings.Cut(k, " ")
@@ -2247,7 +2411,7 @@ func (m *Model) inputs() []*textinput.Model {
 		ins = append(ins, &m.job.pick.filter)
 	case m.mode == modeFill:
 		ins = append(ins, &m.job.input)
-	case m.mode == modeConfirm && m.pending != nil && m.pending.risk == config.RiskDanger && !m.pending.typed:
+	case m.mode == modeSaveName, m.mode == modeConfirm && m.pending != nil && m.pending.risk == config.RiskDanger && !m.pending.typed:
 		ins = append(ins, &m.word)
 	}
 	return ins
@@ -2337,6 +2501,27 @@ func (m *Model) commandHeader(name string, w int) string {
 	}
 	name = ansi.Truncate(strings.ToUpper(name), max(w-ansi.StringWidth(step), 1), "…")
 	return headerStyle.Render(name) + dimStyle.Render(step)
+}
+
+// saveView asks whether to save the recipe that's about to run.
+func (m *Model) saveView(w int) string {
+	row := func(on bool, s string) string {
+		if on {
+			return cursorStyle.Render("› " + s)
+		}
+		return "  " + s
+	}
+	return m.commandHeader("Run recipe", w) + "\n\n" + cursorStyle.Render("Save this recipe first?") + "\n\n" +
+		row(!m.yes, "No, just run it") + "\n" + row(m.yes, "Yes, save it and run it")
+}
+
+// saveNameView asks what to call it.
+func (m *Model) saveNameView(w int) string {
+	lines := []string{m.commandHeader("Save recipe", w), "", cursorStyle.Render("Name this recipe"), inputView(&m.word, w)}
+	if m.nameWhy != "" {
+		lines = append(lines, errStyle.Render(ansi.Wrap(m.nameWhy, w, "")))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // noticeView replaces the list while a notice is up.
