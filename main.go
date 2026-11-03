@@ -237,8 +237,9 @@ func menu(args []string) error {
 		Dir:     func() string { return c.Path(*pane) },
 		// After a command from the menu finishes, focus comes back here,
 		// unless the user has moved elsewhere themselves.
-		WaitIdle:  func() bool { return c.WaitIdle(*pane) },
-		FocusMenu: func() { c.FocusIfActive(*pane, os.Getenv("TMUX_PANE")) },
+		WaitIdle:   func() bool { return c.WaitIdle(*pane) },
+		LastFailed: func() bool { return c.LastFailed(*pane) },
+		FocusMenu:  func() { c.FocusIfActive(*pane, os.Getenv("TMUX_PANE")) },
 		Shell: func() ui.ShellState {
 			st := c.State(*pane)
 			return ui.ShellState{Busy: st.Busy, Scrolling: st.Scrolling, Typed: st.Typed, Starting: st.Starting}

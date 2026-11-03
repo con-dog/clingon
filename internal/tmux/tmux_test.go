@@ -339,6 +339,35 @@ func TestStateSeesTypingScrollingAndUnfinished(t *testing.T) {
 	waitFor(t, "scrolling to stop", func() bool { return !c.State(pane).Scrolling })
 }
 
+func TestLastFailedReadsThePromptsColour(t *testing.T) {
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skip("zsh isn't installed")
+	}
+	c, pane := serverWith(t, "env TERM=xterm-256color zsh -f")
+	c.WaitForPrompt(pane, 2*time.Second)
+	// As clingon's prompt does it: a pink mark, red after a failure, on a line
+	// of its own under one that can have anything in it.
+	if err := c.Send(pane, `precmd() { local ok=$?; local m=212; (( ok )) && m=204; PROMPT=$'%F{204}red-text%f\n'"%F{$m}❯%f " }`); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitIdle(pane)
+	run := func(cmd string, want bool) {
+		t.Helper()
+		if err := c.Send(pane, cmd); err != nil {
+			t.Fatal(err)
+		}
+		if !c.WaitIdle(pane) {
+			t.Fatal("WaitIdle should know when it's done")
+		}
+		if got := c.LastFailed(pane); got != want {
+			t.Errorf("after %q: failed = %v, want %v", cmd, got, want)
+		}
+	}
+	run("true", false)
+	run("false", true)
+	run("true", false)
+}
+
 func TestJobNames(t *testing.T) {
 	ps := "  10 Ss+  -zsh\n  11 S    sleep\n  12 T    /opt/homebrew/bin/vim\n  13 S    sleep\n  14 Z    gone\n"
 	if got, want := jobNames(ps, "10"), []string{"sleep", "vim"}; !slices.Equal(got, want) {

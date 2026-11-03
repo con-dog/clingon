@@ -531,6 +531,28 @@ func (c *Client) typedOn(left string) string {
 	return "an unfinished command"
 }
 
+// failMark is how the prompt's mark starts after a failed command: red, 204
+// in clingon's palette (see the prompts in internal/shell).
+const failMark = "38;5;204"
+
+// LastFailed says whether the command that just finished failed, going by the
+// colour of the prompt at the cursor. The shell says so nowhere else that
+// wouldn't mean changing what's sent to it, and so what's in its history.
+func (c *Client) LastFailed(pane string) bool {
+	out, err := c.run("display-message", "-p", "-t", pane, "#{cursor_y}", ";", "capture-pane", "-p", "-e", "-t", pane)
+	if err != nil {
+		return false
+	}
+	head, screen, _ := strings.Cut(out, "\n")
+	y, err := strconv.Atoi(head)
+	lines := strings.Split(screen, "\n")
+	if err != nil || y >= len(lines) {
+		return false
+	}
+	before, _, ok := strings.Cut(lines[y], promptMark)
+	return ok && strings.Contains(before, failMark)
+}
+
 // Clear throws away what's typed at the shell's prompt (Ctrl-C, which also
 // ends an unfinished multi-line command) and waits for the fresh prompt:
 // keys sent straight after Ctrl-C can be dropped with the line it cancels.

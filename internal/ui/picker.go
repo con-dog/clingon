@@ -28,6 +28,7 @@ type item struct {
 	where    string // a search result's section › group, drawn faint after it
 	disabled bool   // drawn greyed out; can be highlighted but not opened
 	missing  string // a section's tools that aren't installed: drawn dim, naming them, but it opens as usual
+	indent   bool   // sits under the row above it
 	ref      any
 	idx      int
 }
@@ -382,6 +383,9 @@ func (p *picker) row(it item, active bool, width int) string {
 	if active {
 		prefix = cur.Render("▌ ")
 	}
+	if it.indent {
+		prefix += "  "
+	}
 	if p.multi {
 		if p.chosen[it.idx] {
 			prefix += accentStyle.Render("✓ ")
@@ -411,7 +415,7 @@ func (p *picker) row(it item, active bool, width int) string {
 		title = faintStyle.Render(title)
 	case it.risk == config.RiskDanger: // the whole row in red, highlighted or not
 		title = dangerStyle.Render(title)
-	case active:
+	case active, it.accent:
 		title = cur.Render(title)
 	case step > 0: // ties the name to its badge, across the gap
 		title = valueStyle.Render(title)
