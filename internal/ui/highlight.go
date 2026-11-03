@@ -11,7 +11,7 @@ import (
 // values keep their own styles (see preview).
 var (
 	hlProgram  = lipgloss.NewStyle().Bold(true)
-	hlFlag     = lipgloss.NewStyle().Foreground(lipgloss.Color("#af87ff"))
+	hlFlag     = lipgloss.NewStyle().Foreground(soft)
 	hlString   = lipgloss.NewStyle().Foreground(lipgloss.Color("#d7af87"))
 	hlOperator = lipgloss.NewStyle().Foreground(grey)
 )

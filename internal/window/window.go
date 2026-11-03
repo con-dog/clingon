@@ -39,11 +39,12 @@ const (
 
 // ansi is the window's 16 standard colours, which most tools (ls, git,
 // grep, compilers, test runners) colour their output with: clingon's
-// palette instead of the terminal's, so the whole window is one piece.
+// palette instead of the terminal's, so the whole window is one piece. Blue
+// stays clear of the prompt's purple, which is 99 and not one of these.
 // Black, red, green, yellow, blue, magenta, cyan, white, then bright ones.
 var ansi = [16]string{
-	"#2a2638", "#ff5f87", "#5fd7af", "#ffd787", "#875fff", "#ff87d7", "#5fd7ff", "#c6c2d6",
-	"#5f5f87", "#ff87af", "#87ffd7", "#ffffaf", "#af87ff", "#ffafff", "#afffff", "#ffffff",
+	"#2a2638", "#ff5f87", "#5fd7af", "#ffd787", "#87afff", "#ff87d7", "#5fd7ff", "#c6c2d6",
+	"#5f5f87", "#ff87af", "#87ffd7", "#ffffaf", "#afafff", "#ffafff", "#afffff", "#ffffff",
 }
 
 var ansiNames = [8]string{"black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"}

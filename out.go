@@ -21,7 +21,7 @@ import (
 
 var (
 	nameStyle  = lipgloss.NewStyle().Foreground(ui.Pink).Bold(true)
-	headStyle  = lipgloss.NewStyle().Foreground(ui.Purple).Bold(true)
+	headStyle  = lipgloss.NewStyle().Foreground(ui.Soft).Bold(true)
 	markStyle  = lipgloss.NewStyle().Foreground(ui.Pink)
 	greyStyle  = lipgloss.NewStyle().Foreground(ui.Grey)
 	faintStyle = lipgloss.NewStyle().Foreground(ui.Faint)

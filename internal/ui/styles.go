@@ -18,7 +18,8 @@ import (
 // clingon's window profile (internal/window): that ink is exact.
 var (
 	accent = lipgloss.Color(PinkHex)   // 212 pink: the cursor, marks, what you act on
-	purple = lipgloss.Color("#875fff") // 99: headings, the prompt's folder
+	purple = lipgloss.Color("#875fff") // 99: the menu's headings, the prompt's folder
+	soft   = lipgloss.Color("#afafff") // 147 periwinkle: headings and keys in the shell's output, far enough from the prompt's purple; flags
 	grey   = lipgloss.Color("#8787af") // 103 lavender: secondary text, the prompt's branch
 	faint  = lipgloss.Color("#5f5f87") // 60: chrome: rules, frames, placeholders
 	raised = lipgloss.Color("#262626") // 235: the cursor's row, the command block, bars
@@ -33,7 +34,7 @@ var (
 const PinkHex = "#ff87d7"
 
 // The palette, for clingon's other screens (welcome, check).
-var Pink, Purple, Grey, Faint, Red, Green, Orange = accent, purple, grey, faint, red, green, orange
+var Pink, Soft, Grey, Faint, Red, Green, Orange = accent, soft, grey, faint, red, green, orange
 
 var (
 	logoStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
