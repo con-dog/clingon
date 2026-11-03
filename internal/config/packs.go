@@ -19,7 +19,7 @@ var packFS embed.FS
 
 type Pack struct {
 	Name        string
-	Where       string // "remote" (installed) or "local" (yours); "" for the catalog
+	Where       string // "remote" (from clingon, installed or not) or "local" (yours)
 	Version     string
 	Description string
 	Requires    []string
@@ -32,8 +32,18 @@ type Pack struct {
 // Packs lists every built-in pack, by name: the catalog (catalog.go),
 // worked out from the packs when they change, so nothing's parsed here.
 func Packs() ([]Pack, error) {
-	return slices.Clone(catalog), nil
+	out := slices.Clone(catalog)
+	for i := range out {
+		out[i].Where = "remote"
+	}
+	return out, nil
 }
+
+// Ref is what a pack is called everywhere it's shown: remote/NAME or local/NAME.
+func (p Pack) Ref() string { return p.Where + "/" + p.Name }
+
+// RemoteRef is Ref for a pack known only by name.
+func RemoteRef(name string) string { return "remote/" + name }
 
 func loadPack(name string) (*Config, error) {
 	data, err := packFS.ReadFile("packs/" + name + ".yaml")
@@ -129,7 +139,7 @@ const remoteHeader = "# Installed by clingon. `clingon pack update` overwrites t
 func Install(name string) error {
 	data, err := packFS.ReadFile("packs/" + name + ".yaml")
 	if err != nil {
-		return fmt.Errorf("no pack called %q (see `clingon pack available`)", name)
+		return fmt.Errorf("no pack called %s (see `clingon pack available`)", RemoteRef(name))
 	}
 	if err := os.MkdirAll(remoteDir(), 0o755); err != nil {
 		return err
@@ -143,7 +153,7 @@ func Uninstall(name string) error {
 		return err
 	}
 	if err := os.Remove(remotePath(name)); err != nil {
-		return fmt.Errorf("%s isn't installed", name)
+		return fmt.Errorf("%s isn't installed", RemoteRef(name))
 	}
 	return nil
 }
@@ -211,7 +221,7 @@ func InCatalog(name string) bool {
 }
 
 // PackSource is a pack's file as it stands: your own, the installed copy, or if
-// you have neither, the one that would be installed.
+// you have neither, the one that would be installed (remote/NAME says the same).
 func PackSource(ref string) ([]byte, error) {
 	where, name := SplitRef(ref)
 	if err := checkPackName(name); err != nil {
@@ -225,7 +235,7 @@ func PackSource(ref string) ([]byte, error) {
 		return os.ReadFile(PackPath(name))
 	case where == "remote" && remote, where == "" && remote:
 		return os.ReadFile(remotePath(name))
-	case where == "" && InCatalog(name):
+	case where != "local" && InCatalog(name):
 		return packFS.ReadFile("packs/" + name + ".yaml")
 	}
 	return nil, fmt.Errorf("no pack called %s (see `clingon pack list` and `clingon pack available`)", ref)

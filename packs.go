@@ -28,8 +28,8 @@ const packUsage = `Usage:
   clingon pack sections NAME     list the sections in your pack
   clingon pack inspect NAME      print a pack's file, whether you have it or not
 
-Installed packs live in packs/remote, your own in packs/local. If both have
-a pack of the same name, say which: remote/NAME or local/NAME.
+Every pack is remote/NAME (from clingon, in packs/remote once installed) or
+local/NAME (your own, in packs/local). NAME alone will do unless you have both.
 `
 
 func packCmd(args []string) error {
@@ -97,17 +97,19 @@ func packCmd(args []string) error {
 			return errors.New("name a pack, e.g. `clingon pack add docker`")
 		}
 		for _, ref := range rest {
-			_, name := config.SplitRef(ref)
+			where, name := config.SplitRef(ref)
 			switch {
+			case where == "local":
+				return fmt.Errorf("%s: only remote packs are installed (yours are already there)", ref)
 			case !config.InCatalog(name):
-				return fmt.Errorf("no pack called %q to install (see `clingon pack available`); to start your own: `clingon pack create %s`", name, name)
+				return fmt.Errorf("no pack called %s to install (see `clingon pack available`); to start your own: `clingon pack create %s`", config.RemoteRef(name), name)
 			case config.IsInstalled(name):
-				say(info, "%s is already installed", name)
+				say(info, "%s is already installed", config.RemoteRef(name))
 			default:
 				if err := config.Install(name); err != nil {
 					return err
 				}
-				say(ok, "installed %s into packs/remote", name)
+				say(ok, "installed %s", config.RemoteRef(name))
 			}
 		}
 		return nil
@@ -138,14 +140,14 @@ func packCmd(args []string) error {
 				if err := config.Uninstall(name); err != nil {
 					return err
 				}
-				say(ok, "removed %s from packs/remote", name)
+				say(ok, "removed %s", config.RemoteRef(name))
 			case where == "local" || where == "" && local:
 				if err := config.DeletePack(name); err != nil {
 					return err
 				}
-				say(ok, "removed %s from packs/local", name)
+				say(ok, "removed local/%s", name)
 			default:
-				return fmt.Errorf("you don't have a pack called %s", name)
+				return fmt.Errorf("you don't have a pack called %s", ref)
 			}
 		}
 		return nil
@@ -157,9 +159,12 @@ func packCmd(args []string) error {
 		}
 		want := map[string]bool{}
 		for _, ref := range rest {
-			_, name := config.SplitRef(ref)
+			where, name := config.SplitRef(ref)
+			if where == "local" {
+				return fmt.Errorf("%s: only remote packs are updated (yours are yours to change)", ref)
+			}
 			if !config.IsInstalled(name) {
-				return fmt.Errorf("%s isn't installed", name)
+				return fmt.Errorf("%s isn't installed", config.RemoteRef(name))
 			}
 			want[name] = true
 		}
@@ -172,14 +177,14 @@ func packCmd(args []string) error {
 				if err := config.Uninstall(u.Name); err != nil {
 					return err
 				}
-				say(ok, "removed %s %s", u.Name, greyStyle.Render("(clingon no longer ships it)"))
+				say(ok, "removed %s %s", config.RemoteRef(u.Name), greyStyle.Render("(clingon no longer ships it)"))
 				done++
 				continue
 			}
 			if err := config.Install(u.Name); err != nil {
 				return err
 			}
-			say(ok, "updated %s %s", u.Name, greyStyle.Render(u.From+" → "+u.To))
+			say(ok, "updated %s %s", config.RemoteRef(u.Name), greyStyle.Render(u.From+" → "+u.To))
 			done++
 		}
 		if done == 0 {
@@ -233,11 +238,7 @@ func packCmd(args []string) error {
 func printPacks(title string, ps []config.Pack, namesOnly bool, empty string) {
 	if namesOnly {
 		for _, p := range ps {
-			ref := p.Name
-			if p.Where != "" {
-				ref = p.Where + "/" + p.Name
-			}
-			fmt.Printf("%s\t%s\n", ref, p.Description)
+			fmt.Printf("%s\t%s\n", p.Ref(), p.Description)
 		}
 		return
 	}
@@ -248,9 +249,9 @@ func printPacks(title string, ps []config.Pack, namesOnly bool, empty string) {
 	if isTerm() {
 		// The note's parts are columns, each as wide as its widest, so they
 		// line up down the card: room for "XX commands" at least.
-		whereW, versionW, countW := 0, 0, 2
+		versionW, countW := 0, 2
 		for _, p := range ps {
-			whereW, versionW = max(whereW, len(p.Where)), max(versionW, len(p.Version))
+			versionW = max(versionW, len(p.Version))
 			countW = max(countW, len(strconv.Itoa(p.Commands)))
 		}
 		var rows []row
@@ -259,17 +260,14 @@ func printPacks(title string, ps []config.Pack, namesOnly bool, empty string) {
 			if versionW > 0 {
 				note = fmt.Sprintf("%-*s · ", versionW, p.Version) + note
 			}
-			if whereW > 0 {
-				note = fmt.Sprintf("%-*s · ", whereW, p.Where) + note
-			}
-			rows = append(rows, row{mark: info, label: p.Name, detail: p.Description, note: note})
+			rows = append(rows, row{mark: info, label: p.Ref(), detail: p.Description, note: note})
 		}
 		outln(card(title, rows, cardWidth()))
 		return
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, p := range ps {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d commands\n", p.Name, p.Where, p.Version, p.Description, p.Commands)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d commands\n", p.Ref(), p.Version, p.Description, p.Commands)
 	}
 	_ = w.Flush()
 }
@@ -301,7 +299,6 @@ func isSelf(name string) bool {
 
 const commandUsage = `Usage:
   clingon command add PACK SECTION NAME COMMAND [DESCRIPTION]
-  clingon command remove PACK/SECTION/NAME
   clingon command list
 
 Commands go in your own packs; add creates the pack and section if needed.
@@ -331,17 +328,7 @@ func commandCmd(args []string) error {
 		if err := config.AddCommand(pack, a[1], a[2], a[3], desc); err != nil {
 			return err
 		}
-		say(ok, "added %q to %s › %s", a[2], pack, a[1])
-		return nil
-	case "remove", "rm":
-		if len(args) != 2 || strings.Count(args[1], "/") < 2 {
-			return fmt.Errorf("usage: clingon command remove PACK/SECTION/NAME")
-		}
-		parts := strings.SplitN(args[1], "/", 3)
-		if err := config.RemoveCommand(parts[0], parts[1], parts[2]); err != nil {
-			return err
-		}
-		say(ok, "removed %q from %s › %s", parts[2], parts[0], parts[1])
+		say(ok, "added %q to local/%s › %s", a[2], pack, a[1])
 		return nil
 	case "list", "ls":
 		cfgs, err := config.YourCommands()
@@ -353,13 +340,13 @@ func commandCmd(args []string) error {
 		}
 		if !isTerm() || len(cfgs) == 0 {
 			for _, c := range cfgs {
-				fmt.Printf("%s/%s/%s\t%s\n", c.Pack, c.Section, c.Name, c.Cmd)
+				fmt.Printf("local/%s › %s › %s\t%s\n", c.Pack, c.Section, c.Name, c.Cmd)
 			}
 			return nil
 		}
 		var rows []row
 		for _, c := range cfgs {
-			rows = append(rows, row{mark: info, label: c.Pack + " › " + c.Section + " › " + c.Name, detail: c.Cmd})
+			rows = append(rows, row{mark: info, label: "local/" + c.Pack + " › " + c.Section + " › " + c.Name, detail: c.Cmd})
 		}
 		outln(card("Your commands", rows, cardWidth()))
 		return nil

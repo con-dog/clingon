@@ -177,7 +177,7 @@ func writeNewPack(name, content string) error {
 		return err
 	}
 	if _, err := os.Stat(PackPath(name)); err == nil {
-		return fmt.Errorf("you already have a pack called %s", name)
+		return fmt.Errorf("you already have a pack called local/%s", name)
 	}
 	if err := os.MkdirAll(localDir(), 0o755); err != nil {
 		return err
@@ -191,7 +191,7 @@ func DeletePack(name string) error {
 		return err
 	}
 	if _, err := os.Stat(PackPath(name)); err != nil {
-		return fmt.Errorf("you don't have a pack called %s", name)
+		return fmt.Errorf("you don't have a pack called local/%s", name)
 	}
 	return os.Remove(PackPath(name))
 }
@@ -285,7 +285,7 @@ func addCommand(sec *yaml.Node, pack, section, name, cmd, desc string) error {
 	cmds := seqFor(sec, "commands")
 	for _, c := range cmds.Content {
 		if v := mapGet(c, "name"); v != nil && v.Value == name {
-			return fmt.Errorf("%s › %s already has a command called %q", pack, section, name)
+			return fmt.Errorf("local/%s › %s already has a command called %q", pack, section, name)
 		}
 	}
 	c := &yaml.Node{Kind: yaml.MappingNode}
@@ -310,44 +310,6 @@ func addCommand(sec *yaml.Node, pack, section, name, cmd, desc string) error {
 	}
 	cmds.Style, cmds.Content = 0, append(cmds.Content, c)
 	return nil
-}
-
-// RemoveCommand removes a command from your pack, and its section if that
-// leaves it empty.
-func RemoveCommand(pack, section, name string) error {
-	if err := checkPackName(pack); err != nil {
-		return err
-	}
-	doc, err := readDoc(PackPath(pack))
-	if err != nil {
-		return fmt.Errorf("you don't have a pack called %s", pack)
-	}
-	sec := findSection(doc, section, false)
-	if sec == nil {
-		return fmt.Errorf("%s has no section called %q", pack, section)
-	}
-	removed := removeNamed(mapGet(sec, "commands"), name)
-	if groups := mapGet(sec, "groups"); groups != nil {
-		for _, g := range groups.Content {
-			removed = removeNamed(mapGet(g, "commands"), name) || removed
-		}
-	}
-	if !removed {
-		return fmt.Errorf("%s › %s has no command called %q", pack, section, name)
-	}
-	if groups := mapGet(sec, "groups"); groups != nil { // a group with nothing left goes
-		kept := groups.Content[:0]
-		for _, g := range groups.Content {
-			if !empty(mapGet(g, "commands")) {
-				kept = append(kept, g)
-			}
-		}
-		groups.Content = kept
-	}
-	if empty(mapGet(sec, "commands")) && empty(mapGet(sec, "groups")) {
-		removeNamed(mapGet(doc.Content[0], "sections"), section)
-	}
-	return writeDoc(PackPath(pack), doc)
 }
 
 // ---- yaml.Node helpers: editing in place keeps the user's comments ----
@@ -445,18 +407,3 @@ func mapSet(m *yaml.Node, key string, v *yaml.Node) {
 }
 
 func str(v string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v} }
-
-func removeNamed(seq *yaml.Node, name string) bool {
-	if seq == nil {
-		return false
-	}
-	for i, n := range seq.Content {
-		if v := mapGet(n, "name"); v != nil && v.Value == name {
-			seq.Content = append(seq.Content[:i], seq.Content[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
-
-func empty(seq *yaml.Node) bool { return seq == nil || len(seq.Content) == 0 }

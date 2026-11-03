@@ -434,9 +434,6 @@ func (c *Config) Validate() []error {
 				bad(s.Name, "%s: id %q should be a name and 8 hex digits, like aws-1a2b3c4d", cmd.Name, cmd.ID)
 			}
 		}
-		if strings.Contains(s.Name, "/") {
-			bad(s.Name, "section names can't contain / (it separates pack, section and command in `clingon command remove`)")
-		}
 		// A logo clingon doesn't have (a typo, or one an update dropped from
 		// a pack you have installed) leaves the icon: `clingon check` says so,
 		// but it's no reason not to start.

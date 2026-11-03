@@ -42,7 +42,7 @@ func TestPackCommands(t *testing.T) {
 		}
 		return out
 	}
-	if out := run("add", "git"); !strings.Contains(out, "installed git") {
+	if out := run("add", "git"); !strings.Contains(out, "installed remote/git") {
 		t.Fatalf("add: %q", out)
 	}
 	if out := run("add", "git"); !strings.Contains(out, "already installed") {
@@ -51,11 +51,19 @@ func TestPackCommands(t *testing.T) {
 	if out := run("list", "--names"); !strings.Contains(out, "remote/git") {
 		t.Fatalf("list: %q", out)
 	}
-	if out := run("available", "--names"); strings.Contains(out, "git\t") || !strings.Contains(out, "docker") {
+	if out := run("available", "--names"); strings.Contains(out, "/git\t") || !strings.Contains(out, "remote/docker\t") {
 		t.Fatalf("available lists what isn't installed: %q", out)
 	}
 	if out := run("update"); !strings.Contains(out, "up to date") {
 		t.Fatalf("update with nothing newer: %q", out)
+	}
+	for _, verb := range []string{"add", "update"} {
+		if out, err := output(t, func() error { return packCmd([]string{verb, "local/docker"}) }); err == nil || !strings.Contains(err.Error(), "local/docker") {
+			t.Fatalf("%s local/docker should be refused, got %q %v", verb, out, err)
+		}
+	}
+	if config.IsInstalled("docker") {
+		t.Fatal("add local/docker installed remote/docker")
 	}
 	if _, err := output(t, func() error { return packCmd([]string{"add", "no-such-pack"}) }); err == nil {
 		t.Fatal("adding an unknown pack should fail")
@@ -80,9 +88,6 @@ func TestCommandCommands(t *testing.T) {
 	}
 	if _, err := output(t, func() error { return commandCmd([]string{"add", "remote/git", "S", "N", "ls"}) }); err == nil {
 		t.Fatal("installed packs are overwritten on update: adding to one should be refused")
-	}
-	if out, err := output(t, func() error { return commandCmd([]string{"remove", "mine/Deploy/Tail logs"}) }); err != nil || !strings.Contains(out, "removed") {
-		t.Fatalf("remove: %q %v", out, err)
 	}
 }
 
@@ -229,7 +234,7 @@ func TestPackUpdateRemovesRetiredPacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, err := output(t, func() error { return packCmd([]string{"update"}) })
-	if err != nil || !strings.Contains(out, "removed databases") {
+	if err != nil || !strings.Contains(out, "removed remote/databases") {
 		t.Fatalf("update should remove a retired pack, got %q, %v", out, err)
 	}
 	if config.IsInstalled("databases") {
@@ -351,9 +356,58 @@ func TestPackInspect(t *testing.T) {
 	if _, err := run("docker"); err == nil || !strings.Contains(err.Error(), "say remote/docker or local/docker") {
 		t.Errorf("both: should ask which, got %v", err)
 	}
-	for _, bad := range []string{"nope", "../recipes", "local/nope", "remote/git"} {
+	// Not installed, and asked for as the menu does.
+	if out, err := run("remote/git"); err != nil || !strings.Contains(out, "name: Git") {
+		t.Errorf("remote, not installed: %.100q %v", out, err)
+	}
+	for _, bad := range []string{"nope", "../recipes", "local/nope", "local/git", "remote/nope"} {
 		if _, err := run(bad); err == nil {
 			t.Errorf("%s: should be refused", bad)
+		}
+	}
+}
+
+func TestEveryPackPickerSaysWhereItsFrom(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if err := config.Install("git"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AddCommand("mine", "S", "x", "echo x", ""); err != nil {
+		t.Fatal(err)
+	}
+	var inspect *config.Command
+	pickers := 0
+	for _, s := range builtinSections() {
+		for _, c := range s.All() {
+			if c.Name == "Inspect a pack" {
+				inspect = c
+			}
+			for _, a := range c.Args {
+				if a.Name != "pack" {
+					continue
+				}
+				pickers++
+				for _, o := range a.Options {
+					if !strings.HasPrefix(o.Value, "remote/") && !strings.HasPrefix(o.Value, "local/") {
+						t.Errorf("%s: %s doesn't say where it's from", c.Name, o.Value)
+					}
+				}
+			}
+		}
+	}
+	if inspect == nil || pickers < 5 {
+		t.Fatalf("inspect %v, %d pickers", inspect, pickers)
+	}
+	seen := map[string]int{}
+	for _, o := range inspect.Args[0].Options {
+		seen[o.Value]++
+		if seen[o.Value] > 1 {
+			t.Errorf("%s is listed twice", o.Value)
+		}
+	}
+	for _, want := range []string{"local/mine", "remote/git", "remote/docker"} {
+		if seen[want] != 1 {
+			t.Errorf("%s should be listed once: %v", want, seen)
 		}
 	}
 }

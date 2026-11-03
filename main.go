@@ -31,7 +31,7 @@ Usage:
   clingon          open clingon's window: the menu (left) and your shell (right)
   clingon print    pick a command and print it instead, e.g. eval "$(clingon print)"
   clingon pack     list, add and remove packs; make and edit your own
-  clingon command  add, remove and list commands in your own packs
+  clingon command  add and list commands in your own packs
   clingon recipe   save, remove and list recipes (sequences of commands)
   clingon edit     open your pack in micro
   clingon check    check your packs for mistakes
@@ -362,10 +362,10 @@ func editPack(ref string) error {
 	path := config.PackPath(name)
 	switch {
 	case where == "" && !config.IsLocal(name) && config.IsInstalled(name):
-		return fmt.Errorf("%s is an installed pack: `clingon pack edit remote/%s` edits it (but `clingon pack update` overwrites it), or start your own with `clingon pack create my-%s`", name, name, name)
+		return fmt.Errorf("remote/%s is an installed pack: `clingon pack edit remote/%s` edits it (but `clingon pack update` overwrites it), or start your own with `clingon pack create my-%s`", name, name, name)
 	case where == "remote":
 		if !config.IsInstalled(name) {
-			return fmt.Errorf("%s isn't installed", name)
+			return fmt.Errorf("%s isn't installed", config.RemoteRef(name))
 		}
 		path = config.RemotePath(name)
 		say(warn, "`clingon pack update` overwrites installed packs")

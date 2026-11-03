@@ -20,14 +20,22 @@ import (
 // clingon's own sections share its mark (the C of its banner) in its pink.
 var clingonMark, clingonPink = config.Logos["clingon"], ui.PinkHex
 
-// packOptions offers packs to pick from, qualified (remote/x, local/x) for
-// packs you have.
+// packOptions offers packs to pick from.
 func packOptions(ps []config.Pack) []config.Option {
 	out := make([]config.Option, len(ps))
 	for i, p := range ps {
-		out[i] = config.Option{Value: p.Name, Label: p.Description}
-		if p.Where != "" {
-			out[i].Value = p.Where + "/" + p.Name
+		out[i] = config.Option{Value: p.Ref(), Label: p.Description}
+	}
+	return out
+}
+
+// inspectable is every pack there is to look at, each once: yours, those you've
+// installed (some may no longer ship with clingon), and the rest that do.
+func inspectable(local, installed, catalog []config.Pack) []config.Pack {
+	out := slices.Concat(local, installed)
+	for _, p := range catalog {
+		if !slices.ContainsFunc(installed, func(i config.Pack) bool { return i.Name == p.Name }) {
+			out = append(out, p)
 		}
 	}
 	return out
@@ -75,7 +83,7 @@ func builtinSections() []*config.Section {
 				}},
 				{Name: "Available packs", Desc: "Lists the packs you can install and what each one covers.", Cmd: self + " pack available"},
 				{Name: "Inspect a pack", Desc: "Prints a pack's file, whether you have it or not, so you can see every command it holds and exactly what each one runs.", Cmd: self + " pack inspect <pack>", Args: []config.Arg{
-					{Name: "pack", Options: packOptions(slices.Concat(local, installed, available)), Desc: "Printing <pack>."},
+					{Name: "pack", Options: packOptions(inspectable(local, installed, all)), Desc: "Printing <pack>."},
 				}},
 				{Name: "List installed packs", Disabled: noneInstalled, Desc: "Lists the packs you've installed, with their versions.", Cmd: self + " pack list --remote"},
 				{Name: "Remove a pack", Disabled: noneInstalled, Desc: "Uninstalls a pack, taking its commands out of the menu.", Risk: config.RiskWarn, Cmd: self + " pack remove <pack>", Args: []config.Arg{
@@ -195,7 +203,7 @@ func doctor(names []string) error {
 		_, n := config.SplitRef(ref)
 		p, found := byName[n]
 		if !found {
-			add(&tools, row{mark: warn, label: n, detail: "clingon no longer ships it: `clingon pack update` removes it"})
+			add(&tools, row{mark: warn, label: config.RemoteRef(n), detail: "clingon no longer ships it: `clingon pack update` removes it"})
 			continue
 		}
 		missing := config.MissingTools(p.Requires)
@@ -207,11 +215,11 @@ func doctor(names []string) error {
 		}
 		switch {
 		case len(missing) > 0:
-			add(&tools, row{mark: fail, label: n, detail: config.Needs(missing)})
+			add(&tools, row{mark: fail, label: p.Ref(), detail: config.Needs(missing)})
 		case len(p.AnyOf) > 0 && len(have) == 0:
-			add(&tools, row{mark: warn, label: n, detail: "needs one of " + strings.Join(p.AnyOf, ", ") + " (none installed)"})
+			add(&tools, row{mark: warn, label: p.Ref(), detail: "needs one of " + strings.Join(p.AnyOf, ", ") + " (none installed)"})
 		default:
-			add(&tools, row{mark: ok, label: n, detail: strings.Join(append(p.Requires, have...), ", ")})
+			add(&tools, row{mark: ok, label: p.Ref(), detail: strings.Join(append(p.Requires, have...), ", ")})
 		}
 	}
 	if len(tools) > 0 {

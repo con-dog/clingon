@@ -17,20 +17,6 @@ func writePack(t *testing.T, name, body string) {
 	}
 }
 
-func TestRemovingTheLastCommandOfAGroup(t *testing.T) {
-	t.Setenv("CLINGON_CONFIG", t.TempDir())
-	writePack(t, "p", "sections:\n  - name: T\n    groups:\n      - name: G\n        commands:\n          - name: c\n            cmd: ls\n      - name: H\n        commands:\n          - name: d\n            cmd: ls\n")
-	if err := RemoveCommand("p", "T", "c"); err != nil {
-		t.Fatalf("the last command in a group should come out, taking the group: %v", err)
-	}
-	if b, _ := os.ReadFile(PackPath("p")); strings.Contains(string(b), "name: G") {
-		t.Errorf("the emptied group should be gone:\n%s", b)
-	}
-	if err := RemoveCommand("p", "T", "d"); err != nil {
-		t.Fatalf("and the section's last command, taking the section: %v", err)
-	}
-}
-
 func TestAddingToAPackWithAnEmptySectionsList(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	writePack(t, "p", "description: mine\nsections:\n")
@@ -83,13 +69,6 @@ func TestWhenWorksInFoldersWithGlobCharacters(t *testing.T) {
 	}
 	if why := NewHere(dir).Unmet(&Command{When: []string{"*.tf"}}); why != "" {
 		t.Fatalf("main.tf is right there: %s", why)
-	}
-}
-
-func TestSectionNamesCantHoldSlashes(t *testing.T) {
-	c := &Config{Sections: []Section{{Name: "CI/CD", Commands: []Command{{Name: "x", Cmd: "ls"}}}}}
-	if errs := c.Validate(); len(errs) == 0 {
-		t.Fatal("a / in a section name breaks `command remove PACK/SECTION/NAME`")
 	}
 }
 

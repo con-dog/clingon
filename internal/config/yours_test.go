@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestAddAndRemoveCommandKeepsComments(t *testing.T) {
+func TestAddCommandKeepsComments(t *testing.T) {
 	userDir(t)
 	if err := AddCommand("mine", "Deploy", "Tail logs", "kubectl logs -f deploy/<app> -n <ns>", "Streams logs."); err != nil {
 		t.Fatal(err)
@@ -30,15 +30,6 @@ func TestAddAndRemoveCommandKeepsComments(t *testing.T) {
 	c := cfg.Sections[0].All()
 	if len(c) != 2 || len(c[1].Args) != 2 || c[1].Args[0].Name != "app" || c[1].Desc != "Streams logs." {
 		t.Fatalf("got %+v", c)
-	}
-	if err := RemoveCommand("mine", "Deploy", "Tail logs"); err != nil {
-		t.Fatal(err)
-	}
-	if err := RemoveCommand("mine", "Deploy", "Status"); err != nil {
-		t.Fatal(err)
-	}
-	if got := SectionNames("mine"); len(got) != 0 {
-		t.Fatalf("empty section should go too, got %v", got)
 	}
 }
 

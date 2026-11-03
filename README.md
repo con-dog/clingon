@@ -65,15 +65,15 @@ Want the menu without tmux? `clingon print` picks a command and prints it, e.g. 
 clingon ships over 400 commands in packs. Out of the box you get the ones that only need tools every Mac already has; add the rest for the tools you use:
 
 ```sh
-clingon pack available         # what you can install
-clingon pack add git docker    # install
-clingon pack list              # every pack you have, installed and your own
-clingon pack remove docker     # works for either kind
-clingon pack update            # newer versions of installed packs
-clingon pack inspect docker    # print a pack's file, installed or not
+clingon pack available                      # what you can install
+clingon pack add remote/git remote/docker   # install
+clingon pack list                           # every pack you have, installed and your own
+clingon pack remove remote/docker           # works for either kind
+clingon pack update                         # newer versions of installed packs
+clingon pack inspect remote/docker          # print a pack's file, installed or not
 ```
 
-Installed packs are files in `packs/remote/`, your own in `packs/local/`; the split only exists so names never clash. If you have both a `remote` and a `local` pack called `docker`, say which: `clingon pack remove local/docker`.
+Every pack is `remote/NAME` (it comes from clingon, and is a file in `packs/remote/` once installed) or `local/NAME` (your own, in `packs/local/`). Typing just `NAME` works too, unless you have both.
 
 | Pack | | |
 |---|---|---|
@@ -130,7 +130,6 @@ clingon check                   # validate everything
 
 # or add simple commands without opening an editor
 clingon command add work-tools Deploy "Tail logs" 'kubectl logs -f deploy/<app>' "Streams an app's logs."
-clingon command remove work-tools/Deploy/Tail logs
 ```
 
 `command add` edits the file for you and keeps your comments; it won't write anything that doesn't validate. For pick-lists, checklists and the rest, edit the YAML: each of your packs is a file in `~/.config/clingon/packs/local/`. A section named like a built-in one (say `AWS`) adds to it. Sections, groups and commands are listed alphabetically. Every section's commands sit under group headings; any you leave out of a group go under **Commands**. A command is a template whose `<placeholders>` get filled in, one at a time, while the command line builds up live:
