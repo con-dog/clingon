@@ -257,6 +257,58 @@ func TestMenuLocksWhileShellIsBusy(t *testing.T) {
 	}
 }
 
+// The bar's warning clears by itself: focus may never come back to prompt it.
+func TestShellWarningClearsWithoutFocus(t *testing.T) {
+	shell := ShellState{Typed: unfinishedCommand}
+	m := New(Options{Config: &config.Config{}, Send: func(string) error { return nil },
+		Shell: func() ShellState { return shell }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+
+	_, look := m.Update(idleMsg{seq: -1})
+	if look == nil {
+		t.Fatal("a warning should keep the shell being looked at")
+	}
+	if bar := ansi.Strip(m.statusBar(60)); !strings.Contains(bar, "middle of a command") {
+		t.Fatalf("the bar should warn, got %q", bar)
+	}
+	if _, again := m.Update(tea.BlurMsg{}); again != nil {
+		t.Fatal("one look at a time")
+	}
+
+	m.Update(shellLookMsg{}) // still there: goes on looking
+	if !m.looking {
+		t.Fatal("still unfinished: it should look again")
+	}
+	shell = ShellState{}
+	if _, cmd := m.Update(shellLookMsg{}); cmd != nil || m.looking {
+		t.Fatal("nothing to warn of: it should stop looking")
+	}
+	if bar := ansi.Strip(m.statusBar(60)); strings.Contains(bar, "middle of a command") {
+		t.Fatalf("the warning should be gone, got %q", bar)
+	}
+
+	// What it was warning about turned into a running command.
+	m.typed, shell = "sleep 9", ShellState{Busy: "sleep"}
+	m.Update(shellLookMsg{})
+	if m.busy != "sleep" || !m.waiting {
+		t.Fatalf("it should wait for what's running, busy=%q waiting=%v", m.busy, m.waiting)
+	}
+
+	// A command from the menu is running: a look can't unlock it early.
+	m.busy, m.typed, shell = "Edit a pack", "", ShellState{}
+	m.Update(shellLookMsg{})
+	if m.busy != "Edit a pack" {
+		t.Fatalf("the wait for it says when it's done, busy=%q", m.busy)
+	}
+
+	// The question on screen keeps what it asked about.
+	m.busy, m.mode, m.typed = "", modeTyped, "git sta"
+	m.Update(shellLookMsg{})
+	if m.typed != "git sta" {
+		t.Fatalf("typed changed under the question: %q", m.typed)
+	}
+}
+
 func TestTypedShellAsksFirst(t *testing.T) {
 	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "List", Cmd: "ls"}}}
 	var sent []string

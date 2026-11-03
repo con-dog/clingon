@@ -144,6 +144,13 @@ const busyGrace = 500 * time.Millisecond
 
 type busyGraceMsg struct{}
 
+// shellLook is how often the shell is looked at again while the status bar
+// has a warning about it: it can end with no word to the menu (a quote closed
+// by hand, say), and focus may not come back to prompt a look.
+const shellLook = time.Second
+
+type shellLookMsg struct{}
+
 const noticeSeconds = 3
 
 // showNotice leaves whatever was being filled in and shows n.
@@ -176,6 +183,7 @@ type Model struct {
 	pending   *pending
 	builtin   []*config.Section
 	busy      string                      // what's running in the shell: nothing can be sent until it ends
+	looking   bool                        // a shellLookMsg is on its way
 	quiet     bool                        // that's locked, but not worth a status bar's band yet
 	waiting   bool                        // a wait for the shell to finish (started on focus) is under way
 	scrolling bool                        // the shell is scrolled back: nothing can be sent until it stops
@@ -449,6 +457,16 @@ func (m *Model) readShell() {
 	m.regrey()
 }
 
+// watchShell keeps looking at the shell while a warning about it is up. One
+// look at a time, and it stops by itself when there's nothing left to warn of.
+func (m *Model) watchShell() tea.Cmd {
+	if m.looking || m.opt.Shell == nil || (m.typed == "" && !m.scrolling) {
+		return nil
+	}
+	m.looking = true
+	return tea.Tick(shellLook, func(time.Time) tea.Msg { return shellLookMsg{} })
+}
+
 // regrey works out again which listed commands can't be used right now.
 func (m *Model) regrey() {
 	for _, l := range [][]item{m.list.items, m.list.view, m.list.search} {
@@ -537,7 +555,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BlurMsg:
 		m.blurred = true
 		m.blurInputs()
-		return m, nil
+		return m, m.watchShell()
 	case tea.FocusMsg:
 		m.blurred = false
 		m.runSeq++ // the user is back: no need to bring them
@@ -587,7 +605,21 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.ok && msg.seq == m.runSeq && m.typed == "" && m.opt.FocusMenu != nil {
 			m.opt.FocusMenu()
 		}
-		return m, nil
+		return m, m.watchShell()
+	case shellLookMsg:
+		m.looking = false
+		if m.busy != "" { // the wait for it looks again as it ends
+			return m, nil
+		}
+		if m.mode != modeTyped { // that question is about what it saw when asked
+			m.readShell()
+		}
+		var wait tea.Cmd
+		if m.busy != "" && !m.waiting { // what was typed is running now
+			m.waiting = true
+			wait = m.waitIdle(-1)
+		}
+		return m, tea.Batch(wait, m.watchShell())
 	case tea.PasteMsg: // as if typed, wherever the keys are going
 		return m.Update(typed(msg.Content))
 	case tea.KeyPressMsg:

@@ -372,7 +372,12 @@ func (c *Client) WaitIdle(pane string) bool {
 			if fg, err := foregroundGroup(shell); err == nil && fg != shell {
 				continue
 			}
-			return true
+			// It has the terminal before it has drawn its prompt (precmd
+			// hooks run first), and that blank line says nothing yet.
+			if c.waitPromptDrawn(pane, shell) {
+				return true
+			}
+			continue
 		}
 		// Wait on any live process in the foreground group: in a pipeline
 		// the group's leader can exit before the rest.
@@ -384,6 +389,24 @@ func (c *Client) WaitIdle(pane string) bool {
 			time.Sleep(100 * time.Millisecond) // the group is just ending; look again
 		}
 	}
+}
+
+// promptGrace is how long a shell with the terminal back gets to draw its
+// prompt. One that never does is waiting for the rest of a command.
+const promptGrace = 2 * time.Second
+
+// waitPromptDrawn watches pane for up to promptGrace, until its prompt shows.
+// It returns false if the shell gives the terminal away again meanwhile.
+func (c *Client) waitPromptDrawn(pane string, shell int) bool {
+	for end := time.Now().Add(promptGrace); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		if left, _, ok := c.cursorLine(pane); !ok || strings.Contains(left, promptMark) {
+			return true
+		}
+		if fg, err := foregroundGroup(shell); err == nil && fg != shell {
+			return false
+		}
+	}
+	return true
 }
 
 // State is what the shell in a pane is doing, as far as whether the menu

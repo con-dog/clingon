@@ -348,3 +348,39 @@ func TestJobNames(t *testing.T) {
 		t.Errorf("a shell alone has no jobs, got %q", got)
 	}
 }
+
+// A slow precmd (vcs_info in a big repo, say) has the terminal back with no
+// prompt drawn yet: that blank line isn't an unfinished command.
+func TestWaitIdleWaitsForASlowPrompt(t *testing.T) {
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skip("zsh isn't installed")
+	}
+	c, pane := serverWith(t, "zsh -f")
+	c.WaitForPrompt(pane, 2*time.Second)
+	if err := c.Send(pane, `precmd() { : $(sleep 0.4) }`); err != nil {
+		t.Fatal(err)
+	}
+	if !c.WaitIdle(pane) {
+		t.Fatal("WaitIdle should know when it's done")
+	}
+	if err := c.Send(pane, "true"); err != nil {
+		t.Fatal(err)
+	}
+	if !c.WaitIdle(pane) {
+		t.Fatal("WaitIdle should know when it's done")
+	}
+	if st := c.State(pane); st != (State{}) {
+		t.Fatalf("the command has finished: nothing going on, got %+v", st)
+	}
+
+	// No prompt is coming for an open quote: it's still reported, just later.
+	if err := c.Send(pane, `echo "open`); err != nil {
+		t.Fatal(err)
+	}
+	if !c.WaitIdle(pane) {
+		t.Fatal("WaitIdle should know when it's done")
+	}
+	if st := c.State(pane); st.Typed != "an unfinished command" {
+		t.Fatalf("an open quote is an unfinished command, got %+v", st)
+	}
+}
