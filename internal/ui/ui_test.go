@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1955,6 +1956,19 @@ func TestSavingARecipe(t *testing.T) {
 	}
 	done()
 	done()
+
+	// Describing one sends that alone, runs no steps, and stays on the row.
+	if !strings.Contains(m.view(), "DESCRIBE RECIPES") {
+		t.Errorf("should offer to describe it:\n%s", m.view())
+	}
+	m.list.cursor = slices.IndexFunc(m.list.view, func(it item) bool { _, ok := it.ref.(describeRecipeRef); return ok })
+	describing := m.list.cursor
+	sent = nil
+	right()
+	sentIs("clingon recipe describe 'My flow'")
+	if m.run != nil || m.list.cursor != describing {
+		t.Errorf("run %+v, cursor %d, want %d", m.run, m.list.cursor, describing)
+	}
 
 	// A step whose command has gone stops it before anything runs.
 	saved = []config.Recipe{{Name: "Old", Steps: []string{"x-00000000"}}}

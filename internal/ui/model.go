@@ -435,6 +435,10 @@ func (m *Model) showSection(s *config.Section) {
 			for _, r := range saved {
 				items = append(items, item{title: r.Name, ref: savedRecipeRef{r}})
 			}
+			items = heading(items, "Describe recipes")
+			for _, r := range saved {
+				items = append(items, item{title: r.Name, ref: describeRecipeRef{r.Name}})
+			}
 		}
 	}
 	m.section = s
@@ -1115,6 +1119,24 @@ func (m *Model) open() tea.Cmd {
 		m.recipe = steps
 		m.showSection(m.section)
 		return m.startRecipe()
+	case describeRecipeRef:
+		if m.run != nil {
+			m.hint = "The recipe is running: x stops it"
+			return nil
+		}
+		if m.blocked() != "" {
+			m.readShell()
+		}
+		if m.blocked() != "" {
+			return nil // the status bar says so
+		}
+		cmd := m.describeCommand(r.name)
+		done := m.finish(pending{section: m.section.Name, sec: m.section, name: "Describe " + r.name, cmd: cmd, shown: cmd})
+		// Stay on its row, to read about another: the list's first row runs one.
+		if i := slices.IndexFunc(m.list.view, func(it item) bool { return it.ref == any(r) }); i >= 0 {
+			m.list.cursor = i
+		}
+		return done
 	}
 	return nil
 }
@@ -1124,6 +1146,13 @@ type runRecipeRef struct{}
 
 // savedRecipeRef is a saved recipe's row: it becomes the recipe, and runs.
 type savedRecipeRef struct{ config.Recipe }
+
+// describeRecipeRef is a saved recipe's other row: the shell says what it does.
+type describeRecipeRef struct{ name string }
+
+func (m *Model) describeCommand(name string) string {
+	return m.opt.Self + " recipe describe " + shellQuote(name)
+}
 
 func (m *Model) startRecipe() tea.Cmd {
 	m.run = &recipeRun{}
@@ -2014,7 +2043,7 @@ func (m *Model) details() (cmd, desc string) {
 		return highlight(m.pending.shown), desc
 	case modeFill:
 		j, a := m.job, m.arg()
-		cmd = m.preview(j.ref.cmd, j.vals, j.step, j.current(a))
+		cmd = preview(j.ref.cmd, j.vals, j.step, j.current(a))
 		return cmd, j.describe()
 	case modeSaveName:
 		name := "<name>"
@@ -2030,13 +2059,15 @@ func (m *Model) details() (cmd, desc string) {
 	switch r := it.ref.(type) {
 	case cmdRef:
 		if why := m.unavailable(r.cmd); why != "" {
-			return m.preview(r.cmd, nil, -1, ""), "Not available: " + why
+			return preview(r.cmd, nil, -1, ""), "Not available: " + why
 		}
-		return m.preview(r.cmd, nil, -1, ""), describe(r.cmd, nil, nil, -1, "", "")
+		return preview(r.cmd, nil, -1, ""), describe(r.cmd, nil, nil, -1, "", "")
 	case runRecipeRef:
 		return "", "Runs " + plural(len(m.recipe), "step") + " in order, asking for any blanks as each is reached. Stops if one fails."
 	case savedRecipeRef:
 		return strings.Join(r.Steps, " "), "Makes this the current recipe and runs its " + plural(len(r.Steps), "step") + ", asking for any blanks as each is reached. Stops if one fails."
+	case describeRecipeRef:
+		return highlight(m.describeCommand(r.name)), "Lists this recipe's steps in the shell: what each one runs, what it does and what it will ask. Runs none of them."
 	}
 	return "", ""
 }
@@ -2437,7 +2468,7 @@ func (m *Model) browseView(w, h int) string {
 
 // preview renders the command with filled values, the current arg (showing
 // its tentative value) and the args still to come.
-func (m *Model) preview(c *config.Command, vals map[string]string, step int, tentative string) string {
+func preview(c *config.Command, vals map[string]string, step int, tentative string) string {
 	index := map[string]int{}
 	for i, a := range c.Args {
 		index[a.Name] = i

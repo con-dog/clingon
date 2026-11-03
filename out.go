@@ -132,19 +132,27 @@ func card(title string, rows []row, w int) string {
 	if detailW < 12 { // too narrow for notes: the details matter more
 		noteW, detailW = 0, inner-3-labelW-2
 	}
-	t := headStyle.Render(title)
-	lines := []string{faintStyle.Render("╭─ ") + t + faintStyle.Render(" "+strings.Repeat("─", max(w-5-ansi.StringWidth(t), 0))+"╮")}
+	var lines []string
 	for _, r := range rows {
 		line := r.mark.render(slot(r.glyph)) + "  " + r.label + strings.Repeat(" ", labelW-ansi.StringWidth(r.label)) + "  "
 		line += greyStyle.Render(fit(r.detail, max(detailW, 0)))
 		if noteW > 0 {
 			line += "  " + faintStyle.Render(fmt.Sprintf("%*s", noteW, r.note))
 		}
-		pad := max(inner-ansi.StringWidth(line), 0)
-		lines = append(lines, faintStyle.Render("│ ")+line+strings.Repeat(" ", pad)+faintStyle.Render(" │"))
+		lines = append(lines, line)
 	}
-	lines = append(lines, faintStyle.Render("╰"+strings.Repeat("─", max(w-2, 0))+"╯"))
-	return strings.Join(lines, "\n")
+	return titled(headStyle.Render(title), lines, w)
+}
+
+// titled draws lines, at most w-4 cells each, in a box with a title in its top edge.
+func titled(title string, lines []string, w int) string {
+	out := []string{faintStyle.Render("╭─ ") + title + faintStyle.Render(" "+strings.Repeat("─", max(w-5-ansi.StringWidth(title), 0))+"╮")}
+	for _, l := range lines {
+		pad := max(w-4-ansi.StringWidth(l), 0)
+		out = append(out, faintStyle.Render("│ ")+l+strings.Repeat(" ", pad)+faintStyle.Render(" │"))
+	}
+	out = append(out, faintStyle.Render("╰"+strings.Repeat("─", max(w-2, 0))+"╯"))
+	return strings.Join(out, "\n")
 }
 
 // fit pads or cuts s to exactly w cells.

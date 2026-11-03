@@ -70,6 +70,7 @@ clingon pack add git docker    # install
 clingon pack list              # every pack you have, installed and your own
 clingon pack remove docker     # works for either kind
 clingon pack update            # newer versions of installed packs
+clingon pack inspect docker    # print a pack's file, installed or not
 ```
 
 Installed packs are files in `packs/remote/`, your own in `packs/local/`; the split only exists so names never clash. If you have both a `remote` and a `local` pack called `docker`, say which: `clingon pack remove local/docker`.

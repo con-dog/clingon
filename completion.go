@@ -45,16 +45,17 @@ _clingon() {
   case $words[2] in
     pack|packs)
       if (( CURRENT == 3 )); then
-        compadd list available add create remove update edit sections
+        compadd list available add create remove update edit sections inspect
         return
       fi
       case $words[3] in
         add|install) compadd -- ${(f)"$(clingon pack available --names 2>/dev/null | cut -f1)"} ;;
         remove|rm|uninstall|update|edit|sections) compadd -- ${(f)"$(clingon pack list --names 2>/dev/null | cut -f1)"} ;;
+        inspect|cat) compadd -- ${(f)"$(clingon pack list --names 2>/dev/null | cut -f1)"} ${(f)"$(clingon pack available --names 2>/dev/null | cut -f1)"} ;;
       esac
       ;;
     command|commands|cmd) (( CURRENT == 3 )) && compadd add remove list ;;
-    recipe|recipes) (( CURRENT == 3 )) && compadd save remove list ;;
+    recipe|recipes) (( CURRENT == 3 )) && compadd save remove list describe ;;
     doctor) (( CURRENT == 3 )) && compadd -- ${(f)"$(clingon pack list --remote --names 2>/dev/null | cut -f1)"} ;;
     completion) (( CURRENT == 3 )) && compadd zsh bash ;;
   esac
@@ -73,9 +74,9 @@ const bashCompletion = `_clingon() {
     1) words="print pack command recipe edit check doctor crash update welcome completion version help" ;;
     2)
       case ${COMP_WORDS[1]} in
-        pack|packs) words="list available add create remove update edit sections" ;;
+        pack|packs) words="list available add create remove update edit sections inspect" ;;
         command|commands|cmd) words="add remove list" ;;
-        recipe|recipes) words="save remove list" ;;
+        recipe|recipes) words="save remove list describe" ;;
         doctor) words=$(clingon pack list --remote --names 2>/dev/null | cut -f1) ;;
         completion) words="zsh bash" ;;
       esac
@@ -83,6 +84,7 @@ const bashCompletion = `_clingon() {
     *)
       case ${COMP_WORDS[1]}:${COMP_WORDS[2]} in
         pack:add|packs:add|pack:install|packs:install) words=$(clingon pack available --names 2>/dev/null | cut -f1) ;;
+        pack:inspect|packs:inspect|pack:cat|packs:cat) words="$(clingon pack list --names 2>/dev/null | cut -f1) $(clingon pack available --names 2>/dev/null | cut -f1)" ;;
         pack:*|packs:*) words=$(clingon pack list --names 2>/dev/null | cut -f1) ;;
       esac
       ;;

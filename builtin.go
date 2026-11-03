@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,6 +74,9 @@ func builtinSections() []*config.Section {
 					{Name: "pack", Options: packOptions(available), Desc: "Adding <pack>."},
 				}},
 				{Name: "Available packs", Desc: "Lists the packs you can install and what each one covers.", Cmd: self + " pack available"},
+				{Name: "Inspect a pack", Desc: "Prints a pack's file, whether you have it or not, so you can see every command it holds and exactly what each one runs.", Cmd: self + " pack inspect <pack>", Args: []config.Arg{
+					{Name: "pack", Options: packOptions(slices.Concat(local, installed, available)), Desc: "Printing <pack>."},
+				}},
 				{Name: "List installed packs", Disabled: noneInstalled, Desc: "Lists the packs you've installed, with their versions.", Cmd: self + " pack list --remote"},
 				{Name: "Remove a pack", Disabled: noneInstalled, Desc: "Uninstalls a pack, taking its commands out of the menu.", Risk: config.RiskWarn, Cmd: self + " pack remove <pack>", Args: []config.Arg{
 					{Name: "pack", Options: packOptions(installed), Desc: "Removing <pack>."},

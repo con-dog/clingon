@@ -327,6 +327,37 @@ func TestParseCrashFromBubbleTea(t *testing.T) {
 	}
 }
 
+func TestPackInspect(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	run := func(ref string) (string, error) {
+		return output(t, func() error { return packCmd([]string{"inspect", ref}) })
+	}
+	// One you don't have yet: exactly what installing it would add.
+	if out, err := run("docker"); err != nil || !strings.Contains(out, "name: Docker") {
+		t.Fatalf("not installed: %.100q %v", out, err)
+	}
+	if err := config.Install("docker"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run("remote/docker"); err != nil || !strings.HasPrefix(out, "# Installed by clingon.") {
+		t.Errorf("installed: %.100q %v", out, err)
+	}
+	if err := config.AddCommand("docker", "Mine", "Hi", "echo hi", ""); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run("local/docker"); err != nil || !strings.Contains(out, "echo hi") {
+		t.Errorf("your own: %.100q %v", out, err)
+	}
+	if _, err := run("docker"); err == nil || !strings.Contains(err.Error(), "say remote/docker or local/docker") {
+		t.Errorf("both: should ask which, got %v", err)
+	}
+	for _, bad := range []string{"nope", "../recipes", "local/nope", "remote/git"} {
+		if _, err := run(bad); err == nil {
+			t.Errorf("%s: should be refused", bad)
+		}
+	}
+}
+
 func TestRecipeCommands(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	run := func(args ...string) (string, error) { return output(t, func() error { return recipeCmd(args) }) }
@@ -341,6 +372,28 @@ func TestRecipeCommands(t *testing.T) {
 	}
 	if _, err := run("save", "No steps"); err == nil {
 		t.Error("no steps should be refused")
+	}
+	if err := config.AddCommand("mine", "Deploy", "Ship", "ship <where>", "Ships it."); err != nil {
+		t.Fatal(err)
+	}
+	id := (&config.Section{Name: "Deploy"}).CommandID(&config.Command{Name: "Ship"})
+	if _, err := run("save", "Ship it", id, "gone-00000000"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := run("describe", "ship IT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Ship it", "2 steps", " 1  Ship · Deploy", "ship <where>", "Ships it.", "Asks for: where", " 2  Not available here", "gone-00000000"} {
+		if !strings.Contains(ansi.Strip(out), want) {
+			t.Errorf("describe should say %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "❯") {
+		t.Errorf("describe shouldn't look like the shell's prompt:\n%s", out)
+	}
+	if _, err := run("describe", "Nope"); err == nil {
+		t.Error("describing what isn't there should say so")
 	}
 	if _, err := run("remove", "My AWS ECS flow"); err != nil {
 		t.Error(err)

@@ -210,6 +210,27 @@ func InCatalog(name string) bool {
 	return err == nil
 }
 
+// PackSource is a pack's file as it stands: your own, the installed copy, or if
+// you have neither, the one that would be installed.
+func PackSource(ref string) ([]byte, error) {
+	where, name := SplitRef(ref)
+	if err := checkPackName(name); err != nil {
+		return nil, err
+	}
+	remote, local := IsInstalled(name), IsLocal(name)
+	switch {
+	case where == "" && remote && local:
+		return nil, fmt.Errorf("both packs/remote and packs/local have %s: say remote/%s or local/%s", name, name, name)
+	case where == "local" && local, where == "" && local:
+		return os.ReadFile(PackPath(name))
+	case where == "remote" && remote, where == "" && remote:
+		return os.ReadFile(remotePath(name))
+	case where == "" && InCatalog(name):
+		return packFS.ReadFile("packs/" + name + ".yaml")
+	}
+	return nil, fmt.Errorf("no pack called %s (see `clingon pack list` and `clingon pack available`)", ref)
+}
+
 // RemotePath is where the installed pack called name lives.
 func RemotePath(name string) string { return remotePath(name) }
 

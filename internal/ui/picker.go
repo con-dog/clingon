@@ -354,6 +354,18 @@ const stepW = 3
 // stepBadge is a recipe number, marked the same wherever it shows.
 func stepBadge(n int) string { return stepStyle.Render(" " + strconv.Itoa(n) + " ") }
 
+// StepBadge is a step's number as the menu shows it, for clingon's other screens.
+func StepBadge(n int) string { return stepBadge(n) }
+
+// CommandBlock is a command as the Command area shows it, w cells wide.
+func CommandBlock(c *config.Command, w int) []string {
+	lines := wrapSpaces(preview(c, nil, -1, ""), w)
+	for i, l := range lines {
+		lines[i] = onBg(l, raised, w)
+	}
+	return lines
+}
+
 func (p *picker) row(it item, active bool, width int) string {
 	if it.rule {
 		return faintStyle.Render(strings.Repeat("─", width))
