@@ -94,6 +94,9 @@ func builtinSections() []*config.Section {
 				{Name: "Check all packs", Desc: "Checks every pack, yours and installed, for mistakes.", Cmd: self + " check"},
 			}},
 		}},
+		{Name: "Recipes", Icon: clingonMark, Color: clingonPink, Category: "Clingon", Groups: []config.Group{
+			{Name: "Your recipes"},
+		}},
 		{Name: "Update", Icon: clingonMark, Color: clingonPink, Category: "Clingon", Groups: []config.Group{
 			{Name: "clingon", Commands: []config.Command{
 				{Name: "Show version", Desc: "Shows which version of clingon you're running.", Cmd: self + " version"},

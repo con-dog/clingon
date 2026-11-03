@@ -611,6 +611,38 @@ func TestSlashOpensTheFilter(t *testing.T) {
 	queryIs("ec")
 }
 
+// A section can have a heading and nothing under it yet: every key still has
+// to behave there.
+func TestEmptySectionIsSafe(t *testing.T) {
+	sec := &config.Section{Name: "Recipes", Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Your recipes"}}}
+	m := New(Options{Config: &config.Config{}, Builtin: func() []*config.Section { return []*config.Section{sec} }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	if it := m.list.selected(); it == nil || it.title != "Recipes" {
+		t.Fatalf("it should be listed, at %+v", it)
+	}
+	_ = m.view()
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.section != sec {
+		t.Fatal("it should open")
+	}
+	for _, k := range []tea.KeyPressMsg{
+		{Code: tea.KeyDown}, {Code: tea.KeyUp}, {Code: tea.KeyPgDown}, {Code: tea.KeyEnter}, {Code: tea.KeyRight},
+		typed("]"), typed("["), typed("1"), typed("x"), typed("/"), typed("a"), typed("/"),
+	} {
+		m.Update(k)
+		if view := ansi.Strip(m.view()); !strings.Contains(view, "YOUR RECIPES") && m.list.query() == "" {
+			t.Errorf("after %q the heading should still show:\n%s", k.String(), view)
+		}
+	}
+	if len(m.recipe) != 0 || m.section != sec || m.mode != modeBrowse {
+		t.Fatalf("nothing there to act on: recipe %v, mode %v", m.recipe, m.mode)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	if m.section != nil {
+		t.Fatal("← should go back")
+	}
+}
+
 func TestStatusBarShowsTheRecipe(t *testing.T) {
 	shell := ShellState{}
 	m := New(Options{Config: &config.Config{Sections: []config.Section{
