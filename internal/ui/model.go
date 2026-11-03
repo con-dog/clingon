@@ -2311,6 +2311,10 @@ func (m *Model) fillView(w, h int) string {
 	}
 	lines := []string{cursorStyle.Render(a.Label()) + dimStyle.Render(meta)}
 	used := 1
+	if h >= 6 { // what's being filled in, room allowing: the blank comes first
+		lines = append([]string{m.fillHeader(w), ""}, lines...)
+		used = 3
+	}
 
 	switch {
 	case j.usePick:
@@ -2323,6 +2327,17 @@ func (m *Model) fillView(w, h int) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// fillHeader names the command being filled in, and how far through the
+// recipe it is, if it's a step of one.
+func (m *Model) fillHeader(w int) string {
+	step := ""
+	if m.run != nil {
+		step = fmt.Sprintf(" · step %d of %d", m.run.at+1, len(m.recipe))
+	}
+	name := ansi.Truncate(strings.ToUpper(m.job.ref.cmd.Name), max(w-ansi.StringWidth(step), 1), "…")
+	return headerStyle.Render(name) + dimStyle.Render(step)
 }
 
 // noticeView replaces the list while a notice is up.

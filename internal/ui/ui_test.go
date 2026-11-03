@@ -1029,6 +1029,60 @@ func TestBarIsDrawnIn256Colours(t *testing.T) {
 	}
 }
 
+func TestFillInNamesTheCommand(t *testing.T) {
+	args := []config.Arg{{Name: "count"}, {Name: "kind", Options: []config.Option{{Value: "x"}, {Value: "y"}}}}
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "First", Cmd: "first"},
+		{Name: "Biggest things here", Cmd: "big <count> <kind>", Args: args},
+	}}}}, Send: func(string) error { return nil }, WaitIdle: func() bool { return true }, Builtin: func() []*config.Section {
+		return []*config.Section{{Name: RecipesSection, Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Current recipe"}}}}
+	}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	m.list.cursor = 2
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	lines := func(w, h int) []string { return strings.Split(ansi.Strip(m.fillView(w, h)), "\n") }
+	got := lines(60, 20)
+	if got[0] != "BIGGEST THINGS HERE" || got[1] != "" || !strings.HasPrefix(got[2], "count  1/2") || !strings.HasPrefix(got[3], "❯") {
+		t.Errorf("name, a blank line, then the arg and its input:\n%q", got[:4])
+	}
+	if head := lines(10, 20)[0]; ansi.StringWidth(head) > 10 || !strings.HasSuffix(head, "…") {
+		t.Errorf("a long name should fit: %q", head)
+	}
+	if got := lines(60, 5); !strings.HasPrefix(got[0], "count") {
+		t.Errorf("no room: the input matters more than the name: %q", got)
+	}
+
+	// A pick list keeps its rows in the height it's given, header and all.
+	m.Update(typed("3"))
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if got := lines(60, 8); got[0] != "BIGGEST THINGS HERE" || !strings.HasPrefix(got[2], "kind  2/2") || len(got) > 8 {
+		t.Errorf("pick list: %q", got)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	if m.mode != modeBrowse {
+		t.Fatalf("← should leave the command, mode %v", m.mode)
+	}
+
+	// As a step of a recipe, it says which.
+	m.showSection(&m.opt.Config.Sections[0])
+	m.list.cursor = 1
+	m.Update(typed("1"))
+	m.list.cursor = 2
+	m.Update(typed("2"))
+	m.Update(typed("r"))
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.Update(idleMsg{seq: m.run.seq, ok: true})
+	if head := lines(60, 20)[0]; head != "BIGGEST THINGS HERE · step 2 of 2" {
+		t.Errorf("head = %q", head)
+	}
+	if head := lines(20, 20)[0]; ansi.StringWidth(head) > 20 || !strings.HasSuffix(head, " · step 2 of 2") {
+		t.Errorf("a long name gives way to the step: %q", head)
+	}
+}
+
 func TestStatusBarShowsTheRecipe(t *testing.T) {
 	shell := ShellState{}
 	m := New(Options{Config: &config.Config{Sections: []config.Section{
