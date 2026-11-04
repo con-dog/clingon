@@ -1941,47 +1941,72 @@ func TestSavingARecipe(t *testing.T) {
 	sentIs("one")
 	done()
 	done()
-	if !strings.Contains(m.view(), "SAVED RECIPES") {
+	if !strings.Contains(m.view(), "ALL RECIPES") {
 		t.Errorf("should list it:\n%s", m.view())
 	}
 
-	// Its row makes it the current recipe, in place of what's numbered, and runs it.
+	// One list of them: the same recipe isn't repeated under other headings.
+	if view := m.view(); !strings.Contains(view, "ALL RECIPES") || strings.Count(ansi.Strip(view), "My flow") != 1 {
+		t.Errorf("should list it once:\n%s", view)
+	}
+
+	// Its row opens its own list, in this order. ← goes back to its row.
+	titles := func() string {
+		var ts []string
+		for i, it := range m.list.view {
+			if m.list.selectable(i) {
+				ts = append(ts, it.title)
+			}
+		}
+		return strings.Join(ts, " ")
+	}
+	open := func(name string) {
+		t.Helper()
+		on(name)
+		right()
+		if titles() != "Run Inspect Delete" {
+			t.Fatalf("%s's rows: %q", name, titles())
+		}
+	}
 	m.Update(typed("x"))
 	sent, m.hint = nil, ""
-	on("My flow")
+	open("My flow")
+	if !strings.Contains(ansi.Strip(m.view()), "› My flow") || m.list.selected().title != "Run" {
+		t.Errorf("at %+v:\n%s", m.list.selected(), m.view())
+	}
+	left()
+	if it := m.list.selected(); m.section != m.recipesSection() || it == nil || it.title != "My flow" {
+		t.Fatalf("← should go back to its row, at %+v", it)
+	}
+
+	// Run makes it the current recipe, in place of what's numbered, and runs it.
+	open("My flow")
+	on("Run")
 	right()
 	sentIs("one")
-	if len(m.recipe) != 2 || m.run == nil {
-		t.Fatalf("recipe %d steps, run %+v", len(m.recipe), m.run)
+	if len(m.recipe) != 2 || m.run == nil || m.opened != "" {
+		t.Fatalf("recipe %d steps, run %+v, opened %q", len(m.recipe), m.run, m.opened)
 	}
 	done()
 	done()
 
-	// Describing one sends that alone, runs no steps, and stays on the row.
-	if !strings.Contains(m.view(), "DESCRIBE RECIPES") {
-		t.Errorf("should offer to describe it:\n%s", m.view())
-	}
-	m.list.cursor = slices.IndexFunc(m.list.view, func(it item) bool { _, ok := it.ref.(describeRecipeRef); return ok })
-	describing := m.list.cursor
+	// Inspect sends that alone, runs no steps, and stays on the row.
+	open("My flow")
+	on("Inspect")
+	inspecting := m.list.cursor
 	sent = nil
 	right()
 	sentIs("clingon recipe describe 'My flow'")
-	if m.run != nil || m.list.cursor != describing {
-		t.Errorf("run %+v, cursor %d, want %d", m.run, m.list.cursor, describing)
+	if m.run != nil || m.list.cursor != inspecting || m.opened != "My flow" {
+		t.Errorf("run %+v, cursor %d, want %d, opened %q", m.run, m.list.cursor, inspecting, m.opened)
 	}
 
-	// Removing one asks first, No first, and sends nothing unless it's Yes.
+	// Delete asks first, No first, and sends nothing unless it's Yes.
 	idle := func() { t.Helper(); m.Update(idleMsg{seq: m.runSeq, ok: true}) }
-	if !strings.Contains(m.view(), "REMOVE RECIPES") {
-		t.Errorf("should offer to remove it:\n%s", m.view())
-	}
 	idle()
 	saved = []config.Recipe{{Name: "A", Steps: saved[0].Steps}, {Name: "My flow", Steps: saved[0].Steps}, {Name: "Z", Steps: saved[0].Steps}}
 	m.showSection(m.section)
-	removeRow := func(name string) int {
-		return slices.IndexFunc(m.list.view, func(it item) bool { return it.ref == any(removeRecipeRef{name}) })
-	}
-	m.list.cursor = removeRow("My flow")
+	on("Delete")
 	if it := m.list.selected(); it.risk != config.RiskWarn {
 		t.Errorf("should be marked as a warning: %+v", it)
 	}
@@ -1991,38 +2016,46 @@ func TestSavingARecipe(t *testing.T) {
 		t.Fatalf("should ask, No first: mode %v, yes %v, sent %v", m.mode, m.yes, sent)
 	}
 	right()
-	if len(sent) != 0 || m.mode != modeBrowse || m.list.cursor != removeRow("My flow") {
-		t.Errorf("No: sent %v, mode %v, cursor %d, want %d", sent, m.mode, m.list.cursor, removeRow("My flow"))
+	if it := m.list.selected(); len(sent) != 0 || m.mode != modeBrowse || it.title != "Delete" {
+		t.Errorf("No: sent %v, mode %v, at %+v", sent, m.mode, it)
 	}
 	right()
 	m.Update(typed("y"))
 	sentIs("clingon recipe remove 'My flow'")
 
-	// When the shell's done it's off the list, and the cursor is on the next to remove.
+	// If it fails it's still there, and so are you.
+	idle()
+	if it := m.list.selected(); m.opened != "My flow" || it.title != "Delete" {
+		t.Errorf("opened %q, at %+v", m.opened, it)
+	}
+
+	// When it's gone, you're back in All recipes, on the next one.
+	right()
+	m.Update(typed("y"))
 	saved = slices.Delete(saved, 1, 2)
 	idle()
-	if removeRow("My flow") != -1 || m.list.cursor != removeRow("Z") {
-		t.Errorf("cursor %d, want %d:\n%s", m.list.cursor, removeRow("Z"), m.view())
+	if it := m.list.selected(); m.opened != "" || it.title != "Z" {
+		t.Errorf("opened %q, at %+v:\n%s", m.opened, it, m.view())
 	}
 
 	// Removed in the shell by hand, the list catches up as well.
 	saved = saved[:1]
 	idle()
-	if removeRow("Z") != -1 {
+	if strings.Contains(ansi.Strip(m.view()), "Z") {
 		t.Errorf("Z was removed by hand:\n%s", m.view())
 	}
-	saved = []config.Recipe{{Name: "My flow", Steps: saved[0].Steps}}
-	m.showSection(m.section)
 
 	// A step whose command has gone stops it before anything runs.
 	saved = []config.Recipe{{Name: "Old", Steps: []string{"x-00000000"}}}
 	m.showSection(m.section)
 	sent = nil
-	on("Old")
+	open("Old")
+	on("Run")
 	right()
 	if len(sent) != 0 || m.run != nil || !strings.Contains(m.errMsg, "gone") {
 		t.Errorf("sent %v, run %+v, err %q", sent, m.run, m.errMsg)
 	}
+	left()
 
 	// A save that fails stops there: no steps run, and the recipe stays.
 	saved, failed, sent = nil, true, nil

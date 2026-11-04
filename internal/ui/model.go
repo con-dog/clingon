@@ -212,6 +212,7 @@ type Model struct {
 	wrong     bool                        // the confirm word typed didn't match
 	nameWhy   string                      // why the recipe's name was refused
 	listed    []config.Recipe             // the saved recipes the list was last drawn with
+	opened    string                      // the saved recipe whose own list is showing
 	removing  string                      // the saved recipe being removed, until the shell's done
 	help      bool                        // the keys screen is showing
 	blurred   bool                        // focus is in the shell: the cursor's row is drawn quietly
@@ -321,7 +322,7 @@ func (m *Model) showRoot(focus string) {
 		items = append(items, sectionItem(s))
 		addSearch(s)
 	}
-	m.section = nil
+	m.section, m.opened = nil, ""
 	m.list = newPicker(items, search, false)
 	m.list.step = m.itemStep
 	if m.opt.Headline != nil {
@@ -422,41 +423,48 @@ func (m *Model) showSection(s *config.Section) {
 		items = heading(items, g.Name)
 		add(g.Commands)
 	}
-	if s == m.recipesSection() {
-		if len(m.recipe) == 0 {
-			m.hint = "Nothing numbered yet: press 1-9 on a command"
-		} else {
-			items = append(items, item{title: "Run recipe", accent: true, ref: runRecipeRef{}})
-		}
-		for _, st := range m.recipe {
-			c := st.ref.cmd
-			items = append(items, item{title: c.Name, indent: true, where: st.ref.section, keywords: c.Cmd, risk: c.Risk, disabled: m.unavailable(c) != "", ref: st.ref})
-		}
+	if s != m.recipesSection() {
+		m.opened = ""
+	} else {
 		saved := m.savedRecipes()
 		m.listed = saved
-		if len(saved) > 0 {
-			items = heading(items, "Saved recipes")
-			for _, r := range saved {
-				items = append(items, item{title: r.Name, ref: savedRecipeRef{r}})
+		if i := slices.IndexFunc(saved, func(r config.Recipe) bool { return r.Name == m.opened }); i >= 0 {
+			r := saved[i]
+			items = append(heading(nil, r.Name),
+				item{title: "Run", accent: true, ref: savedRecipeRef{r}},
+				item{title: "Inspect", ref: describeRecipeRef{r.Name}},
+				item{title: "Delete", risk: config.RiskWarn, ref: removeRecipeRef{r.Name}})
+		} else {
+			m.opened = "" // gone, or never was
+			if len(m.recipe) == 0 {
+				m.hint = "Nothing numbered yet: press 1-9 on a command"
+			} else {
+				items = append(items, item{title: "Run recipe", accent: true, ref: runRecipeRef{}})
 			}
-			items = heading(items, "Describe recipes")
-			for _, r := range saved {
-				items = append(items, item{title: r.Name, ref: describeRecipeRef{r.Name}})
+			for _, st := range m.recipe {
+				c := st.ref.cmd
+				items = append(items, item{title: c.Name, indent: true, where: st.ref.section, keywords: c.Cmd, risk: c.Risk, disabled: m.unavailable(c) != "", ref: st.ref})
 			}
-			items = heading(items, "Remove recipes")
-			for _, r := range saved {
-				items = append(items, item{title: r.Name, risk: config.RiskWarn, ref: removeRecipeRef{r.Name}})
+			if len(saved) > 0 {
+				items = heading(items, "All recipes")
+				for _, r := range saved {
+					items = append(items, item{title: r.Name, ref: openRecipeRef{r}})
+				}
 			}
 		}
 	}
 	m.section = s
 	m.list = newPicker(items, nil, false)
 	m.list.step = m.itemStep
-	if s == m.recipesSection() && len(m.recipe) > 0 {
+	if s == m.recipesSection() && len(m.recipe) > 0 && m.opened == "" {
 		m.list.cursor = 1 // Run recipe, under its heading
 	}
 	if s == m.recipesSection() && m.removing != "" {
-		m.landOnRemove()
+		if m.opened == "" {
+			m.landOnRecipe(m.removing) // it's gone
+		} else {
+			m.list.cursor = slices.IndexFunc(m.list.view, func(it item) bool { _, ok := it.ref.(removeRecipeRef); return ok })
+		}
 	}
 	m.checkTools()
 }
@@ -843,6 +851,8 @@ func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 		switch {
 		case m.list.filtering:
 			m.list.clearFilter()
+		case m.opened != "":
+			m.closeRecipe()
 		case m.section != nil:
 			m.showRoot(m.section.Name)
 		default:
@@ -851,6 +861,8 @@ func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "left":
 		switch {
+		case m.opened != "":
+			m.closeRecipe()
 		case m.section != nil:
 			m.showRoot(m.section.Name)
 		case m.list.filtering:
@@ -867,6 +879,7 @@ func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "r":
 		if s := m.recipesSection(); s != nil && !m.list.filtering {
 			m.errMsg, m.hint = "", ""
+			m.opened = ""
 			m.showSection(s)
 			return nil
 		}
@@ -1115,6 +1128,9 @@ func (m *Model) open() tea.Cmd {
 			return nil
 		}
 		return m.startRecipe()
+	case openRecipeRef:
+		m.opened = r.Name
+		m.showSection(m.section)
 	case savedRecipeRef:
 		if m.run != nil {
 			m.hint = "The recipe is running: x stops it"
@@ -1130,7 +1146,7 @@ func (m *Model) open() tea.Cmd {
 			}
 			steps = append(steps, recipeStep{id, c})
 		}
-		m.recipe = steps
+		m.recipe, m.opened = steps, ""
 		m.showSection(m.section)
 		return m.startRecipe()
 	case describeRecipeRef:
@@ -1145,7 +1161,7 @@ func (m *Model) open() tea.Cmd {
 			return nil // the status bar says so
 		}
 		cmd := m.describeCommand(r.name)
-		done := m.finish(pending{section: m.section.Name, sec: m.section, name: "Describe " + r.name, cmd: cmd, shown: cmd})
+		done := m.finish(pending{section: m.section.Name, sec: m.section, name: "Inspect " + r.name, cmd: cmd, shown: cmd})
 		// Stay on its row, to read about another: the list's first row runs one.
 		if i := slices.IndexFunc(m.list.view, func(it item) bool { return it.ref == any(r) }); i >= 0 {
 			m.list.cursor = i
@@ -1164,7 +1180,7 @@ func (m *Model) open() tea.Cmd {
 		}
 		cmd := m.removeCommand(r.name)
 		m.removing = r.name // No, or Yes, comes back to this row
-		return m.finish(pending{section: m.section.Name, sec: m.section, name: "Remove " + r.name, desc: removeDesc, risk: config.RiskWarn, cmd: cmd, shown: cmd})
+		return m.finish(pending{section: m.section.Name, sec: m.section, name: "Delete " + r.name, desc: removeDesc, risk: config.RiskWarn, cmd: cmd, shown: cmd})
 	}
 	return nil
 }
@@ -1172,13 +1188,17 @@ func (m *Model) open() tea.Cmd {
 // runRecipeRef is the row that runs the recipe.
 type runRecipeRef struct{}
 
-// savedRecipeRef is a saved recipe's row: it becomes the recipe, and runs.
+// openRecipeRef is a saved recipe's row in All recipes: it opens the list of
+// what can be done with it.
+type openRecipeRef struct{ config.Recipe }
+
+// savedRecipeRef is that list's Run: it becomes the recipe, and runs.
 type savedRecipeRef struct{ config.Recipe }
 
-// describeRecipeRef is a saved recipe's other row: the shell says what it does.
+// describeRecipeRef is its Inspect: the shell says what it does.
 type describeRecipeRef struct{ name string }
 
-// removeRecipeRef is a saved recipe's last row: it asks, then deletes the recipe.
+// removeRecipeRef is its Delete: it asks, then deletes the recipe.
 type removeRecipeRef struct{ name string }
 
 const removeDesc = "Deletes this saved recipe. The commands in it stay where they are."
@@ -1187,17 +1207,25 @@ func (m *Model) removeCommand(name string) string {
 	return m.opt.Self + " recipe remove " + shellQuote(name)
 }
 
-// landOnRemove puts the cursor on the Remove recipes row being dealt with. If
-// it's gone that's the one after it, or the last: on to remove another.
-func (m *Model) landOnRemove() {
+// closeRecipe goes back from a recipe's own list to its row in All recipes.
+func (m *Model) closeRecipe() {
+	name := m.opened
+	m.opened = ""
+	m.showSection(m.section)
+	m.landOnRecipe(name)
+}
+
+// landOnRecipe puts the cursor on that row in All recipes. If it's gone that's
+// the one after it, or the last.
+func (m *Model) landOnRecipe(name string) {
 	last := -1
 	for i, it := range m.list.view {
-		r, ok := it.ref.(removeRecipeRef)
+		r, ok := it.ref.(openRecipeRef)
 		if !ok {
 			continue
 		}
 		last = i
-		if strings.ToLower(r.name) >= strings.ToLower(m.removing) { // they're sorted
+		if strings.ToLower(r.Name) >= strings.ToLower(name) { // they're sorted
 			break
 		}
 	}
@@ -1956,6 +1984,9 @@ func (m *Model) view() string {
 		parts = append(in(m.job.ref.sec, m.job.ref.section), m.job.ref.cmd.Name)
 	case m.section != nil:
 		parts = in(m.section, m.section.Name)
+		if m.opened != "" {
+			parts = append(parts, m.opened)
+		}
 	}
 	crumb := ""
 	for i, p := range parts { // where you are bright, the way there dim
@@ -2133,6 +2164,8 @@ func (m *Model) details() (cmd, desc string) {
 		return preview(r.cmd, nil, -1, ""), describe(r.cmd, nil, nil, -1, "", "")
 	case runRecipeRef:
 		return "", "Runs " + plural(len(m.recipe), "step") + " in order, asking for any blanks as each is reached. Stops if one fails."
+	case openRecipeRef:
+		return "", upperFirst(plural(len(r.Steps), "step")) + ". Run it, inspect it or delete it."
 	case savedRecipeRef:
 		return strings.Join(r.Steps, " "), "Makes this the current recipe and runs its " + plural(len(r.Steps), "step") + ", asking for any blanks as each is reached. Stops if one fails."
 	case describeRecipeRef:
