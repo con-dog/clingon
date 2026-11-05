@@ -236,7 +236,7 @@ func TestMenuLocksWhileShellIsBusy(t *testing.T) {
 	if cmd, _ := m.details(); !strings.Contains(ansi.Strip(cmd), "ls") {
 		t.Errorf("the Command area still shows what it would run, got %q", cmd)
 	}
-	if bar := ansi.Strip(m.barBody(60)); !strings.Contains(bar, "⏳ Edit a pack is running") {
+	if bar := ansi.Strip(m.barBody(60)); !strings.Contains(bar, "◔ Edit a pack is running") {
 		t.Errorf("the status bar should say so, got %q", bar)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -3614,5 +3614,34 @@ func TestTickingAFilteredPackTicksOnlyWhatsShown(t *testing.T) {
 	press()
 	if got := vals(); got != "aws/s3" {
 		t.Errorf("child: %q", got)
+	}
+}
+
+// The status bar draws in clingon's font, never in the system's emoji: a symbol
+// with an emoji form would arrive in colour, and the wrong size.
+func TestStatusBarHasNoEmoji(t *testing.T) {
+	shell := ShellState{}
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "a", Cmd: "a"}}}}},
+		Send: func(string) error { return nil }, Shell: func() ShellState { return shell }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	emoji := func(s string) bool {
+		for _, r := range s {
+			if r >= 0x23E9 && r <= 0x23FA || r >= 0x1F300 && r <= 0x1FAFF || r == 0x231A || r == 0x231B {
+				return true
+			}
+		}
+		return false
+	}
+	for name, set := range map[string]func(){
+		"running":  func() { m.busy, m.quiet, m.scrolling, m.typed = "x", false, false, "" },
+		"scrolled": func() { m.busy, m.scrolling, m.typed = "", true, "" },
+		"typed":    func() { m.busy, m.scrolling, m.typed = "", false, "git" },
+		"open":     func() { m.busy, m.scrolling, m.typed = "", false, unfinishedCommand },
+	} {
+		set()
+		if bar := ansi.Strip(m.statusBar(100)); emoji(bar) {
+			t.Errorf("%s: %q", name, bar)
+		}
 	}
 }

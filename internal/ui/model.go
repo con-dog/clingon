@@ -2731,9 +2731,9 @@ func (m *Model) barBody(w int) string {
 	case m.hint != "":
 		return bar(raised, m.hint, w)
 	case m.busy != "" && !m.quiet:
-		return bar(orange, "⏳ "+m.busy+" is running in the shell · tab to go there", w)
+		return bar(orange, "◔ "+m.busy+" is running in the shell · tab to go there", w)
 	case m.scrolling:
-		return bar(orange, "⏸ The shell is scrolled back · press q there to stop", w)
+		return bar(orange, "‖ The shell is scrolled back · press q there to stop", w)
 	case m.typed == unfinishedCommand && m.mode != modeTyped:
 		return bar(orange, "✎ The shell is in the middle of a command · tab to finish it there", w)
 	case m.typed != "" && m.mode != modeTyped:
