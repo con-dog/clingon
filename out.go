@@ -189,10 +189,10 @@ type row struct {
 // plain for scripts.
 func isTerm() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
 
-// cardWidth is how wide cards are drawn: the terminal's width, up to 100.
+// cardWidth is how wide cards are drawn: all of the terminal's width.
 func cardWidth() int {
 	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w >= 40 {
-		return min(w, 100)
+		return w
 	}
 	return 80
 }
