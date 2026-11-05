@@ -17,7 +17,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Your packs are folders in packs/local, in the same format as the built-in
+// Your packs are folders in packs/mine, in the same format as the built-in
 // ones. They're always loaded: adding or removing one is creating or deleting
 // its folder.
 
@@ -50,7 +50,7 @@ func checkRef(name string) error {
 // LocalPacks lists your pack folders, which Load reads after the installed packs.
 func LocalPacks() []string { return packDirs(localDir()) }
 
-// LoosePackFiles lists YAML files sitting directly in packs/local or packs/remote,
+// LoosePackFiles lists YAML files sitting directly in packs/mine or packs/remote,
 // which aren't read: a pack is a folder.
 func LoosePackFiles() []string {
 	return append(yamlFiles(localDir()), yamlFiles(remoteDir())...)
@@ -149,7 +149,7 @@ func readPackDir(dir string) ([]parsedFile, error) {
 }
 
 // YourPacks describes each of your packs.
-func YourPacks() ([]Pack, error) { return describePacks(LocalPacks(), "local") }
+func YourPacks() ([]Pack, error) { return describePacks(LocalPacks(), "mine") }
 
 // describePacks describes each pack folder, leaving out any with no submenus.
 func describePacks(dirs []string, where string) ([]Pack, error) {
@@ -249,7 +249,7 @@ func NewPack(name string) error {
 	}
 	dir := PackPath(name)
 	if _, err := os.Stat(dir); err == nil {
-		return fmt.Errorf("you already have a pack called local/%s", name)
+		return fmt.Errorf("you already have a pack called mine/%s", name)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -281,7 +281,7 @@ func DeletePack(name string) error {
 		return err
 	}
 	if !IsLocal(name) {
-		return fmt.Errorf("you don't have a pack called local/%s", name)
+		return fmt.Errorf("you don't have a pack called mine/%s", name)
 	}
 	return removeRef(localDir(), name)
 }
@@ -391,7 +391,7 @@ func addCommand(sec *yaml.Node, pack, section, name, cmd, desc string) error {
 	cmds := seqFor(sec, "commands")
 	for _, c := range cmds.Content {
 		if v := mapGet(c, "name"); v != nil && v.Value == name {
-			return fmt.Errorf("local/%s › %s already has a command called %q", pack, section, name)
+			return fmt.Errorf("mine/%s › %s already has a command called %q", pack, section, name)
 		}
 	}
 	c := &yaml.Node{Kind: yaml.MappingNode}

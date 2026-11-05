@@ -23,7 +23,7 @@ var packFS embed.FS
 // looks and whose other files are a submenu each.
 type Pack struct {
 	Name        string
-	Where       string // "remote" (from clingon, installed or not) or "local" (yours)
+	Where       string // "remote" (from clingon, installed or not) or "mine" (yours)
 	Description string
 	Requires    []string
 	AnyOf       []string // for a pack with no tools of its own whose groups each need one: any will do
@@ -51,11 +51,25 @@ func Packs() ([]Pack, error) {
 	return out, nil
 }
 
-// Ref is what a pack is called everywhere it's shown: remote/NAME or local/NAME.
+// Ref is a pack's full name, for scripts and completion: remote/NAME or mine/NAME.
 func (p Pack) Ref() string { return p.Where + "/" + p.Name }
 
-// RemoteRef is Ref for a pack known only by name.
-func RemoteRef(name string) string { return "remote/" + name }
+// Shown is what a pack is called to people: see RemoteRef. Your own stay mine/NAME.
+func (p Pack) Shown() string {
+	if p.Where == "remote" {
+		return RemoteRef(p.Name)
+	}
+	return p.Ref()
+}
+
+// RemoteRef is what an installed pack is called to people: its name, or
+// remote/NAME if you have a mine/NAME too, when the name alone wouldn't do.
+func RemoteRef(name string) string {
+	if pack, _ := SplitModule(name); IsLocal(pack) {
+		return "remote/" + name
+	}
+	return name
+}
 
 // SplitModule splits aws/ecs into the pack and the module; a pack alone has no module.
 func SplitModule(name string) (pack, module string) {
@@ -108,7 +122,7 @@ func loadPack(name string) (*Config, error) {
 //	packs/_available.yaml  every pack you can install (written by clingon)
 //	packs/remote/          installed packs, a folder each: installing copies
 //	                       one in, removing deletes it (rather like node_modules)
-//	packs/local/           your own packs, a folder each
+//	packs/mine/           your own packs, a folder each
 //	recipes.yaml           your saved recipes
 //	config/                what clingon keeps for itself
 //
@@ -116,7 +130,7 @@ func loadPack(name string) (*Config, error) {
 // can't start with "_".
 func packsDir() string  { return filepath.Join(Dir(), "packs") }
 func remoteDir() string { return filepath.Join(packsDir(), "remote") }
-func localDir() string  { return filepath.Join(packsDir(), "local") }
+func localDir() string  { return filepath.Join(packsDir(), "mine") }
 
 // remotePath is where an installed pack's folder is, or with aws/ecs, the file
 // of that module.
@@ -197,7 +211,7 @@ func writeWhole(path string, data []byte) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-const remoteHeader = "# Installed by clingon. `clingon pack update` overwrites this file: put\n# your own commands in packs/local/ instead.\n"
+const remoteHeader = "# Installed by clingon. `clingon pack update` overwrites this file: put\n# your own commands in packs/mine/ instead.\n"
 
 // Install copies a pack from the catalog into remote/: all of it, or with
 // aws/ecs, that module and the file saying how the pack looks. Anything of
@@ -298,16 +312,16 @@ func Installed() ([]string, error) {
 // InstalledPacks describes the installed packs.
 func InstalledPacks() ([]Pack, error) { return describePacks(packDirs(remoteDir()), "remote") }
 
-// Ref is a pack name, optionally qualified as remote/NAME or local/NAME
+// Ref is a pack name, optionally qualified as remote/NAME or mine/NAME
 // for when both folders have one of that name.
 func SplitRef(ref string) (where, name string) {
-	if w, n, ok := strings.Cut(ref, "/"); ok && (w == "remote" || w == "local") {
+	if w, n, ok := strings.Cut(ref, "/"); ok && (w == "remote" || w == "mine") {
 		return w, n
 	}
 	return "", ref
 }
 
-// IsInstalled and IsLocal say whether remote/NAME or local/NAME exists: a pack
+// IsInstalled and IsLocal say whether remote/NAME or mine/NAME exists: a pack
 // with something in it, or with aws/ecs, that module.
 func IsInstalled(name string) bool { return refExists(remoteDir(), name) }
 func IsLocal(name string) bool     { return refExists(localDir(), name) }
@@ -364,12 +378,12 @@ func PackSource(ref string) ([]byte, error) {
 	remote, local := IsInstalled(name), IsLocal(name)
 	switch {
 	case where == "" && remote && local:
-		return nil, fmt.Errorf("both packs/remote and packs/local have %s: say remote/%s or local/%s", name, name, name)
-	case where == "local" && local, where == "" && local:
+		return nil, fmt.Errorf("both packs/remote and packs/mine have %s: say remote/%s or mine/%s", name, name, name)
+	case where == "mine" && local, where == "" && local:
 		return diskSource(localDir(), name)
 	case where == "remote" && remote, where == "" && remote:
 		return diskSource(remoteDir(), name)
-	case where != "local" && InCatalog(name):
+	case where != "mine" && InCatalog(name):
 		pack, module := SplitModule(name)
 		if module != "" {
 			return builtinFile(pack, module+".yaml")

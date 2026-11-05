@@ -24,7 +24,7 @@ var clingonPink = ui.PinkHex
 func packOptions(ps []config.Pack) []config.Option {
 	out := make([]config.Option, len(ps))
 	for i, p := range ps {
-		out[i] = config.Option{Value: p.Ref(), Label: p.Description}
+		out[i] = config.Option{Value: p.Shown(), Label: p.Description}
 	}
 	return out
 }
@@ -34,14 +34,14 @@ func packOptions(ps []config.Pack) []config.Option {
 func moduleOptions(ps []config.Pack) []config.Option {
 	var out []config.Option
 	for _, p := range ps {
-		out = append(out, config.Option{Value: p.Ref(), Label: p.Description})
+		out = append(out, config.Option{Value: p.Shown(), Label: p.Description})
 		if len(p.Modules) > 1 {
 			for _, m := range p.Modules {
 				label := m.Description
 				if label == "" {
 					label = m.Name
 				}
-				out = append(out, config.Option{Value: p.Ref() + "/" + m.Slug, Label: label, Indent: true})
+				out = append(out, config.Option{Value: p.Shown() + "/" + m.Slug, Label: label, Indent: true})
 			}
 		}
 	}
@@ -83,18 +83,18 @@ func builtinSections() []*config.Section {
 		}
 		return reason
 	}
-	noLocal := unless(len(local) > 0, "You don't have any local packs yet: create one first.")
+	noLocal := unless(len(local) > 0, "You don't have any packs of your own yet: create one first.")
 	noneInstalled := unless(len(installed) > 0, "No packs are installed.")
 	sections := []*config.Section{
 		{Name: "Packs", Icon: config.Logos["puzzle"], Color: clingonPink, Category: "Clingon", Groups: []config.Group{
 			{Name: "Your packs", Commands: []config.Command{
-				{Name: "Create a pack", Desc: "Makes a pack of your own in packs/local from a working example, and opens it in micro to make it yours: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack create <name>", Args: []config.Arg{
+				{Name: "Create a pack", Desc: "Makes a pack of your own in packs/mine from a working example, and opens it in micro to make it yours: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack create <name>", Args: []config.Arg{
 					{Name: "name", Prompt: "pack name", Desc: "Called <name>.", Placeholder: "letters, digits and dashes, e.g. work-tools"},
 				}},
 				{Name: "Edit a pack", Disabled: noLocal, Desc: "Opens <pack> in micro: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack edit <pack>", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(local)},
 				}},
-				{Name: "List your packs", Disabled: noLocal, Desc: "Lists your own packs.", Cmd: self + " pack list --local"},
+				{Name: "List your packs", Disabled: noLocal, Desc: "Lists your own packs.", Cmd: self + " pack list --mine"},
 				{Name: "Remove packs", Disabled: noLocal, Desc: "Deletes <pack> and every command in it, for good.", Risk: config.RiskDanger, Cmd: self + " pack remove <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(local)},
 				}},
@@ -239,11 +239,11 @@ func doctor(names []string) error {
 		}
 		switch {
 		case len(missing) > 0:
-			add(&tools, row{mark: fail, label: p.Ref(), detail: config.Needs(missing)})
+			add(&tools, row{mark: fail, label: p.Shown(), detail: config.Needs(missing)})
 		case len(p.AnyOf) > 0 && len(have) == 0:
-			add(&tools, row{mark: warn, label: p.Ref(), detail: "needs one of " + strings.Join(p.AnyOf, ", ") + " (none installed)"})
+			add(&tools, row{mark: warn, label: p.Shown(), detail: "needs one of " + strings.Join(p.AnyOf, ", ") + " (none installed)"})
 		default:
-			add(&tools, row{mark: ok, label: p.Ref(), detail: strings.Join(append(p.Requires, have...), ", ")})
+			add(&tools, row{mark: ok, label: p.Shown(), detail: strings.Join(append(p.Requires, have...), ", ")})
 		}
 	}
 	if len(tools) > 0 {

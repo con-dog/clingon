@@ -19,7 +19,7 @@ commands:
   - name: Trust a downloaded app
     id: macos-925c4923
     cmd: xattr -dr com.apple.quarantine <app>
-    desc: "Removes the quarantine mark macOS puts on downloads, so an app opens without the 'can't be opened' warning. Only do it for apps you trust."
+    desc: "Removes the quarantine mark MacOs puts on downloads, so an app opens without the 'can't be opened' warning. Only do it for apps you trust."
     risk: warn
     args:
       - name: app

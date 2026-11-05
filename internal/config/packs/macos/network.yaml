@@ -27,7 +27,7 @@ commands:
   - name: Wi-Fi details
     id: macos-36e8bbc9
     cmd: ipconfig getsummary <device>
-    desc: "Shows the details of your Wi-Fi connection and your address. macOS may hide the network's name."
+    desc: "Shows the details of your Wi-Fi connection and your address. MacOs may hide the network's name."
     args:
       - name: device
         quote: true

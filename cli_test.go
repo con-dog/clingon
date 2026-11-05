@@ -42,7 +42,7 @@ func TestPackCommands(t *testing.T) {
 		}
 		return out
 	}
-	if out := run("add", "git"); !strings.Contains(out, "installed remote/git") {
+	if out := run("add", "git"); !strings.Contains(out, "installed git") {
 		t.Fatalf("add: %q", out)
 	}
 	if out := run("add", "git"); !strings.Contains(out, "already installed") {
@@ -58,12 +58,12 @@ func TestPackCommands(t *testing.T) {
 		t.Fatalf("update with nothing newer: %q", out)
 	}
 	for _, verb := range []string{"add", "update"} {
-		if out, err := output(t, func() error { return packCmd([]string{verb, "local/docker"}) }); err == nil || !strings.Contains(err.Error(), "local/docker") {
-			t.Fatalf("%s local/docker should be refused, got %q %v", verb, out, err)
+		if out, err := output(t, func() error { return packCmd([]string{verb, "mine/docker"}) }); err == nil || !strings.Contains(err.Error(), "mine/docker") {
+			t.Fatalf("%s mine/docker should be refused, got %q %v", verb, out, err)
 		}
 	}
 	if config.IsInstalled("docker") {
-		t.Fatal("add local/docker installed remote/docker")
+		t.Fatal("add mine/docker installed remote/docker")
 	}
 	if _, err := output(t, func() error { return packCmd([]string{"add", "no-such-pack"}) }); err == nil {
 		t.Fatal("adding an unknown pack should fail")
@@ -247,7 +247,7 @@ func TestPackUpdateRemovesRetiredPacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, err := output(t, func() error { return packCmd([]string{"update"}) })
-	if err != nil || !strings.Contains(out, "removed remote/databases") {
+	if err != nil || !strings.Contains(out, "removed databases") {
 		t.Fatalf("update should remove a retired pack, got %q, %v", out, err)
 	}
 	if config.IsInstalled("databases") {
@@ -366,17 +366,17 @@ func TestPackInspect(t *testing.T) {
 	if err := config.AddCommand("docker", "Mine", "Hi", "echo hi", ""); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := run("local/docker"); err != nil || !strings.Contains(out, "echo hi") {
+	if out, err := run("mine/docker"); err != nil || !strings.Contains(out, "echo hi") {
 		t.Errorf("your own: %.100q %v", out, err)
 	}
-	if _, err := run("docker"); err == nil || !strings.Contains(err.Error(), "say remote/docker or local/docker") {
+	if _, err := run("docker"); err == nil || !strings.Contains(err.Error(), "say remote/docker or mine/docker") {
 		t.Errorf("both: should ask which, got %v", err)
 	}
 	// Not installed, and asked for as the menu does.
 	if out, err := run("remote/git"); err != nil || !strings.Contains(out, "name: Git") {
 		t.Errorf("remote, not installed: %.100q %v", out, err)
 	}
-	for _, bad := range []string{"nope", "../recipes", "local/nope", "local/git", "remote/nope"} {
+	for _, bad := range []string{"nope", "../recipes", "mine/nope", "mine/git", "remote/nope"} {
 		if _, err := run(bad); err == nil {
 			t.Errorf("%s: should be refused", bad)
 		}
@@ -404,8 +404,8 @@ func TestEveryPackPickerSaysWhereItsFrom(t *testing.T) {
 				}
 				pickers++
 				for _, o := range a.Options {
-					if !strings.HasPrefix(o.Value, "remote/") && !strings.HasPrefix(o.Value, "local/") {
-						t.Errorf("%s: %s doesn't say where it's from", c.Name, o.Value)
+					if strings.HasPrefix(o.Value, "remote/") {
+						t.Errorf("%s: %s needn't say remote/: nothing else has that name here", c.Name, o.Value)
 					}
 				}
 			}
@@ -421,7 +421,7 @@ func TestEveryPackPickerSaysWhereItsFrom(t *testing.T) {
 			t.Errorf("%s is listed twice", o.Value)
 		}
 	}
-	for _, want := range []string{"local/mine", "remote/git", "remote/docker"} {
+	for _, want := range []string{"mine/mine", "git", "docker"} {
 		if seen[want] != 1 {
 			t.Errorf("%s should be listed once: %v", want, seen)
 		}
@@ -505,7 +505,7 @@ func TestCommandTitle(t *testing.T) {
 func TestPipedOutputHasNoBoxes(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	out, err := output(t, func() error { return packCmd([]string{"add", "git"}) })
-	if err != nil || strings.Contains(out, "╭") || !strings.Contains(out, "installed remote/git") {
+	if err != nil || strings.Contains(out, "╭") || !strings.Contains(out, "installed git") {
 		t.Fatalf("add: %q %v", out, err)
 	}
 	if len(said) != 0 {
@@ -543,8 +543,8 @@ func TestRemovePacksIsAChecklist(t *testing.T) {
 	if found != 2 {
 		t.Errorf("found %d", found)
 	}
-	out, err := output(t, func() error { return packCmd([]string{"remove", "remote/git", "local/mine"}) })
-	if err != nil || !strings.Contains(out, "removed remote/git") || !strings.Contains(out, "removed local/mine") {
+	out, err := output(t, func() error { return packCmd([]string{"remove", "remote/git", "mine/mine"}) })
+	if err != nil || !strings.Contains(out, "removed git") || !strings.Contains(out, "removed mine/mine") {
 		t.Fatalf("%q %v", out, err)
 	}
 }
@@ -566,5 +566,25 @@ func TestCreateGlyphIsTheHammerInClingonsWindow(t *testing.T) {
 	t.Setenv("CLINGON", "1")
 	if got := createGlyph(); got != config.Logos["hammer"] {
 		t.Errorf("in clingon's window: %q", got)
+	}
+}
+
+// remote/ is only said when the name alone wouldn't do.
+func TestRemoteIsOnlySaidWhenNeeded(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if got := config.RemoteRef("git"); got != "git" {
+		t.Errorf("no pack of your own called git: %q", got)
+	}
+	if err := config.NewPack("git"); err != nil {
+		t.Fatal(err)
+	}
+	if got := config.RemoteRef("git"); got != "remote/git" {
+		t.Errorf("you have your own git too: %q", got)
+	}
+	if got := config.RemoteRef("git/stash"); got != "remote/git/stash" {
+		t.Errorf("part of it, with your own git too: %q", got)
+	}
+	if got := (config.Pack{Where: "mine", Name: "git"}).Shown(); got != "mine/git" {
+		t.Errorf("your own: %q", got)
 	}
 }

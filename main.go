@@ -42,7 +42,7 @@ Usage:
   clingon completion zsh|bash        tab completion (Homebrew sets it up for you)
   clingon version
 
-Packs: %[1]s/packs/remote (installed) and %[1]s/packs/local (your own).
+Packs: %[1]s/packs/remote (installed) and %[1]s/packs/mine (your own).
 Override the folder with $CLINGON_CONFIG.
 `
 
@@ -304,7 +304,7 @@ func openWindow() error {
 	if installed {
 		say(ok, "installed clingon's font, Clingon Mono, for your user")
 		if plan.Path == "osascript" {
-			step("macOS may ask once to let clingon control your terminal app: it's only to open and style this window")
+			step("MacOs may ask once to let clingon control your terminal app: it's only to open and style this window")
 		}
 	}
 	if err := window.Run(plan); err != nil {
@@ -370,7 +370,7 @@ func editPackAs(ref, done string) error {
 	path := config.PackPath(name)
 	switch {
 	case where == "" && !config.IsLocal(name) && config.IsInstalled(name):
-		return fmt.Errorf("remote/%s is an installed pack: `clingon pack edit remote/%s` edits it (but `clingon pack update` overwrites it), or start your own with `clingon pack create my-%s`", name, name, name)
+		return fmt.Errorf("%s is an installed pack: `clingon pack edit remote/%s` edits it (but `clingon pack update` overwrites it), or start your own with `clingon pack create my-%s`", name, name, name)
 	case where == "remote":
 		if !config.IsInstalled(name) {
 			return fmt.Errorf("%s isn't installed", config.RemoteRef(name))
@@ -379,7 +379,7 @@ func editPackAs(ref, done string) error {
 		say(warn, "`clingon pack update` overwrites installed packs")
 	case !config.IsLocal(name):
 		if strings.Contains(name, "/") {
-			return fmt.Errorf("you don't have local/%s: `clingon command add` starts a section", name)
+			return fmt.Errorf("you don't have mine/%s: `clingon command add` starts a section", name)
 		}
 		if err := config.NewPack(name); err != nil {
 			return err
@@ -412,12 +412,12 @@ func editPackAs(ref, done string) error {
 }
 
 // defaultPack is the pack `clingon edit` and `init` mean: your only one,
-// or "mine".
+// or "my-commands".
 func defaultPack() string {
 	if yours, _ := config.YourPacks(); len(yours) == 1 {
 		return yours[0].Name
 	}
-	return "mine"
+	return "my-commands"
 }
 
 func check() error {

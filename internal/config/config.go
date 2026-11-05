@@ -221,7 +221,7 @@ func Dir() string {
 func StateDir() string { return filepath.Join(Dir(), "config") }
 
 // Load reads the installed packs (packs/remote) and then the user's own
-// (packs/local), merges sections and groups by name, and validates the
+// (packs/mine), merges sections and groups by name, and validates the
 // result. It returns the user's pack folders too.
 func Load() (*Config, []string, error) {
 	local := packDirs(localDir())

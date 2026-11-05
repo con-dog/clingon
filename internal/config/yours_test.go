@@ -345,7 +345,7 @@ func TestProjectPacksAreTrustedWhole(t *testing.T) {
 }
 
 func TestSplitRef(t *testing.T) {
-	for ref, want := range map[string][2]string{"git": {"", "git"}, "remote/git": {"remote", "git"}, "local/my-tools": {"local", "my-tools"}, "other/x": {"", "other/x"}} {
+	for ref, want := range map[string][2]string{"git": {"", "git"}, "remote/git": {"remote", "git"}, "mine/my-tools": {"mine", "my-tools"}, "other/x": {"", "other/x"}} {
 		if w, n := SplitRef(ref); w != want[0] || n != want[1] {
 			t.Errorf("SplitRef(%q) = %q, %q", ref, w, n)
 		}

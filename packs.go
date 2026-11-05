@@ -18,7 +18,7 @@ import (
 )
 
 const packUsage = `Usage:
-  clingon pack list              your packs, installed and local (--remote, --local: just those)
+  clingon pack list              your packs, installed and your own (--remote, --mine: just those)
   clingon pack available         packs you can install
   clingon pack add NAME...       install packs, or parts of them, like aws/ecs
   clingon pack remove NAME...    remove packs or parts of them (installed or your own)
@@ -28,10 +28,10 @@ const packUsage = `Usage:
   clingon pack sections NAME     list the sections in your pack
   clingon pack inspect NAME      print a pack's files, whether you have it or not
 
-Every pack is remote/NAME (from clingon, in packs/remote once installed) or
-local/NAME (your own, in packs/local). NAME alone will do unless you have both.
-A pack is a folder, with a file for each section: remote/aws is all of AWS, and
-remote/aws/ecs is just its ECS commands.
+A pack comes from clingon (in packs/remote once installed) or is your own (in
+packs/mine). If you have one of each with the same name, say remote/NAME or
+mine/NAME. A pack is a folder, with a file for each section: aws is all of AWS,
+and aws/ecs is just its ECS commands.
 `
 
 func packCmd(args []string) error {
@@ -47,7 +47,7 @@ func packCmd(args []string) error {
 			namesOnly = true
 		case "--remote":
 			remoteOnly = true
-		case "--local":
+		case "--mine":
 			localOnly = true
 		default:
 			rest = append(rest, a)
@@ -63,7 +63,7 @@ func packCmd(args []string) error {
 	switch args[0] {
 	case "list", "ls":
 		// Two cards, so a pack's name is enough in each: you can have both a
-		// remote/docker and a local/docker.
+		// remote/docker and a mine/docker.
 		var remote, local []config.Pack
 		var err error
 		if !localOnly {
@@ -118,7 +118,7 @@ func packCmd(args []string) error {
 		for _, ref := range rest {
 			where, name := config.SplitRef(ref)
 			switch {
-			case where == "local":
+			case where == "mine":
 				return fmt.Errorf("%s: only remote packs are installed (yours are already there)", ref)
 			case !config.InCatalog(name):
 				return fmt.Errorf("no pack called %s to install (see `clingon pack available`); to start your own: `clingon pack create %s`", config.RemoteRef(name), name)
@@ -156,17 +156,17 @@ func packCmd(args []string) error {
 			remote, local := config.IsInstalled(name), config.IsLocal(name)
 			switch {
 			case where == "" && remote && local:
-				return fmt.Errorf("both packs/remote and packs/local have %s: say remote/%s or local/%s", name, name, name)
+				return fmt.Errorf("both packs/remote and packs/mine have %s: say remote/%s or mine/%s", name, name, name)
 			case where == "remote" || where == "" && remote:
 				if err := config.Uninstall(name); err != nil {
 					return err
 				}
 				say(ok, "removed %s", config.RemoteRef(name))
-			case where == "local" || where == "" && local:
+			case where == "mine" || where == "" && local:
 				if err := config.DeletePack(name); err != nil {
 					return err
 				}
-				say(ok, "removed local/%s", name)
+				say(ok, "removed mine/%s", name)
 			default:
 				return fmt.Errorf("you don't have a pack called %s", ref)
 			}
@@ -181,7 +181,7 @@ func packCmd(args []string) error {
 		want := map[string]bool{}
 		for _, ref := range rest {
 			where, name := config.SplitRef(ref)
-			if where == "local" {
+			if where == "mine" {
 				return fmt.Errorf("%s: only remote packs are updated (yours are yours to change)", ref)
 			}
 			pack, _ := config.SplitModule(name) // the whole of what you have of it
@@ -216,7 +216,7 @@ func packCmd(args []string) error {
 		installed, _ := config.Installed()
 		for _, name := range installed {
 			if missing := config.MissingModules(name); len(missing) > 0 && (len(want) == 0 || want[name]) {
-				say(info, "%s also has %s: `clingon pack add remote/%s/%s`", config.RemoteRef(name), moduleSlugs(missing), name, missing[0].Slug)
+				say(info, "%s also has %s: `clingon pack add %s/%s`", config.RemoteRef(name), moduleSlugs(missing), config.RemoteRef(name), missing[0].Slug)
 			}
 		}
 		return nil
@@ -280,7 +280,7 @@ func moduleSlugs(ms []config.Module) string {
 
 // printPacks shows a card titled title (a table when it isn't printing to a
 // terminal), or with namesOnly "ref<TAB>description" lines for tab
-// completion, where ref is qualified (remote/x, local/x) for packs you
+// completion, where ref is qualified (remote/x, mine/x) for packs you
 // have.
 func printPacks(title string, ps []config.Pack, namesOnly bool, empty string) {
 	if namesOnly {
@@ -386,7 +386,7 @@ func commandCmd(args []string) error {
 		if err := config.AddCommand(pack, a[1], a[2], a[3], desc); err != nil {
 			return err
 		}
-		say(ok, "added %q to local/%s › %s", a[2], pack, a[1])
+		say(ok, "added %q to mine/%s › %s", a[2], pack, a[1])
 		return nil
 	case "list", "ls":
 		cfgs, err := config.YourCommands()
@@ -398,13 +398,13 @@ func commandCmd(args []string) error {
 		}
 		if !isTerm() || len(cfgs) == 0 {
 			for _, c := range cfgs {
-				fmt.Printf("local/%s › %s › %s\t%s\n", c.Pack, c.Section, c.Name, c.Cmd)
+				fmt.Printf("mine/%s › %s › %s\t%s\n", c.Pack, c.Section, c.Name, c.Cmd)
 			}
 			return nil
 		}
 		var rows []row
 		for _, c := range cfgs {
-			rows = append(rows, row{mark: info, label: "local/" + c.Pack + " › " + c.Section + " › " + c.Name, detail: c.Cmd})
+			rows = append(rows, row{mark: info, label: "mine/" + c.Pack + " › " + c.Section + " › " + c.Name, detail: c.Cmd})
 		}
 		outln(card("Your commands", rows, cardWidth()))
 		return nil

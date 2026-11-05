@@ -82,7 +82,7 @@ func TestWhenWorksInFoldersWithGlobCharacters(t *testing.T) {
 func TestPackNamesAreCheckedBeforeTouchingFiles(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	writePack(t, "mine/s", "commands:\n  - name: x\n    cmd: ls\n")
-	if err := Uninstall("../local/mine"); err == nil {
+	if err := Uninstall("../mine/mine"); err == nil {
 		t.Fatal("../ shouldn't reach out of packs/remote")
 	}
 	if _, err := os.Stat(PackPath("mine")); err != nil {

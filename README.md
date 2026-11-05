@@ -12,7 +12,7 @@ Type `clingon`. Commands open on the left and your shell on the right. Pick a co
 brew install con-dog/tap/clingon
 ```
 
-Needs macOS, with zsh or bash as your login shell. Homebrew brings everything else, including tab completion.
+Needs MacOs, with zsh or bash as your login shell. Homebrew brings everything else, including tab completion.
 
 ## Use
 
@@ -83,15 +83,15 @@ Add the rest as you need them: `aws`, `claude-code`, `codex`, `docker`, `dotnet`
 
 ```sh
 clingon pack available                      # what you can install
-clingon pack add remote/git remote/docker
-clingon pack add remote/aws/ecs             # just part of a pack
+clingon pack add git docker
+clingon pack add aws/ecs                    # just part of a pack
 clingon pack list
-clingon pack remove remote/docker
+clingon pack remove docker
 clingon pack update
-clingon pack inspect remote/docker          # print a pack's files
+clingon pack inspect docker                 # print a pack's files
 ```
 
-A pack is a folder, with a file for each submenu. `remote/aws` is all of AWS and `remote/aws/ecs` is just its ECS commands. `clingon pack update` only updates what you have: it never adds a part you didn't choose, and tells you what else there is.
+A pack is a folder, with a file for each submenu. `aws` is all of AWS and `aws/ecs` is just its ECS commands. `clingon pack update` only updates what you have: it never adds a part you didn't choose, and tells you what else there is.
 
 All of this is also in the menu, under **Clingon › Packs**.
 
@@ -103,10 +103,10 @@ clingon pack edit work-tools
 clingon check                    # find mistakes
 ```
 
-Your packs are folders in `~/.clingon/packs/local/`. All a pack needs is a file for each submenu:
+Your packs are folders in `~/.clingon/packs/mine/`. All a pack needs is a file for each submenu:
 
 ```
-~/.clingon/packs/local/work-tools/
+~/.clingon/packs/mine/work-tools/
   _pack.yaml        # optional: how it looks in the menu
   kubernetes.yaml   # a submenu
 ```
@@ -159,7 +159,7 @@ Every built-in pack follows those rules, and a test keeps it that way.
 ## Good to know
 
 - **Your setup stays yours.** clingon runs a private tmux server and reads your shell config as usual, but never changes it. Its prompt and colours apply only inside its own window.
-- **What it adds.** Its own font, and a "clingon" profile in Terminal or iTerm2. macOS asks once whether clingon may control those two apps, only to open and style the window.
+- **What it adds.** Its own font, and a "clingon" profile in Terminal or iTerm2. MacOs asks once whether clingon may control those two apps, only to open and style the window.
 - **Separate history.** Unless your config sets `HISTFILE`, zsh inside clingon keeps its own history, apart from your usual one.
 - **Everything else it keeps** is in `~/.clingon`: your packs and recipes at the top, and its own files in `~/.clingon/config`. Set `$CLINGON_CONFIG` in your shell's startup files to move it.
 - **Not on SSH.** clingon needs a window to open, so over SSH use `clingon print`, which prints the command you pick: `eval "$(clingon print)"`.
