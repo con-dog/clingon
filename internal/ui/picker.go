@@ -136,6 +136,26 @@ func (p *picker) refilter() {
 			}
 			return hits[i].score > hits[j].score
 		})
+		if isTree(src) {
+			// A tree keeps its order, so nothing sorts a loose match to the bottom:
+			// what's typed has to be there. Only if nothing has it do letters in the
+			// right order count, and then only in a row's name: awsec for aws/ecs.
+			exact := slices.DeleteFunc(slices.Clone(hits), func(h hit) bool { return !containsWords(h.it, q) })
+			if len(exact) == 0 {
+				exact = slices.DeleteFunc(slices.Clone(hits), func(h hit) bool { return score(q, strings.ToLower(h.it.title)) <= 0 })
+			}
+			hits = exact
+			var matched []item
+			for _, h := range hits {
+				matched = append(matched, h.it)
+			}
+			p.view = treeOf(src, matched)
+			p.cursor, p.offset = -1, 0
+			if len(hits) > 0 { // start on the best match, wherever the tree puts it
+				p.cursor = slices.IndexFunc(p.view, func(it item) bool { return it.idx == hits[0].it.idx })
+			}
+			return
+		}
 		for _, h := range hits {
 			p.view = append(p.view, h.it)
 		}
@@ -149,6 +169,62 @@ func (p *picker) refilter() {
 			break
 		}
 	}
+}
+
+// containsWords says whether every word of a lowercase query is in the row.
+func containsWords(it item, q string) bool {
+	text := strings.ToLower(it.title + " " + it.desc + " " + it.keywords)
+	for _, w := range strings.Fields(q) {
+		if !strings.Contains(text, w) {
+			return false
+		}
+	}
+	return true
+}
+
+// isTree says whether a list's indented rows belong to the row above them, rather
+// than to a heading.
+func isTree(items []item) bool {
+	tree := false
+	for _, it := range items {
+		if it.header {
+			return false
+		}
+		tree = tree || it.indent
+	}
+	return tree
+}
+
+// treeOf is a tree's rows for a filter: the ones that matched in their own order,
+// each under its real parent, there even if it didn't match itself. Indentation
+// says what belongs to what, so a filter can't reorder it.
+func treeOf(items, matched []item) []item {
+	keep := map[int]bool{}
+	for _, it := range matched {
+		keep[it.idx] = true
+	}
+	parent := -1
+	var out []item
+	for i, it := range items {
+		if !it.indent {
+			parent = i
+			hasChild := false
+			for _, c := range items[i+1:] {
+				if !c.indent {
+					break
+				}
+				hasChild = hasChild || keep[c.idx]
+			}
+			if keep[it.idx] || hasChild {
+				out = append(out, it)
+			}
+			continue
+		}
+		if keep[it.idx] && parent >= 0 {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 // score ranks substring matches (earlier and at word starts is better)
@@ -282,6 +358,32 @@ func (p *picker) selected() *item {
 	return &p.view[p.cursor]
 }
 
+// toggle is space on an option. A filter narrows a parent to the children it's
+// showing: ticking one ticks just those, and the parent only once that's all of them.
+func (p *picker) toggle(idx int) {
+	shown := p.shownChildrenOf(idx)
+	if p.query() == "" || p.items[idx].indent || len(shown) == 0 {
+		p.tick(idx, !p.chosen[idx]) // a parent showing none matched by itself: all of it
+		return
+	}
+	on := !p.allChosen(shown)
+	for _, c := range shown {
+		p.chosen[c] = on
+	}
+	p.chosen[idx] = p.allChosen(p.childrenOf(idx))
+}
+
+// shownChildrenOf lists an option's children that the filter is showing.
+func (p *picker) shownChildrenOf(idx int) []int {
+	var out []int
+	for _, c := range p.childrenOf(idx) {
+		if slices.ContainsFunc(p.view, func(it item) bool { return it.idx == c }) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // tick sets an option's tick. A parent takes its indented children with it, and
 // a parent is ticked exactly when all of its children are.
 func (p *picker) tick(idx int, on bool) {
@@ -367,11 +469,15 @@ func (p *picker) update(msg tea.KeyPressMsg) tea.Cmd {
 	// [ and ] jump between headings in every terminal; Shift+↑/↓ too, in
 	// terminals that send it (Terminal.app sends them as plain ↑/↓).
 	case "[", "shift+up":
-		p.jump(-1)
-		return nil
+		if !p.filtering { // while it's open, the search box gets every key that's text
+			p.jump(-1)
+			return nil
+		}
 	case "]", "shift+down":
-		p.jump(1)
-		return nil
+		if !p.filtering {
+			p.jump(1)
+			return nil
+		}
 	case "pgup":
 		p.move(-p.height)
 		return nil
@@ -379,9 +485,9 @@ func (p *picker) update(msg tea.KeyPressMsg) tea.Cmd {
 		p.move(p.height)
 		return nil
 	case "space":
-		if p.multi {
+		if p.multi && !p.filtering {
 			if it := p.selected(); it != nil {
-				p.tick(it.idx, !p.chosen[it.idx])
+				p.toggle(it.idx)
 			}
 			return nil
 		}

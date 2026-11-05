@@ -1624,7 +1624,7 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 	barIs("section", "→ go · ← back · / filter · [ ] jump · 1-9 add · r recipe · tab shell")
 
 	m.Update(typed("/"))
-	barIs("filtering", "→ go · ← back · / stop filtering · esc clear filter · [ ] jump · tab shell")
+	barIs("filtering", "→ go · ← back · / stop filtering · esc clear filter · tab shell")
 	footIs("filtering", "")
 	m.Update(typed("/"))
 
@@ -3002,13 +3002,13 @@ func TestSlashKeepsTheFilter(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m.Update(typed("/"))
 	m.Update(typed("blu"))
-	m.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	m.Update(typed("/"))
+	m.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	if m.job.pick.filtering || m.job.pick.query() != "blu" || len(m.job.pick.values()) != 1 {
 		t.Fatalf("filtering %v, query %q, values %v", m.job.pick.filtering, m.job.pick.query(), m.job.pick.values())
 	}
-	if f := ansi.Strip(m.footer(70)); !strings.Contains(f, "/ edit filter") {
-		t.Errorf("footer %q", f)
+	if f := ansi.Strip(m.footer(70)); strings.Contains(f, "filter") {
+		t.Errorf("the filter's own row says how: footer %q", f)
 	}
 	m.Update(esc)
 	if m.mode != modeFill || m.job.pick.filtered() || len(m.job.pick.values()) != 1 {
@@ -3350,12 +3350,12 @@ func TestJumpingBetweenPacks(t *testing.T) {
 	on("docker/images")
 	m.Update(typed("["))
 	on("docker")
-	// Ticks and filters don't get in the way: they're keys of their own.
+	// While the search box is open, it's just text.
 	m.Update(typed("/"))
 	m.Update(typed("o"))
 	m.Update(typed("]"))
-	if q := m.job.pick.query(); q != "o" {
-		t.Errorf("] shouldn't type into the filter: %q", q)
+	if q := m.job.pick.query(); q != "o]" {
+		t.Errorf("] should type into the search box: %q", q)
 	}
 
 	// A flat list has no sections: it says nothing about them.
@@ -3369,5 +3369,250 @@ func TestJumpingBetweenPacks(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if f := ansi.Strip(m.footer(70)); strings.Contains(f, "jump") {
 		t.Errorf("footer %q", f)
+	}
+}
+
+// A filter can't put a subpack under the wrong pack: what's indented is always
+// under its real parent, which is there even if it didn't match.
+func TestFilteringKeepsPacksAndSubpacksTogether(t *testing.T) {
+	items := []item{
+		{title: "remote/aws", desc: "Cloud"},
+		{title: "remote/aws/ecs", desc: "Containers", indent: true},
+		{title: "remote/aws/s3", desc: "Buckets", indent: true},
+		{title: "remote/docker", desc: "Containers too"},
+		{title: "remote/docker/images", desc: "Pictures", indent: true},
+		{title: "remote/git", desc: "Version control"},
+		{title: "remote/git/stash", desc: "Saving work", indent: true},
+		{title: "remote/go", desc: "A language"},
+	}
+	p := newPicker(items, nil, true)
+	titles := func() string {
+		var out []string
+		for _, it := range p.view {
+			out = append(out, it.title)
+		}
+		return strings.Join(out, " ")
+	}
+	search := func(q string) {
+		t.Helper()
+		p.filter.SetValue(q)
+		p.refilter()
+		// Every indented row's parent is the nearest row above it, and really is its parent.
+		parent := ""
+		for _, it := range p.view {
+			if !it.indent {
+				parent = it.title
+			} else if !strings.HasPrefix(it.title, parent+"/") {
+				t.Errorf("%q: %s is under %q", q, it.title, parent)
+			}
+		}
+	}
+	search("stash")
+	if got := titles(); got != "remote/git remote/git/stash" {
+		t.Errorf("stash: %q", got)
+	}
+	if got := p.selected().title; got != "remote/git/stash" {
+		t.Errorf("the cursor should start on the match, not its parent: %q", got)
+	}
+	search("remote/go")
+	if got := titles(); !strings.HasPrefix(got, "remote/") {
+		t.Errorf("got %q", got)
+	}
+	search("images")
+	if got := titles(); got != "remote/docker remote/docker/images" {
+		t.Errorf("images: %q", got)
+	}
+	search("aws")
+	if got := titles(); got != "remote/aws remote/aws/ecs remote/aws/s3" {
+		t.Errorf("aws: %q", got)
+	}
+	// Letters that merely come in the right order don't count, if anything has it.
+	search("cont")
+	if got := titles(); got != "remote/aws remote/aws/ecs remote/docker remote/git" {
+		t.Errorf("cont: %q", got)
+	}
+	search("aws s3")
+	if got := titles(); got != "remote/aws remote/aws/s3" {
+		t.Errorf("two words: %q", got)
+	}
+	// With nothing that has it, letters in order still find a name, but not in a
+	// description: there are too many letters there for that to mean anything.
+	search("awss3")
+	if got := titles(); got != "remote/aws remote/aws/s3" {
+		t.Errorf("loose: %q", got)
+	}
+	search("clrnl") // the letters of "control", in a description
+	if len(p.view) != 0 {
+		t.Errorf("loose in a description: %q", titles())
+	}
+	// Whatever matches stays in order, however it scores.
+	search("o")
+	last := -1
+	for _, it := range p.view {
+		if it.idx < last {
+			t.Errorf("out of order: %s", titles())
+		}
+		last = it.idx
+	}
+	search("zzzz")
+	if len(p.view) != 0 || p.selected() != nil {
+		t.Errorf("no matches: %q", titles())
+	}
+	search("")
+	if len(p.view) != len(items) {
+		t.Errorf("cleared: %q", titles())
+	}
+}
+
+// With the search box open, keys that are text only type: no shortcut fires, in the
+// menu's list or an arg's. / closes it and esc clears it; arrows and enter still work.
+func TestSearchBoxTakesEveryKey(t *testing.T) {
+	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "add", Cmd: "add <p>", Args: []config.Arg{{Name: "p", Type: "flags", Options: []config.Option{
+			{Value: "aws", Label: "Cloud"}, {Value: "aws/ecs", Label: "Containers", Indent: true}, {Value: "aws/s3", Label: "Buckets", Indent: true}, {Value: "go", Label: "Lang"},
+		}}}},
+		{Name: "go", Cmd: "go"},
+	}}
+	m := New(Options{Config: &config.Config{Sections: []config.Section{sec}}, Send: func(string) error { return nil },
+		Builtin: func() []*config.Section {
+			return []*config.Section{{Name: RecipesSection, Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Current recipe"}}}}
+		}})
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	space := tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
+
+	// In the menu's list: nothing that isn't typing happens.
+	m.Update(typed("/"))
+	for _, k := range []string{"x", "r", "?", "1", "[", "]"} {
+		m.Update(typed(k))
+	}
+	m.Update(space)
+	m.Update(typed("y"))
+	if got := m.list.filter.Value(); got != "xr?1[] y" {
+		t.Errorf("query %q", got)
+	}
+	if m.help || len(m.recipe) != 0 || m.section == nil || m.section.Name != "S" {
+		t.Errorf("a shortcut fired: help %v, recipe %v, section %v", m.help, m.recipe, m.section)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.list.filtered() {
+		t.Error("esc should clear it")
+	}
+
+	// In an arg's checklist: space is a space, and ticks nothing.
+	for i, it := range m.list.view {
+		if it.title == "add" {
+			m.list.cursor = i
+		}
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.Update(typed("/"))
+	m.Update(typed("aws"))
+	m.Update(space)
+	m.Update(typed("s3"))
+	if got := m.job.pick.filter.Value(); got != "aws s3" || len(m.job.pick.values()) != 0 {
+		t.Errorf("query %q, ticked %v", got, m.job.pick.values())
+	}
+	if got := m.job.pick.selected().value; got != "aws/s3" {
+		t.Errorf("on %q", got)
+	}
+	f := ansi.Strip(m.footer(70))
+	if strings.Contains(f, "tick") || strings.Contains(f, "jump") {
+		t.Errorf("the footer shouldn't offer those now: %q", f)
+	}
+	// / closes it, and space is a tick again.
+	m.Update(typed("/"))
+	m.Update(space)
+	if got := m.job.pick.values(); len(got) != 1 || got[0] != "aws/s3" {
+		t.Errorf("ticked %v", got)
+	}
+	// Arrows still move, in the box or out of it.
+	m.Update(typed("/"))
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	if got := m.job.pick.selected().value; got != "aws" {
+		t.Errorf("on %q", got)
+	}
+}
+
+// With a filter on, ticking a pack means what the filter's showing of it.
+func TestTickingAFilteredPackTicksOnlyWhatsShown(t *testing.T) {
+	items := []item{
+		{title: "aws", value: "aws", desc: "Cloud things"},
+		{title: "aws/ecs", value: "aws/ecs", desc: "Containers", indent: true},
+		{title: "aws/s3", value: "aws/s3", desc: "Buckets", indent: true},
+		{title: "aws/iam", value: "aws/iam", desc: "Containers of people", indent: true},
+		{title: "go", value: "go", desc: "A language"},
+	}
+	p := newPicker(items, nil, true)
+	search := func(q string) {
+		p.filter.SetValue(q)
+		p.refilter()
+	}
+	on := func(value string) {
+		t.Helper()
+		i := slices.IndexFunc(p.view, func(it item) bool { return it.value == value })
+		if i < 0 {
+			t.Fatalf("%s isn't showing", value)
+		}
+		p.cursor = i
+	}
+	press := func() { p.update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}) }
+	vals := func() string { return strings.Join(p.values(), " ") }
+
+	search("containers")
+	on("aws")
+	press()
+	if got := vals(); got != "aws/ecs aws/iam" {
+		t.Errorf("only what's shown: %q", got)
+	}
+	if p.chosen[0] || !p.partly(0) {
+		t.Error("the pack itself is only partly ticked")
+	}
+	// Again takes back what's shown, and only that.
+	p.chosen[2] = true
+	press()
+	if got := vals(); got != "aws/s3" {
+		t.Errorf("unticked: %q", got)
+	}
+	// Ticking what's shown when that completes it gives the whole pack, once.
+	press()
+	if got := vals(); got != "aws" || !p.chosen[0] {
+		t.Errorf("complete: %q", got)
+	}
+	// Unticking while filtered leaves the rest.
+	press()
+	if got := vals(); got != "aws/s3" {
+		t.Errorf("after: %q", got)
+	}
+	p.chosen = map[int]bool{}
+
+	// A pack that matched by itself, with none of its children, is all of it.
+	search("cloud")
+	on("aws")
+	press()
+	if got := vals(); got != "aws" {
+		t.Errorf("matched alone: %q", got)
+	}
+	p.chosen = map[int]bool{}
+
+	// A filter that shows them all, and none at all, mean the whole pack too.
+	search("aws")
+	on("aws")
+	press()
+	if got := vals(); got != "aws" {
+		t.Errorf("all shown: %q", got)
+	}
+	search("")
+	on("aws")
+	press()
+	if got := vals(); got != "" {
+		t.Errorf("no filter unticks all: %q", got)
+	}
+	// A subpack is just itself, filter or not.
+	search("buckets")
+	on("aws/s3")
+	press()
+	if got := vals(); got != "aws/s3" {
+		t.Errorf("child: %q", got)
 	}
 }

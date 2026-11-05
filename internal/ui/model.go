@@ -2410,7 +2410,7 @@ func (j *job) describe() string {
 	d := describe(j.ref.cmd, j.vals, j.said, j.step, j.current(a), says)
 	// In a checklist, say what the highlighted option does before it's ticked.
 	if j.usePick && j.pick.multi {
-		if it := j.pick.selected(); it != nil && it.desc != "" && !j.pick.chosen[it.idx] {
+		if it := j.pick.selected(); it != nil && it.desc != "" && !j.pick.chosen[it.idx] && !j.pick.filtering {
 			d += " " + dimStyle.Italic(true).Render("Space adds: "+it.desc+".")
 		}
 	}
@@ -2608,16 +2608,15 @@ func (m *Model) footer(w int) string {
 		}
 		switch {
 		case j.usePick && j.pick.filtering:
-			keys = append(keys, "/ stop filtering", "esc clear filter")
-		case j.usePick && j.pick.filtered():
-			keys = append(keys, "/ edit filter", "esc clear filter")
+			keys = append(keys, "/ stop filtering", "esc clear")
+		case j.usePick && j.pick.filtered(): // the filter's own row says how
 		case j.usePick:
 			keys = append(keys, "/ filter")
 		}
-		if j.usePick && j.pick.nestedOnly() {
+		if j.usePick && j.pick.nestedOnly() && !j.pick.filtering {
 			keys = append(keys, "[ ] jump")
 		}
-		if j.usePick && j.pick.multi {
+		if j.usePick && j.pick.multi && !j.pick.filtering {
 			keys = append([]string{"space tick"}, keys...)
 		}
 	case modeConfirm:
@@ -2672,7 +2671,9 @@ func (m *Model) barKeys() []string {
 	default:
 		keys = append(keys, "/ filter")
 	}
-	keys = append(keys, "[ ] jump")
+	if !m.list.filtering {
+		keys = append(keys, "[ ] jump")
+	}
 	if m.section == nil && !m.list.filtered() {
 		keys = append(keys, "esc quit")
 	}
