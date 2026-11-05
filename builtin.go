@@ -99,7 +99,7 @@ func builtinSections() []*config.Section {
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(local)},
 				}},
 			}},
-			{Name: "Installed packs", Commands: []config.Command{
+			{Name: "Curated packs", Commands: []config.Command{
 				{Name: "Add packs", Disabled: unless(len(available) > 0, "Every pack is installed already."), Desc: "Installs ready-made commands for <pack>.", Cmd: self + " pack add <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(available)},
 				}},
