@@ -87,7 +87,7 @@ var (
 	saidTitle = "Clingon"
 )
 
-// say gives a single result: `✓ installed git`. In a terminal, a command's results
+// say gives a single result: `✓ added git`. In a terminal, a command's results
 // share a card, drawn by flushSaid.
 func say(k mark, format string, a ...any) {
 	line := k.render("") + " " + fmt.Sprintf(format, a...)

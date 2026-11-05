@@ -27,7 +27,7 @@ _clingon() {
     'print:pick a command and print it'
     'pack:list, add and remove packs'
     'command:add and list your own commands'
-    'recipe:save, remove and list recipes'
+    'recipe:add, remove and list recipes'
     'edit:open your pack in micro'
     'check:check your packs for mistakes'
     'doctor:check tmux, your packs and their tools'
@@ -45,17 +45,18 @@ _clingon() {
   case $words[2] in
     pack|packs)
       if (( CURRENT == 3 )); then
-        compadd list available add create remove update edit sections inspect
+        compadd list available add remove create update edit sections describe
         return
       fi
       case $words[3] in
-        add|install) compadd -- ${(f)"$(clingon pack available --names 2>/dev/null | cut -f1)"} ;;
-        remove|rm|uninstall|update|edit|sections) compadd -- ${(f)"$(clingon pack list --names 2>/dev/null | cut -f1)"} ;;
-        inspect|cat) compadd -- ${(f)"$(clingon pack list --names 2>/dev/null | cut -f1)"} ${(f)"$(clingon pack available --names 2>/dev/null | cut -f1)"} ;;
+        add) compadd -- ${(f)"$(clingon pack available --names 2>/dev/null | cut -f1 | sed 's,^remote/,,')"} ;;
+        remove|rm) compadd -- ${(f)"$(clingon pack list --names 2>/dev/null | cut -f1 | sed 's,^remote/,,')"} ;;
+        update|edit|sections) compadd -- ${(f)"$(clingon pack list --names 2>/dev/null | cut -f1)"} ;;
+        describe|cat) compadd -- ${(f)"$(clingon pack list --names 2>/dev/null | cut -f1)"} ${(f)"$(clingon pack available --names 2>/dev/null | cut -f1)"} ;;
       esac
       ;;
     command|commands|cmd) (( CURRENT == 3 )) && compadd add list ;;
-    recipe|recipes) (( CURRENT == 3 )) && compadd save remove list describe ;;
+    recipe|recipes) (( CURRENT == 3 )) && compadd add remove list describe ;;
     doctor) (( CURRENT == 3 )) && compadd -- ${(f)"$(clingon pack list --remote --names 2>/dev/null | cut -f1)"} ;;
     completion) (( CURRENT == 3 )) && compadd zsh bash ;;
   esac
@@ -74,17 +75,18 @@ const bashCompletion = `_clingon() {
     1) words="print pack command recipe edit check doctor crash update welcome completion version help" ;;
     2)
       case ${COMP_WORDS[1]} in
-        pack|packs) words="list available add create remove update edit sections inspect" ;;
+        pack|packs) words="list available add remove create update edit sections describe" ;;
         command|commands|cmd) words="add list" ;;
-        recipe|recipes) words="save remove list describe" ;;
+        recipe|recipes) words="add remove list describe" ;;
         doctor) words=$(clingon pack list --remote --names 2>/dev/null | cut -f1) ;;
         completion) words="zsh bash" ;;
       esac
       ;;
     *)
       case ${COMP_WORDS[1]}:${COMP_WORDS[2]} in
-        pack:add|packs:add|pack:install|packs:install) words=$(clingon pack available --names 2>/dev/null | cut -f1) ;;
-        pack:inspect|packs:inspect|pack:cat|packs:cat) words="$(clingon pack list --names 2>/dev/null | cut -f1) $(clingon pack available --names 2>/dev/null | cut -f1)" ;;
+        pack:add|packs:add) words=$(clingon pack available --names 2>/dev/null | cut -f1 | sed 's,^remote/,,') ;;
+        pack:remove|packs:remove|pack:rm|packs:rm) words=$(clingon pack list --names 2>/dev/null | cut -f1 | sed 's,^remote/,,') ;;
+        pack:describe|packs:describe|pack:cat|packs:cat) words="$(clingon pack list --names 2>/dev/null | cut -f1) $(clingon pack available --names 2>/dev/null | cut -f1)" ;;
         pack:*|packs:*) words=$(clingon pack list --names 2>/dev/null | cut -f1) ;;
       esac
       ;;

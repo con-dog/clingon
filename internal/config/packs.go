@@ -175,7 +175,7 @@ func WriteAvailable() error {
 		l.Available = append(l.Available, availablePack{p.Name, p.Description, modules, p.Commands})
 	}
 	var buf bytes.Buffer
-	buf.WriteString("# Packs you can install, written by clingon. Don't edit: it's rewritten.\n")
+	buf.WriteString("# Packs you can add, written by clingon. Don't edit: it's rewritten.\n")
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	if err := enc.Encode(l); err != nil {
@@ -211,7 +211,7 @@ func writeWhole(path string, data []byte) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-const remoteHeader = "# Installed by clingon. `clingon pack update` overwrites this file: put\n# your own commands in packs/mine/ instead.\n"
+const remoteHeader = "# Added by clingon. `clingon pack update` overwrites this file: put\n# your own commands in packs/mine/ instead.\n"
 
 // Install copies a pack from the catalog into remote/: all of it, or with
 // aws/ecs, that module and the file saying how the pack looks. Anything of
@@ -255,7 +255,7 @@ func Uninstall(name string) error {
 		return err
 	}
 	if !IsInstalled(name) {
-		return fmt.Errorf("%s isn't installed", RemoteRef(name))
+		return fmt.Errorf("%s isn't added", RemoteRef(name))
 	}
 	return removeRef(remoteDir(), name)
 }

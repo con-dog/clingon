@@ -84,7 +84,7 @@ func builtinSections() []*config.Section {
 		return reason
 	}
 	noLocal := unless(len(local) > 0, "You don't have any packs of your own yet: create one first.")
-	noneInstalled := unless(len(installed) > 0, "No packs are installed.")
+	noneInstalled := unless(len(installed) > 0, "You haven't added any packs.")
 	sections := []*config.Section{
 		{Name: "Packs", Icon: config.Logos["puzzle"], Color: clingonPink, Category: "Clingon", Groups: []config.Group{
 			{Name: "Your packs", Commands: []config.Command{
@@ -100,28 +100,28 @@ func builtinSections() []*config.Section {
 				}},
 			}},
 			{Name: "Curated packs", Commands: []config.Command{
-				{Name: "Add packs", Disabled: unless(len(available) > 0, "Every pack is installed already."), Desc: "Installs ready-made commands for <pack>.", Cmd: self + " pack add <pack>", Args: []config.Arg{
+				{Name: "Add packs", Disabled: unless(len(available) > 0, "Every pack is added already."), Desc: "Adds ready-made commands for <pack>.", Cmd: self + " pack add <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(available)},
 				}},
-				{Name: "Available packs", Desc: "Lists the packs you can install and what each one covers.", Cmd: self + " pack available"},
-				{Name: "Inspect a pack", Desc: "Prints every command in <pack> and exactly what each one runs, whether you have it or not.", Cmd: self + " pack inspect <pack>", Args: []config.Arg{
+				{Name: "List available packs", Desc: "Lists the packs you can add and what each one covers.", Cmd: self + " pack available"},
+				{Name: "Describe a pack", Desc: "Prints every command in <pack> and exactly what each one runs, whether you have it or not.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(inspectable(local, installed, all))},
 				}},
-				{Name: "List installed packs", Disabled: noneInstalled, Desc: "Lists the packs you've installed.", Cmd: self + " pack list --remote"},
-				{Name: "Remove packs", Disabled: noneInstalled, Desc: "Uninstalls <pack>, taking its commands out of the menu.", Risk: config.RiskWarn, Cmd: self + " pack remove <pack>", Args: []config.Arg{
+				{Name: "List added packs", Disabled: noneInstalled, Desc: "Lists the packs you've added.", Cmd: self + " pack list --remote"},
+				{Name: "Remove packs", Disabled: noneInstalled, Desc: "Removes <pack>, taking its commands out of the menu.", Risk: config.RiskWarn, Cmd: self + " pack remove <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(installed)},
 				}},
-				{Name: "Update packs", Disabled: unless(len(ups) > 0, "Every installed pack is up to date."), Desc: "Brings your installed packs up to date, replacing their files in packs/remote, and removes any clingon no longer ships: changes you made to those files are lost.", Risk: config.RiskWarn, Cmd: self + " pack update"},
+				{Name: "Update packs", Disabled: unless(len(ups) > 0, "Every added pack is up to date."), Desc: "Brings your added packs up to date, replacing their files in packs/remote, and removes any clingon no longer ships: changes you made to those files are lost.", Risk: config.RiskWarn, Cmd: self + " pack update"},
 			}},
 		}},
 		{Name: "General", Icon: config.Logos["gear"], Color: clingonPink, Category: "Clingon", Groups: []config.Group{
 			{Name: "Healthchecks", Commands: []config.Command{
-				{Name: "Run all checks", Desc: "Checks tmux, your packs and the tools every installed pack needs.", Cmd: self + " doctor"},
+				{Name: "Run all checks", Desc: "Checks tmux, your packs and the tools every added pack needs.", Cmd: self + " doctor"},
 				{Name: "Show last crash", Desc: "Shows why clingon last crashed, with the trace to put in a bug report.", Cmd: self + " crash"},
-				{Name: "Check a pack's tools", Disabled: noneInstalled, Desc: "Checks that the tools an installed pack needs are on your PATH.", Cmd: self + " doctor <pack>", Args: []config.Arg{
+				{Name: "Check a pack's tools", Disabled: noneInstalled, Desc: "Checks that the tools an added pack needs are on your PATH.", Cmd: self + " doctor <pack>", Args: []config.Arg{
 					{Name: "pack", Options: packOptions(installed), Desc: "Checking <pack>."},
 				}},
-				{Name: "Check all packs", Desc: "Checks every pack, yours and installed, for mistakes.", Cmd: self + " check"},
+				{Name: "Check all packs", Desc: "Checks every pack, yours and added, for mistakes.", Cmd: self + " check"},
 			}},
 			{Name: "Version", Commands: []config.Command{
 				{Name: "Show version", Desc: "Shows which version of clingon you're running.", Cmd: self + " version"},

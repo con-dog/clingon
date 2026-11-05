@@ -42,10 +42,10 @@ func TestPackCommands(t *testing.T) {
 		}
 		return out
 	}
-	if out := run("add", "git"); !strings.Contains(out, "installed git") {
+	if out := run("add", "git"); !strings.Contains(out, "added git") {
 		t.Fatalf("add: %q", out)
 	}
-	if out := run("add", "git"); !strings.Contains(out, "already installed") {
+	if out := run("add", "git"); !strings.Contains(out, "already added") {
 		t.Fatalf("adding twice: %q", out)
 	}
 	if out := run("list", "--names"); !strings.Contains(out, "remote/git") {
@@ -351,7 +351,7 @@ func TestParseCrashFromBubbleTea(t *testing.T) {
 func TestPackInspect(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	run := func(ref string) (string, error) {
-		return output(t, func() error { return packCmd([]string{"inspect", ref}) })
+		return output(t, func() error { return packCmd([]string{"describe", ref}) })
 	}
 	// One you don't have yet: exactly what installing it would add.
 	if out, err := run("docker"); err != nil || !strings.Contains(out, "name: Docker") {
@@ -360,7 +360,7 @@ func TestPackInspect(t *testing.T) {
 	if err := config.Install("docker"); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := run("remote/docker"); err != nil || !strings.Contains(out, "# Installed by clingon.") {
+	if out, err := run("remote/docker"); err != nil || !strings.Contains(out, "# Added by clingon.") {
 		t.Errorf("installed: %.100q %v", out, err)
 	}
 	if err := config.AddCommand("docker", "Mine", "Hi", "echo hi", ""); err != nil {
@@ -395,7 +395,7 @@ func TestEveryPackPickerSaysWhereItsFrom(t *testing.T) {
 	pickers := 0
 	for _, s := range builtinSections() {
 		for _, c := range s.All() {
-			if c.Name == "Inspect a pack" {
+			if c.Name == "Describe a pack" {
 				inspect = c
 			}
 			for _, a := range c.Args {
@@ -431,23 +431,23 @@ func TestEveryPackPickerSaysWhereItsFrom(t *testing.T) {
 func TestRecipeCommands(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	run := func(args ...string) (string, error) { return output(t, func() error { return recipeCmd(args) }) }
-	if out, err := run("save", "My AWS ECS flow", "aws-1a2b3c4d", "docker-5e6f7a8b"); err != nil || !strings.Contains(out, "My AWS ECS flow") {
-		t.Fatalf("save: %q %v", out, err)
+	if out, err := run("add", "My AWS ECS flow", "aws-1a2b3c4d", "docker-5e6f7a8b"); err != nil || !strings.Contains(out, "My AWS ECS flow") {
+		t.Fatalf("add: %q %v", out, err)
 	}
 	if out, _ := run("list"); !strings.Contains(out, "My AWS ECS flow\taws-1a2b3c4d docker-5e6f7a8b") {
 		t.Errorf("list: %q", out)
 	}
-	if _, err := run("save", "My AWS ECS flow", "aws-1a2b3c4d"); err == nil {
+	if _, err := run("add", "My AWS ECS flow", "aws-1a2b3c4d"); err == nil {
 		t.Error("the same name twice should be refused")
 	}
-	if _, err := run("save", "No steps"); err == nil {
+	if _, err := run("add", "No steps"); err == nil {
 		t.Error("no steps should be refused")
 	}
 	if err := config.AddCommand("mine", "Deploy", "Ship", "ship <where>", "Ships it."); err != nil {
 		t.Fatal(err)
 	}
 	id := (&config.Section{Name: "Deploy"}).CommandID(&config.Command{Name: "Ship"})
-	if _, err := run("save", "Ship it", id, "gone-00000000"); err != nil {
+	if _, err := run("add", "Ship it", id, "gone-00000000"); err != nil {
 		t.Fatal(err)
 	}
 	out, err := run("describe", "ship IT")
@@ -493,7 +493,7 @@ func TestBoxedWrapsWithinItsEdges(t *testing.T) {
 
 func TestCommandTitle(t *testing.T) {
 	for want, args := range map[string][]string{
-		"Clingon": nil, "Pack add": {"pack", "add", "git"}, "Pack": {"pack"}, "Recipe save": {"recipe", "save", "x", "y"}, "Doctor": {"doctor", "git"},
+		"Clingon": nil, "Pack add": {"pack", "add", "git"}, "Pack": {"pack"}, "Recipe add": {"recipe", "add", "x", "y"}, "Doctor": {"doctor", "git"},
 	} {
 		if got := commandTitle(args); got != want {
 			t.Errorf("%v: %q, want %q", args, got, want)
@@ -505,19 +505,19 @@ func TestCommandTitle(t *testing.T) {
 func TestPipedOutputHasNoBoxes(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	out, err := output(t, func() error { return packCmd([]string{"add", "git"}) })
-	if err != nil || strings.Contains(out, "╭") || !strings.Contains(out, "installed git") {
+	if err != nil || strings.Contains(out, "╭") || !strings.Contains(out, "added git") {
 		t.Fatalf("add: %q %v", out, err)
 	}
 	if len(said) != 0 {
 		t.Errorf("nothing should be held: %q", said)
 	}
-	out, err = output(t, func() error { return packCmd([]string{"inspect", "remote/git/stash"}) })
+	out, err = output(t, func() error { return packCmd([]string{"describe", "remote/git/stash"}) })
 	if err != nil || strings.Contains(out, "╭") || !strings.Contains(out, "commands:") {
 		t.Fatalf("inspect: %.200q %v", out, err)
 	}
 }
 
-// Remove packs picks like Add packs does, for yours and for what's installed.
+// Both Remove packs rows pick like Add packs does, for yours and for what's installed.
 func TestRemovePacksIsAChecklist(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	if err := config.Install("git"); err != nil {
@@ -530,8 +530,8 @@ func TestRemovePacksIsAChecklist(t *testing.T) {
 	for _, s := range builtinSections() {
 		for _, c := range s.All() {
 			switch c.Name {
-			case "Remove a pack":
-				t.Error("it's Remove packs now")
+			case "Remove a pack", "Uninstall packs", "Install packs":
+				t.Errorf("%s has been renamed", c.Name)
 			case "Remove packs":
 				found++
 				if a := c.Args[0]; !a.Multi() || !a.AtLeastOne || a.CountAs != "pack" {
@@ -586,5 +586,35 @@ func TestRemoteIsOnlySaidWhenNeeded(t *testing.T) {
 	}
 	if got := (config.Pack{Where: "mine", Name: "git"}).Shown(); got != "mine/git" {
 		t.Errorf("your own: %q", got)
+	}
+}
+
+// One word for taking a pack away, whichever kind it is.
+func TestRemoveTakesEitherKindOfPack(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if err := config.Install("git"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.NewPack("poop"); err != nil {
+		t.Fatal(err)
+	}
+	pack := func(args ...string) (string, error) {
+		return output(t, func() error { return packCmd(args) })
+	}
+	if out, err := pack("remove", "poop"); err != nil || !strings.Contains(out, "removed mine/poop") || config.IsLocal("poop") {
+		t.Errorf("your own: %q %v", out, err)
+	}
+	// With one of each, it has to be told which.
+	if err := config.NewPack("git"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pack("remove", "git"); err == nil || !strings.Contains(err.Error(), "say remote/git or mine/git") {
+		t.Errorf("one of each: %v", err)
+	}
+	if out, err := pack("remove", "mine/git"); err != nil || !strings.Contains(out, "removed mine/git") || !config.IsInstalled("git") {
+		t.Errorf("mine/git: %q %v", out, err)
+	}
+	if out, err := pack("remove", "git"); err != nil || !strings.Contains(out, "removed git") || config.IsInstalled("git") {
+		t.Errorf("curated: %q %v", out, err)
 	}
 }

@@ -32,7 +32,7 @@ Usage:
   clingon print    pick a command and print it instead, e.g. eval "$(clingon print)"
   clingon pack     list, add and remove packs; make and edit your own
   clingon command  add and list commands in your own packs
-  clingon recipe   save, remove and list recipes (sequences of commands)
+  clingon recipe   add, remove and list recipes (sequences of commands)
   clingon edit     open your pack in micro
   clingon check    check your packs for mistakes
   clingon doctor   check tmux, your packs and each pack's tools
@@ -42,7 +42,7 @@ Usage:
   clingon completion zsh|bash        tab completion (Homebrew sets it up for you)
   clingon version
 
-Packs: %[1]s/packs/remote (installed) and %[1]s/packs/mine (your own).
+Packs: %[1]s/packs/remote (added) and %[1]s/packs/mine (your own).
 Override the folder with $CLINGON_CONFIG.
 `
 
@@ -190,7 +190,7 @@ func launch() error {
 	}()
 	ready := func() error {
 		if err := <-checked; err != nil {
-			return fmt.Errorf("%w\n\nif these are packs you installed, `clingon pack update` should fix them; if they're your own, fix them and run `clingon check`", err)
+			return fmt.Errorf("%w\n\nif these are packs you added, `clingon pack update` should fix them; if they're your own, fix them and run `clingon check`", err)
 		}
 		return nil
 	}
@@ -370,13 +370,13 @@ func editPackAs(ref, done string) error {
 	path := config.PackPath(name)
 	switch {
 	case where == "" && !config.IsLocal(name) && config.IsInstalled(name):
-		return fmt.Errorf("%s is an installed pack: `clingon pack edit remote/%s` edits it (but `clingon pack update` overwrites it), or start your own with `clingon pack create my-%s`", name, name, name)
+		return fmt.Errorf("%s is a curated pack: `clingon pack edit remote/%s` edits it (but `clingon pack update` overwrites it), or start your own with `clingon pack create my-%s`", name, name, name)
 	case where == "remote":
 		if !config.IsInstalled(name) {
-			return fmt.Errorf("%s isn't installed", config.RemoteRef(name))
+			return fmt.Errorf("%s isn't added", config.RemoteRef(name))
 		}
 		path = config.RemotePath(name)
-		say(warn, "`clingon pack update` overwrites installed packs")
+		say(warn, "`clingon pack update` overwrites curated packs")
 	case !config.IsLocal(name):
 		if strings.Contains(name, "/") {
 			return fmt.Errorf("you don't have mine/%s: `clingon command add` starts a section", name)
@@ -433,7 +433,7 @@ func check() error {
 	if err != nil {
 		return err
 	}
-	rows := []row{{mark: ok, label: "packs", detail: fmt.Sprintf("%d sections, %d commands from %d installed packs and %d of your own", len(cfg.Sections), n, len(pkgs), len(files))}}
+	rows := []row{{mark: ok, label: "packs", detail: fmt.Sprintf("%d sections, %d commands from %d added packs and %d of your own", len(cfg.Sections), n, len(pkgs), len(files))}}
 	for _, f := range config.LoosePackFiles() {
 		rows = append(rows, row{mark: warn, label: "not read", detail: f + ": a pack is a folder, so this belongs in one"})
 	}

@@ -51,7 +51,7 @@ A recipe runs several commands in order, and stops if one fails or clingon can't
 2. Press `2` on the next, from the same section or any other.
 3. Press `r` to see the recipe, then `enter` on **Run recipe**.
 
-clingon offers to save the recipe before it runs, unless you've already saved those commands. Saved recipes are listed under **All recipes**, at **Clingon › Recipes**, where you can run, inspect or delete them.
+clingon offers to add the recipe before it runs, unless you've already added those commands. Your recipes are listed under **All recipes**, at **Clingon › Recipes**, where you can run, describe or remove them.
 
 **Positions work like this:**
 
@@ -61,7 +61,7 @@ clingon offers to save the recipe before it runs, unless you've already saved th
 - Recipes have up to 9 commands, with no gaps. Number keys don't work while you're filtering.
 - Press `x` to clear the recipe.
 
-**Blanks are asked for when each command is reached**, so earlier commands have already had their effect. Answers aren't saved: a saved recipe asks again every run. Risky commands still ask before they run.
+**Blanks are asked for when each command is reached**, so earlier commands have already had their effect. Answers aren't kept: a recipe asks again every run. Risky commands still ask before they run.
 
 **Run from anywhere.** Press `enter` on a command in the recipe's list to run the recipe from there, leaving out the ones before it. If a command stops the recipe, the cursor waits on it when you press `r`: press `enter` to run it again and carry on, or move down a row to skip it, say if you've fixed things by hand in the shell. **Run recipe** always starts from the top.
 
@@ -77,18 +77,18 @@ clingon recipe remove "My flow"
 
 ## Packs
 
-Commands come in packs. These are installed to begin with: `files`, `network`, `package-managers`, `ssh`, `system`.
+Commands come in packs. These are added to begin with: `files`, `network`, `package-managers`, `ssh`, `system`.
 
 Add the rest as you need them: `aws`, `claude-code`, `codex`, `docker`, `dotnet`, `git`, `github`, `go`, `macos`, `node`, `playwright`, `postgres`, `python`, `redis`, `security`.
 
 ```sh
-clingon pack available                      # what you can install
+clingon pack available                      # what you can add
 clingon pack add git docker
 clingon pack add aws/ecs                    # just part of a pack
 clingon pack list
 clingon pack remove docker
 clingon pack update
-clingon pack inspect docker                 # print a pack's files
+clingon pack describe docker                # print a pack's files
 ```
 
 A pack is a folder, with a file for each submenu. `aws` is all of AWS and `aws/ecs` is just its ECS commands. `clingon pack update` only updates what you have: it never adds a part you didn't choose, and tells you what else there is.

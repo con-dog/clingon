@@ -619,7 +619,7 @@ func TestTypeACommandInARecipe(t *testing.T) {
 		t.Fatalf("mode %v, keys %q", m.mode, keys())
 	}
 	m.Update(typed("3"))
-	if got := m.saveCommand("name"); got != "clingon recipe save name "+CommandLineID+" "+statusID+" "+CommandLineID {
+	if got := m.saveCommand("name"); got != "clingon recipe add name "+CommandLineID+" "+statusID+" "+CommandLineID {
 		t.Errorf("save = %q", got)
 	}
 
@@ -2174,7 +2174,7 @@ func TestSavingARecipe(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
 	sec := &m.opt.Config.Sections[0]
 	oneID := sec.CommandID(&sec.Commands[0])
-	saveCmd := "clingon recipe save 'My flow' " + oneID + " s-22222222"
+	saveCmd := "clingon recipe add 'My flow' " + oneID + " s-22222222"
 	on := func(name string) {
 		t.Helper()
 		for i, it := range m.list.view {
@@ -2209,7 +2209,7 @@ func TestSavingARecipe(t *testing.T) {
 
 	// Run recipe asks, and No is first: it just runs.
 	right()
-	if m.mode != modeSave || len(sent) != 0 || !strings.Contains(m.view(), "Save this recipe first?") {
+	if m.mode != modeSave || len(sent) != 0 || !strings.Contains(m.view(), "Add this recipe first?") {
 		t.Fatalf("should ask first: mode %v, sent %v", m.mode, sent)
 	}
 	right()
@@ -2256,7 +2256,7 @@ func TestSavingARecipe(t *testing.T) {
 	// The save is a command in the shell, by ID, and the steps follow it.
 	m.word.SetValue("")
 	m.Update(typed("My  flow"))
-	if !strings.Contains(ansi.Strip(m.infoPane(60)), "clingon recipe save") {
+	if !strings.Contains(ansi.Strip(m.infoPane(60)), "clingon recipe add") {
 		t.Errorf("the command should show as it's named:\n%s", m.infoPane(60))
 	}
 	right()
@@ -2304,7 +2304,7 @@ func TestSavingARecipe(t *testing.T) {
 		t.Helper()
 		on(name)
 		right()
-		if titles() != "Run Inspect Delete" {
+		if titles() != "Run Describe Remove" {
 			t.Fatalf("%s's rows: %q", name, titles())
 		}
 	}
@@ -2332,7 +2332,7 @@ func TestSavingARecipe(t *testing.T) {
 
 	// Inspect sends that alone, runs no steps, and stays on the row.
 	open("My flow")
-	on("Inspect")
+	on("Describe")
 	inspecting := m.list.cursor
 	sent = nil
 	right()
@@ -2346,7 +2346,7 @@ func TestSavingARecipe(t *testing.T) {
 	idle()
 	saved = []config.Recipe{{Name: "A", Steps: saved[0].Steps}, {Name: "My flow", Steps: saved[0].Steps}, {Name: "Z", Steps: saved[0].Steps}}
 	m.showSection(m.section)
-	on("Delete")
+	on("Remove")
 	if it := m.list.selected(); it.risk != config.RiskWarn {
 		t.Errorf("should be marked as a warning: %+v", it)
 	}
@@ -2356,7 +2356,7 @@ func TestSavingARecipe(t *testing.T) {
 		t.Fatalf("should ask, No first: mode %v, yes %v, sent %v", m.mode, m.yes, sent)
 	}
 	right()
-	if it := m.list.selected(); len(sent) != 0 || m.mode != modeBrowse || it.title != "Delete" {
+	if it := m.list.selected(); len(sent) != 0 || m.mode != modeBrowse || it.title != "Remove" {
 		t.Errorf("No: sent %v, mode %v, at %+v", sent, m.mode, it)
 	}
 	right()
@@ -2365,7 +2365,7 @@ func TestSavingARecipe(t *testing.T) {
 
 	// If it fails it's still there, and so are you.
 	idle()
-	if it := m.list.selected(); m.opened != "My flow" || it.title != "Delete" {
+	if it := m.list.selected(); m.opened != "My flow" || it.title != "Remove" {
 		t.Errorf("opened %q, at %+v", m.opened, it)
 	}
 
@@ -2406,7 +2406,7 @@ func TestSavingARecipe(t *testing.T) {
 	m.Update(typed("Again"))
 	right()
 	done()
-	if len(sent) != 1 || m.run != nil || !strings.Contains(m.errMsg, "not saved") || len(m.recipe) != 2 {
+	if len(sent) != 1 || m.run != nil || !strings.Contains(m.errMsg, "not added") || len(m.recipe) != 2 {
 		t.Errorf("sent %v, run %+v, err %q, recipe %d steps", sent, m.run, m.errMsg, len(m.recipe))
 	}
 }

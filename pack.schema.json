@@ -15,7 +15,7 @@
     },
     "default": {
       "type": "boolean",
-      "description": "Installed for new users."
+      "description": "Added for new users."
     },
     "requires": {
       "type": "array",

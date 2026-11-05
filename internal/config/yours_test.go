@@ -82,7 +82,7 @@ func TestInstallUpdateUninstall(t *testing.T) {
 	info := filepath.Join(remotePath("git"), PackInfoFile)
 	module := remotePath("git/everyday")
 	b, _ := os.ReadFile(module)
-	if !strings.HasPrefix(string(b), "# Installed by clingon.") || !strings.Contains(string(b), "commands:") {
+	if !strings.HasPrefix(string(b), "# Added by clingon.") || !strings.Contains(string(b), "commands:") {
 		t.Fatalf("installed copy should say where it came from:\n%.200s", b)
 	}
 	if ups, _ := PackUpdates(); len(ups) != 0 {

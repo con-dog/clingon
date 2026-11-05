@@ -452,8 +452,8 @@ func (m *Model) showSection(s *config.Section) {
 			r := saved[i]
 			items = append(heading(nil, r.Name),
 				item{title: "Run", accent: true, ref: savedRecipeRef{r}},
-				item{title: "Inspect", ref: describeRecipeRef{r.Name}},
-				item{title: "Delete", risk: config.RiskWarn, ref: removeRecipeRef{r.Name}})
+				item{title: "Describe", ref: describeRecipeRef{r.Name}},
+				item{title: "Remove", risk: config.RiskWarn, ref: removeRecipeRef{r.Name}})
 		} else {
 			m.opened = "" // gone, or never was
 			if len(m.recipe) == 0 {
@@ -1207,7 +1207,7 @@ func (m *Model) open() tea.Cmd {
 			return nil // the status bar says so
 		}
 		cmd := m.describeCommand(r.name)
-		done := m.finish(pending{section: m.section.Name, sec: m.section, name: "Inspect " + r.name, cmd: cmd, shown: cmd})
+		done := m.finish(pending{section: m.section.Name, sec: m.section, name: "Describe " + r.name, cmd: cmd, shown: cmd})
 		// Stay on its row, to read about another: the list's first row runs one.
 		if i := slices.IndexFunc(m.list.view, func(it item) bool { return it.ref == any(r) }); i >= 0 {
 			m.list.cursor = i
@@ -1226,7 +1226,7 @@ func (m *Model) open() tea.Cmd {
 		}
 		cmd := m.removeCommand(r.name)
 		m.removing = r.name // No, or Yes, comes back to this row
-		return m.finish(pending{section: m.section.Name, sec: m.section, name: "Delete " + r.name, desc: removeDesc, risk: config.RiskWarn, cmd: cmd, shown: cmd})
+		return m.finish(pending{section: m.section.Name, sec: m.section, name: "Remove " + r.name, desc: removeDesc, risk: config.RiskWarn, cmd: cmd, shown: cmd})
 	}
 	return nil
 }
@@ -1254,13 +1254,13 @@ type openRecipeRef struct{ config.Recipe }
 // savedRecipeRef is that list's Run: it becomes the recipe, and runs.
 type savedRecipeRef struct{ config.Recipe }
 
-// describeRecipeRef is its Inspect: the shell says what it does.
+// describeRecipeRef is its Describe: the shell says what it does.
 type describeRecipeRef struct{ name string }
 
-// removeRecipeRef is its Delete: it asks, then deletes the recipe.
+// removeRecipeRef is its Remove: it asks, then removes the recipe.
 type removeRecipeRef struct{ name string }
 
-const removeDesc = "Deletes this saved recipe. The commands in it stay where they are."
+const removeDesc = "Removes this recipe. The commands in it stay where they are."
 
 func (m *Model) removeCommand(name string) string {
 	return m.opt.Self + " recipe remove " + shellQuote(name)
@@ -1411,7 +1411,7 @@ func (m *Model) saveNameKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		cmd := m.saveCommand(shellQuote(name))
 		m.run = &recipeRun{saving: true}
-		return m.finish(pending{section: m.section.Name, sec: m.section, name: "Save recipe", cmd: cmd, shown: cmd})
+		return m.finish(pending{section: m.section.Name, sec: m.section, name: "Add recipe", cmd: cmd, shown: cmd})
 	}
 	m.nameWhy = ""
 	return typeInto(&m.word, msg)
@@ -1422,7 +1422,7 @@ func recipeName(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // saveCommand is the command that saves the recipe under name, already quoted.
 func (m *Model) saveCommand(name string) string {
-	return m.opt.Self + " recipe save " + name + " " + strings.Join(m.recipeIDs(), " ")
+	return m.opt.Self + " recipe add " + name + " " + strings.Join(m.recipeIDs(), " ")
 }
 
 // startCommand asks for what a command needs, if anything, and runs it.
@@ -1489,9 +1489,9 @@ func (m *Model) stepDone(ok bool) tea.Cmd {
 	if m.run.saving {
 		m.run.saving = false
 		if why != "" {
-			said := "not saved"
+			said := "not added"
 			if !failed {
-				said = "maybe not saved"
+				said = "maybe not added"
 			}
 			m.errMsg = fmt.Sprintf("✗ Recipe %s, so not run: %s", said, why)
 			m.run = nil
@@ -2329,7 +2329,7 @@ func (m *Model) details() (cmd, desc string) {
 		if v := recipeName(m.word.Value()); v != "" {
 			name = shellQuote(v)
 		}
-		return highlight(m.saveCommand(name)), "Saves the recipe under this name, then runs it."
+		return highlight(m.saveCommand(name)), "Adds the recipe under this name, then runs it."
 	}
 	it := m.list.selected()
 	if it == nil {
@@ -2350,7 +2350,7 @@ func (m *Model) details() (cmd, desc string) {
 		}
 		return "", "Runs " + plural(len(m.recipe), "command") + " in order, asking for any blanks as each is reached. Stops if one fails."
 	case openRecipeRef:
-		return "", upperFirst(plural(len(r.Steps), "command")) + ". Run it, inspect it or delete it."
+		return "", upperFirst(plural(len(r.Steps), "command")) + ". Run it, describe it or remove it."
 	case savedRecipeRef:
 		return strings.Join(r.Steps, " "), "Makes this the current recipe and runs its " + plural(len(r.Steps), "command") + ", asking for any blanks as each is reached. Stops if one fails."
 	case describeRecipeRef:
@@ -2640,7 +2640,7 @@ func (m *Model) footer(w int) string {
 	case modeTrust, modeTyped, modeQuit, modeSave:
 		keys = []string{"↑↓ choose", "enter select"}
 	case modeSaveName:
-		keys = []string{"→ save and run", "← back"}
+		keys = []string{"→ add and run", "← back"}
 	}
 	return wrapJoin(keyHints(keys), faintStyle.Render(" · "), w)
 }
@@ -3036,7 +3036,7 @@ func (m *Model) saveView(w int) string {
 		}
 		return "  " + s
 	}
-	return cursorStyle.Render("Save this recipe first?") + "\n\n" + panel([]string{row(!m.yes, "No, just run it"), row(m.yes, "Yes, save it and run it")}, w)
+	return cursorStyle.Render("Add this recipe first?") + "\n\n" + panel([]string{row(!m.yes, "No, just run it"), row(m.yes, "Yes, add it and run it")}, w)
 }
 
 // saveNameView asks what to call it.

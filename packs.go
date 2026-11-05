@@ -18,17 +18,17 @@ import (
 )
 
 const packUsage = `Usage:
-  clingon pack list              your packs, installed and your own (--remote, --mine: just those)
-  clingon pack available         packs you can install
-  clingon pack add NAME...       install packs, or parts of them, like aws/ecs
-  clingon pack remove NAME...    remove packs or parts of them (installed or your own)
-  clingon pack update [NAME...]  bring installed packs up to date
+  clingon pack list              your packs, added and your own (--remote, --mine: just those)
+  clingon pack available         packs you can add
+  clingon pack add NAME...       add curated packs, or parts of them, like aws/ecs
+  clingon pack remove NAME...    remove packs or parts of them (curated or your own)
+  clingon pack update [NAME...]  bring added packs up to date
   clingon pack create NAME       start a pack of your own (from an example) in micro
   clingon pack edit NAME         edit your pack in micro
   clingon pack sections NAME     list the sections in your pack
-  clingon pack inspect NAME      print a pack's files, whether you have it or not
+  clingon pack describe NAME     print a pack's files, whether you have it or not
 
-A pack comes from clingon (in packs/remote once installed) or is your own (in
+A pack comes from clingon (in packs/remote once added) or is your own (in
 packs/mine). If you have one of each with the same name, say remote/NAME or
 mine/NAME. A pack is a folder, with a file for each section: aws is all of AWS,
 and aws/ecs is just its ECS commands.
@@ -78,14 +78,14 @@ func packCmd(args []string) error {
 		}
 		switch {
 		case remoteOnly:
-			printPacks("Installed packs", remote, namesOnly, "no packs installed: see `clingon pack available`")
+			printPacks("Added packs", remote, namesOnly, "no packs added: see `clingon pack available`")
 		case localOnly:
 			printPacks("Your packs", local, namesOnly, "no packs of your own yet: `clingon pack create` starts one")
 		case len(remote)+len(local) == 0:
 			printPacks("", nil, namesOnly, "no packs yet: see `clingon pack available`")
 		default:
 			if len(remote) > 0 {
-				printPacks("Installed packs", remote, namesOnly, "")
+				printPacks("Added packs", remote, namesOnly, "")
 			}
 			if len(local) > 0 {
 				printPacks("Your packs", local, namesOnly, "")
@@ -108,10 +108,10 @@ func packCmd(args []string) error {
 				list = append(list, p)
 			}
 		}
-		printPacks("Packs you can add", list, namesOnly, "every pack is installed")
+		printPacks("Packs you can add", list, namesOnly, "every pack is added")
 		return nil
 
-	case "add", "install":
+	case "add":
 		if len(rest) == 0 {
 			return errors.New("name a pack, e.g. `clingon pack add docker`")
 		}
@@ -119,16 +119,16 @@ func packCmd(args []string) error {
 			where, name := config.SplitRef(ref)
 			switch {
 			case where == "mine":
-				return fmt.Errorf("%s: only remote packs are installed (yours are already there)", ref)
+				return fmt.Errorf("%s: only curated packs are added (yours are already there)", ref)
 			case !config.InCatalog(name):
-				return fmt.Errorf("no pack called %s to install (see `clingon pack available`); to start your own: `clingon pack create %s`", config.RemoteRef(name), name)
+				return fmt.Errorf("no pack called %s to add (see `clingon pack available`); to start your own: `clingon pack create %s`", config.RemoteRef(name), name)
 			case config.IsInstalled(name) && (strings.Contains(name, "/") || len(config.MissingModules(name)) == 0):
-				say(info, "%s is already installed", config.RemoteRef(name))
+				say(info, "%s is already added", config.RemoteRef(name))
 			default:
 				if err := config.Install(name); err != nil {
 					return err
 				}
-				say(ok, "installed %s", config.RemoteRef(name))
+				say(ok, "added %s", config.RemoteRef(name))
 			}
 		}
 		return nil
@@ -147,7 +147,7 @@ func packCmd(args []string) error {
 		}
 		return editPackAs(name, "created")
 
-	case "remove", "rm", "uninstall":
+	case "remove", "rm":
 		if len(rest) == 0 {
 			return errors.New("name a pack, e.g. `clingon pack remove docker`")
 		}
@@ -158,10 +158,11 @@ func packCmd(args []string) error {
 			case where == "" && remote && local:
 				return fmt.Errorf("both packs/remote and packs/mine have %s: say remote/%s or mine/%s", name, name, name)
 			case where == "remote" || where == "" && remote:
+				shown := config.RemoteRef(name)
 				if err := config.Uninstall(name); err != nil {
 					return err
 				}
-				say(ok, "removed %s", config.RemoteRef(name))
+				say(ok, "removed %s", shown)
 			case where == "mine" || where == "" && local:
 				if err := config.DeletePack(name); err != nil {
 					return err
@@ -186,7 +187,7 @@ func packCmd(args []string) error {
 			}
 			pack, _ := config.SplitModule(name) // the whole of what you have of it
 			if !config.IsInstalled(pack) {
-				return fmt.Errorf("%s isn't installed", config.RemoteRef(pack))
+				return fmt.Errorf("%s isn't added", config.RemoteRef(pack))
 			}
 			want[pack] = true
 		}
@@ -210,7 +211,7 @@ func packCmd(args []string) error {
 			done++
 		}
 		if done == 0 {
-			say(info, "all set: your installed packs are up to date")
+			say(info, "all set: your added packs are up to date")
 		}
 		// An update never adds to what you chose: this is how you hear what's there.
 		installed, _ := config.Installed()
@@ -228,8 +229,8 @@ func packCmd(args []string) error {
 		}
 		return editPack(ref)
 
-	case "inspect", "cat":
-		ref, err := one("inspect")
+	case "describe", "cat":
+		ref, err := one("describe")
 		if err != nil {
 			return err
 		}
@@ -315,7 +316,7 @@ func printPacks(title string, ps []config.Pack, namesOnly bool, empty string) {
 			}
 			if len(p.Modules) > 0 && p.Where == "remote" && config.IsInstalled(p.Name) {
 				if missing := len(config.MissingModules(p.Name)); missing > 0 {
-					note += fmt.Sprintf(" · %s not installed", plural(missing, "subpack"))
+					note += fmt.Sprintf(" · %s not added", plural(missing, "subpack"))
 				}
 			}
 			rows = append(rows, row{mark: info, label: p.Name, detail: p.Description, note: note})
@@ -381,7 +382,7 @@ func commandCmd(args []string) error {
 		}
 		where, pack := config.SplitRef(a[0])
 		if where == "remote" {
-			return errors.New("installed packs are overwritten by `clingon pack update`: add commands to a local pack")
+			return errors.New("curated packs are overwritten by `clingon pack update`: add commands to a pack of your own")
 		}
 		if err := config.AddCommand(pack, a[1], a[2], a[3], desc); err != nil {
 			return err
@@ -415,12 +416,12 @@ func commandCmd(args []string) error {
 }
 
 const recipeUsage = `Usage:
-  clingon recipe save NAME ID...
+  clingon recipe add NAME ID...
   clingon recipe remove NAME
   clingon recipe list
   clingon recipe describe NAME
 
-A recipe runs commands in order. The menu saves one for you when you run it, from
+A recipe runs commands in order. The menu adds one for you when you run it, from
 Clingon › Recipes, and lists it there; each ID is one of its commands.
 `
 
@@ -430,14 +431,14 @@ func recipeCmd(args []string) error {
 		return nil
 	}
 	switch args[0] {
-	case "save":
+	case "add":
 		if len(args) < 3 {
-			return errors.New("usage: clingon recipe save NAME ID...")
+			return errors.New("usage: clingon recipe add NAME ID...")
 		}
 		if err := config.SaveRecipe(args[1], args[2:]); err != nil {
 			return err
 		}
-		say(ok, "saved recipe %q", args[1])
+		say(ok, "added recipe %q", args[1])
 		return nil
 	case "remove", "rm":
 		if len(args) != 2 {
@@ -454,7 +455,7 @@ func recipeCmd(args []string) error {
 			return err
 		}
 		if len(rs) == 0 {
-			say(info, "no saved recipes yet: run one from Clingon › Recipes, and save it")
+			say(info, "no recipes yet: run one from Clingon › Recipes, and add it")
 			return nil
 		}
 		if isTerm() {
