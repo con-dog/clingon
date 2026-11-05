@@ -205,6 +205,19 @@ func (p *picker) move(delta int) {
 	}
 }
 
+// nestedOnly says whether a list's sections are parents with children under them,
+// rather than headings: a list of packs and their subpacks.
+func (p *picker) nestedOnly() bool {
+	nested := false
+	for _, it := range p.view {
+		if it.header {
+			return false
+		}
+		nested = nested || it.indent
+	}
+	return nested
+}
+
 // jump moves to the first item under the next (dir 1) or current/previous
 // (dir -1) heading. With no headings it goes to the top or bottom.
 func (p *picker) jump(dir int) {
@@ -215,6 +228,14 @@ func (p *picker) jump(dir int) {
 			under = true
 		} else if under && p.selectable(i) {
 			starts, under = append(starts, i), false
+		}
+	}
+	if p.nestedOnly() { // no headings: each parent, with its children under it, is one
+		starts = nil
+		for i := range p.view {
+			if !p.view[i].indent {
+				starts = append(starts, i)
+			}
 		}
 	}
 	if len(starts) <= 1 {

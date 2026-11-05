@@ -3310,3 +3310,64 @@ func TestShellValueKeepsHomeAndNothingElse(t *testing.T) {
 		t.Errorf("shellQuote %q", got)
 	}
 }
+
+// In a list of packs and subpacks, [ and ] go from pack to pack.
+func TestJumpingBetweenPacks(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "add", Cmd: "add <p>", Args: []config.Arg{{Name: "p", Type: "flags", Options: []config.Option{
+			{Value: "aws"}, {Value: "aws/ecs", Indent: true}, {Value: "aws/s3", Indent: true},
+			{Value: "docker"}, {Value: "docker/images", Indent: true},
+			{Value: "go"},
+		}}}},
+		{Name: "pick", Cmd: "pick <q>", Args: []config.Arg{{Name: "q", Options: []config.Option{{Value: "one"}, {Value: "two"}, {Value: "three"}}}}},
+	}}}}, Send: func(string) error { return nil }})
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	m.list.cursor = 1
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	on := func(want string) {
+		t.Helper()
+		if got := m.job.pick.selected().value; got != want {
+			t.Errorf("on %q, want %q", got, want)
+		}
+	}
+	on("aws")
+	if f := ansi.Strip(m.footer(70)); !strings.Contains(f, "[ ] jump") {
+		t.Errorf("footer %q", f)
+	}
+	for _, step := range []struct{ key, want string }{
+		{"]", "docker"}, {"]", "go"}, {"]", "go"}, {"[", "docker"}, {"[", "aws"}, {"[", "aws"},
+	} {
+		m.Update(typed(step.key))
+		on(step.want)
+	}
+	// From inside a pack, [ goes to its own start, and ] to the next.
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	on("aws/ecs")
+	m.Update(typed("]"))
+	on("docker")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	on("docker/images")
+	m.Update(typed("["))
+	on("docker")
+	// Ticks and filters don't get in the way: they're keys of their own.
+	m.Update(typed("/"))
+	m.Update(typed("o"))
+	m.Update(typed("]"))
+	if q := m.job.pick.query(); q != "o" {
+		t.Errorf("] shouldn't type into the filter: %q", q)
+	}
+
+	// A flat list has no sections: it says nothing about them.
+	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m.showSection(&m.opt.Config.Sections[0])
+	for i, it := range m.list.view {
+		if it.title == "pick" {
+			m.list.cursor = i
+		}
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	if f := ansi.Strip(m.footer(70)); strings.Contains(f, "jump") {
+		t.Errorf("footer %q", f)
+	}
+}

@@ -2614,6 +2614,9 @@ func (m *Model) footer(w int) string {
 		case j.usePick:
 			keys = append(keys, "/ filter")
 		}
+		if j.usePick && j.pick.nestedOnly() {
+			keys = append(keys, "[ ] jump")
+		}
 		if j.usePick && j.pick.multi {
 			keys = append([]string{"space tick"}, keys...)
 		}
