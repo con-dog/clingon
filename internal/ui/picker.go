@@ -30,6 +30,7 @@ type item struct {
 	disabled bool   // drawn greyed out; can be highlighted but not opened
 	missing  string // a section's tools that aren't installed: drawn dim, naming them, but it opens as usual
 	indent   bool   // sits under the row above it
+	note     bool   // with header: a faint line of text, not a heading
 	stepAt   int    // the one recipe position this row is, in the recipe's own list
 	ref      any
 	idx      int
@@ -674,6 +675,9 @@ func CommandBlock(c *config.Command, w int) []string {
 func (p *picker) row(it item, active bool, width int) string {
 	if it.rule {
 		return faintStyle.Render(strings.Repeat("─", width))
+	}
+	if it.note {
+		return faintStyle.Render("  " + ansi.Truncate(it.title, max(width-2, 1), "…"))
 	}
 	if it.header {
 		st := headerStyle

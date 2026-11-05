@@ -457,7 +457,7 @@ func (m *Model) showSection(s *config.Section) {
 		} else {
 			m.opened = "" // gone, or never was
 			if len(m.recipe) == 0 {
-				m.hint = "Nothing numbered yet: press 1-9 on a command"
+				items = append(items, item{title: "Nothing yet", header: true, note: true})
 			} else {
 				items = append(items, item{title: "Run recipe", accent: true, ref: runRecipeRef{}})
 			}
@@ -2229,9 +2229,16 @@ func (m *Model) infoPane(w int) string {
 	if m.notice.text != "" || m.help || m.mode == modeTrust || m.mode == modeTyped || m.mode == modeQuit {
 		cmd, desc = "", ""
 	} else if s := m.highlightedSection(); s != nil {
-		// A section runs nothing itself: what's in it gets the whole area.
-		return strings.Join([]string{rule, labelStyle.Render(strings.ToUpper(plural(len(s.All()), "command"))),
-			m.sectionInfo(s, w, 2*n+2), rule}, "\n")
+		head, body := strings.ToUpper(plural(len(s.All()), "command")), ""
+		if s.Name == RecipesSection && len(m.recipe) == 0 {
+			head, body = m.noCurrentRecipeInfo(w, 2*n+2)
+		} else {
+			// A section runs nothing itself: what's in it gets the whole area.
+			body = m.sectionInfo(s, w, 2*n+2)
+		}
+		return strings.Join([]string{rule, labelStyle.Render(head), body, rule}, "\n")
+	} else if m.onEmptyRecipe() {
+		return strings.Join([]string{rule, labelStyle.Render("HOW RECIPES WORK"), fit(howRecipesWork(w), w, 2*n+2, false), rule}, "\n")
 	}
 	empty := cmd == ""
 	if empty {
@@ -2259,6 +2266,43 @@ func (m *Model) infoPane(w int) string {
 		block(dimStyle.Render(desc), w, n, tail),
 		rule,
 	}, "\n")
+}
+
+// noCurrentRecipeInfo is what the menu's Recipes row says with nothing numbered:
+// the recipes you have, or how to start.
+func (m *Model) noCurrentRecipeInfo(w, n int) (head, body string) {
+	saved := m.savedRecipes()
+	if len(saved) == 0 {
+		lines := wrapSpaces(dimStyle.Render("A recipe runs several commands in order."), w)
+		lines = append(lines, wrapSpaces(dimStyle.Render("Press 1-9 on any command to build one."), w)...)
+		return "NO RECIPES YET", fit(lines, w, n, false)
+	}
+	var names []string
+	for _, r := range saved {
+		names = append(names, r.Name)
+	}
+	line := words(crumbStyle, "All recipes:") + " " + words(dimStyle, strings.Join(names, ", "))
+	return strings.ToUpper(plural(len(saved), "recipe")), fit(wrapSpaces(line, w), w, n, false)
+}
+
+// onEmptyRecipe says whether the Recipes screen has nothing to describe: no
+// current recipe, and the cursor isn't on one you've added.
+func (m *Model) onEmptyRecipe() bool {
+	return m.mode == modeBrowse && m.section != nil && m.section == m.recipesSection() && m.opened == "" &&
+		len(m.recipe) == 0 && !m.list.filtered() && m.list.selected() == nil
+}
+
+// howRecipesWork is the steps to build one, w wide.
+func howRecipesWork(w int) []string {
+	var lines []string
+	for _, step := range []string{
+		"1. Open a section and press 1 on the first command",
+		"2. Press 2 on the next, from any section",
+		"3. Press r, then enter on Run recipe",
+	} {
+		lines = append(lines, wrapSpaces(dimStyle.Render(step), w)...)
+	}
+	return lines
 }
 
 // block wraps s to width w and makes it exactly n lines, marking a cut

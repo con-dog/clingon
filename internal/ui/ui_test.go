@@ -914,8 +914,12 @@ func TestCurrentRecipeListsTheSteps(t *testing.T) {
 	if m.section != m.recipesSection() || rows() != "" {
 		t.Fatalf("r should open the empty recipe: section %v, rows %q", m.section, rows())
 	}
-	if !strings.Contains(m.hint, "press 1-9") {
-		t.Errorf("an empty recipe should say how to start, got %q", m.hint)
+	if m.hint != "" {
+		t.Errorf("the pane says how to start, so the bar keeps its keys: got %q", m.hint)
+	}
+	if got := ansi.Strip(m.view()); !strings.Contains(got, "Nothing yet") || !strings.Contains(got, "HOW RECIPES WORK") ||
+		!strings.Contains(got, "press 1 on the first command") || strings.Contains(got, "DESCRIPTION") {
+		t.Errorf("an empty recipe should say how to start:\n%s", got)
 	}
 
 	// Numbered elsewhere, listed here in order, from any list.
@@ -3720,5 +3724,49 @@ func TestBlurredSelectionKeepsItsNameReadable(t *testing.T) {
 	row := p.row(p.items[1], true, 30)
 	if strings.Contains(row, labelStyle.Render("row 0")) && labelStyle.Render("row 0") != "row 0" {
 		t.Errorf("the name is greyed: %q", row)
+	}
+}
+
+// The Recipes row in the menu says something useful with nothing numbered.
+func TestRecipesRowWithNothingNumbered(t *testing.T) {
+	var saved []config.Recipe
+	m, _ := commandLineModel(t, &saved, &[]string{})
+	sec := m.recipesSection()
+	if sec == nil {
+		t.Fatal("no recipes section")
+	}
+	m.w, m.h = 80, 40
+	m.showRoot("")
+	for i := range m.list.view {
+		if s, _ := m.list.view[i].ref.(*config.Section); s == sec {
+			m.list.cursor = i
+		}
+	}
+	got := ansi.Strip(m.infoPane(60))
+	if !strings.Contains(got, "NO RECIPES YET") || !strings.Contains(got, "Press 1-9 on any command") || strings.Contains(got, "Current recipe") || strings.Contains(got, "0 COMMANDS") {
+		t.Errorf("none at all:\n%s", got)
+	}
+	saved = []config.Recipe{{Name: "Deploy", Steps: []string{"x-00000000"}}, {Name: "Tidy", Steps: []string{"x-00000000"}}}
+	got = ansi.Strip(m.infoPane(60))
+	if !strings.Contains(got, "2 RECIPES") || !strings.Contains(got, "All recipes: Deploy, Tidy") || strings.Contains(got, "Current recipe") {
+		t.Errorf("some added:\n%s", got)
+	}
+}
+
+// The pane stays the height it was, so nothing below it moves.
+func TestHowRecipesWorkKeepsThePaneHeight(t *testing.T) {
+	var saved []config.Recipe
+	m, _ := commandLineModel(t, &saved, &[]string{})
+	for _, h := range []int{20, 28, 44} {
+		m.w, m.h = 80, h
+		m.showSection(m.recipesSection())
+		if !m.onEmptyRecipe() {
+			t.Fatal("should be on the empty recipe")
+		}
+		howTo := strings.Count(m.infoPane(60), "\n")
+		m.showSection(&m.opt.Config.Sections[0])
+		if normal := strings.Count(m.infoPane(60), "\n"); howTo != normal {
+			t.Errorf("height %d: %d rows, and %d on a command", h, howTo, normal)
+		}
 	}
 }
