@@ -618,3 +618,30 @@ func TestRemoveTakesEitherKindOfPack(t *testing.T) {
 		t.Errorf("curated: %q %v", out, err)
 	}
 }
+
+// Tab completion offers the least that works: the name, unless you have one of each.
+func TestShortNamesForCompletion(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if err := config.Install("git"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.NewPack("poop"); err != nil {
+		t.Fatal(err)
+	}
+	list := func() string {
+		out, err := output(t, func() error { return packCmd([]string{"list", "--short"}) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if out := list(); !strings.Contains(out, "\ngit\t") && !strings.HasPrefix(out, "git\t") || !strings.Contains(out, "\npoop\t") {
+		t.Errorf("plain names: %q", out)
+	}
+	if err := config.NewPack("git"); err != nil {
+		t.Fatal(err)
+	}
+	if out := list(); !strings.Contains(out, "remote/git\t") || !strings.Contains(out, "mine/git\t") || !strings.Contains(out, "\npoop\t") {
+		t.Errorf("one of each keeps its prefix: %q", out)
+	}
+}

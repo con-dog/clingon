@@ -49,15 +49,16 @@ _clingon() {
         return
       fi
       case $words[3] in
-        add) compadd -- ${(f)"$(clingon pack available --names 2>/dev/null | cut -f1 | sed 's,^remote/,,')"} ;;
-        remove|rm) compadd -- ${(f)"$(clingon pack list --names 2>/dev/null | cut -f1 | sed 's,^remote/,,')"} ;;
-        update|edit|sections) compadd -- ${(f)"$(clingon pack list --names 2>/dev/null | cut -f1)"} ;;
-        describe|cat) compadd -- ${(f)"$(clingon pack list --names 2>/dev/null | cut -f1)"} ${(f)"$(clingon pack available --names 2>/dev/null | cut -f1)"} ;;
+        add) compadd -- ${(f)"$(clingon pack available --short 2>/dev/null | cut -f1)"} ;;
+        remove|rm|sections) compadd -- ${(f)"$(clingon pack list --short 2>/dev/null | cut -f1)"} ;;
+        update) compadd -- ${(f)"$(clingon pack list --remote --short 2>/dev/null | cut -f1)"} ;;
+        edit) compadd -- ${(f)"$(clingon pack list --mine --short 2>/dev/null | cut -f1)"} ;;
+        describe|cat) compadd -- ${(f)"$(clingon pack list --short 2>/dev/null | cut -f1)"} ${(f)"$(clingon pack available --short 2>/dev/null | cut -f1)"} ;;
       esac
       ;;
     command|commands|cmd) (( CURRENT == 3 )) && compadd add list ;;
     recipe|recipes) (( CURRENT == 3 )) && compadd add remove list describe ;;
-    doctor) (( CURRENT == 3 )) && compadd -- ${(f)"$(clingon pack list --remote --names 2>/dev/null | cut -f1)"} ;;
+    doctor) (( CURRENT == 3 )) && compadd -- ${(f)"$(clingon pack list --remote --short 2>/dev/null | cut -f1)"} ;;
     completion) (( CURRENT == 3 )) && compadd zsh bash ;;
   esac
 }
@@ -78,16 +79,17 @@ const bashCompletion = `_clingon() {
         pack|packs) words="list available add remove create update edit sections describe" ;;
         command|commands|cmd) words="add list" ;;
         recipe|recipes) words="add remove list describe" ;;
-        doctor) words=$(clingon pack list --remote --names 2>/dev/null | cut -f1) ;;
+        doctor) words=$(clingon pack list --remote --short 2>/dev/null | cut -f1) ;;
         completion) words="zsh bash" ;;
       esac
       ;;
     *)
       case ${COMP_WORDS[1]}:${COMP_WORDS[2]} in
-        pack:add|packs:add) words=$(clingon pack available --names 2>/dev/null | cut -f1 | sed 's,^remote/,,') ;;
-        pack:remove|packs:remove|pack:rm|packs:rm) words=$(clingon pack list --names 2>/dev/null | cut -f1 | sed 's,^remote/,,') ;;
-        pack:describe|packs:describe|pack:cat|packs:cat) words="$(clingon pack list --names 2>/dev/null | cut -f1) $(clingon pack available --names 2>/dev/null | cut -f1)" ;;
-        pack:*|packs:*) words=$(clingon pack list --names 2>/dev/null | cut -f1) ;;
+        pack:add|packs:add) words=$(clingon pack available --short 2>/dev/null | cut -f1) ;;
+        pack:update|packs:update) words=$(clingon pack list --remote --short 2>/dev/null | cut -f1) ;;
+        pack:edit|packs:edit) words=$(clingon pack list --mine --short 2>/dev/null | cut -f1) ;;
+        pack:describe|packs:describe|pack:cat|packs:cat) words="$(clingon pack list --short 2>/dev/null | cut -f1) $(clingon pack available --short 2>/dev/null | cut -f1)" ;;
+        pack:*|packs:*) words=$(clingon pack list --short 2>/dev/null | cut -f1) ;;
       esac
       ;;
   esac

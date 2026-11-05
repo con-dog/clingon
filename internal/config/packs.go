@@ -62,6 +62,18 @@ func (p Pack) Shown() string {
 	return p.Ref()
 }
 
+// Short is the least that names a pack on the command line, for tab completion:
+// just its name, unless you have one of each with that name.
+func (p Pack) Short() string {
+	switch {
+	case p.Where == "remote":
+		return RemoteRef(p.Name)
+	case IsInstalled(p.Name):
+		return p.Ref()
+	}
+	return p.Name
+}
+
 // RemoteRef is what an installed pack is called to people: its name, or
 // remote/NAME if you have a mine/NAME too, when the name alone wouldn't do.
 func RemoteRef(name string) string {

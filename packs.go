@@ -40,11 +40,14 @@ func packCmd(args []string) error {
 		return nil
 	}
 	var rest []string
-	namesOnly, remoteOnly, localOnly := false, false, false
+	var names func(config.Pack) string // how to print a list as names, not as a card
+	remoteOnly, localOnly := false, false
 	for _, a := range args[1:] {
 		switch a {
 		case "--names":
-			namesOnly = true
+			names = config.Pack.Ref
+		case "--short":
+			names = config.Pack.Short
 		case "--remote":
 			remoteOnly = true
 		case "--mine":
@@ -78,17 +81,17 @@ func packCmd(args []string) error {
 		}
 		switch {
 		case remoteOnly:
-			printPacks("Added packs", remote, namesOnly, "no packs added: see `clingon pack available`")
+			printPacks("Added packs", remote, names, "no packs added: see `clingon pack available`")
 		case localOnly:
-			printPacks("Your packs", local, namesOnly, "no packs of your own yet: `clingon pack create` starts one")
+			printPacks("Your packs", local, names, "no packs of your own yet: `clingon pack create` starts one")
 		case len(remote)+len(local) == 0:
-			printPacks("", nil, namesOnly, "no packs yet: see `clingon pack available`")
+			printPacks("", nil, names, "no packs yet: see `clingon pack available`")
 		default:
 			if len(remote) > 0 {
-				printPacks("Added packs", remote, namesOnly, "")
+				printPacks("Added packs", remote, names, "")
 			}
 			if len(local) > 0 {
-				printPacks("Your packs", local, namesOnly, "")
+				printPacks("Your packs", local, names, "")
 			}
 		}
 		return nil
@@ -108,7 +111,7 @@ func packCmd(args []string) error {
 				list = append(list, p)
 			}
 		}
-		printPacks("Packs you can add", list, namesOnly, "every pack is added")
+		printPacks("Packs you can add", list, names, "every pack is added")
 		return nil
 
 	case "add":
@@ -280,16 +283,16 @@ func moduleSlugs(ms []config.Module) string {
 }
 
 // printPacks shows a card titled title (a table when it isn't printing to a
-// terminal), or with namesOnly "ref<TAB>description" lines for tab
+// terminal), or with names "ref<TAB>description" lines for tab
 // completion, where ref is qualified (remote/x, mine/x) for packs you
 // have.
-func printPacks(title string, ps []config.Pack, namesOnly bool, empty string) {
-	if namesOnly {
+func printPacks(title string, ps []config.Pack, names func(config.Pack) string, empty string) {
+	if names != nil {
 		for _, p := range ps {
-			fmt.Printf("%s\t%s\n", p.Ref(), p.Description)
+			fmt.Printf("%s\t%s\n", names(p), p.Description)
 			if len(p.Modules) > 1 {
 				for _, m := range p.Modules {
-					fmt.Printf("%s/%s\t%s\n", p.Ref(), m.Slug, m.Name)
+					fmt.Printf("%s/%s\t%s\n", names(p), m.Slug, m.Name)
 				}
 			}
 		}
