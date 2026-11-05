@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Tags
+description: List, create, push and delete tags
+when: [.git]
+commands:
+  - name: Delete a tag
+    id: git-3ff0e186
+    cmd: git tag -d <tag>
+    desc: "Deletes a tag here. It stays on the remote if you've pushed it."
+    risk: warn
+    args:
+      - name: tag
+        quote: true
+        desc: "Deleting <tag>."
+        placeholder: "v1.0.0"
+  - name: List tags
+    id: git-69311a22
+    cmd: git tag --sort=-creatordate --format='%(creatordate:short)  %(refname:short)' | head -n 30
+    desc: "Lists the 30 newest tags."
+  - name: New tag
+    id: git-c84a9d44
+    cmd: git tag -a <tag> -m <message>
+    desc: "Tags the commit you're on, e.g. for a release."
+    args:
+      - name: tag
+        quote: true
+        desc: "Called <tag>"
+        placeholder: v1.0.0
+        pattern: "[^ ~^:?*\\[]+"
+      - name: message
+        quote: true
+        desc: "with the message \"<message>\"."
+  - name: Push tags
+    id: git-ce6f032b
+    cmd: git push origin --tags
+    desc: "Pushes every tag you have to origin."
+    risk: warn

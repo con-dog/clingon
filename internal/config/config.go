@@ -21,24 +21,43 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Starter is the example pack `clingon init` writes.
-//
-//go:embed starter.yaml
-var Starter []byte
+// Starter and StarterInfo are the example pack `clingon pack create` writes: a
+// submenu, and the pack's _pack.yaml.
+var (
+	//go:embed starter.yaml
+	Starter []byte
+	//go:embed starter_pack.yaml
+	StarterInfo []byte
+)
 
+// Config is packs put together: what the menu shows.
 type Config struct {
-	Description string    `yaml:"description"` // packs only: shown by `clingon pack`
-	Version     string    `yaml:"version"`     // packs only: bumped when a built-in pack changes
-	Requires    []string  `yaml:"requires"`    // packs only: tools `clingon doctor` looks for
-	Default     bool      `yaml:"default"`     // packs only: installed until the user says otherwise
-	Sections    []Section `yaml:"sections"`
+	Sections []Section `yaml:"sections"`
+}
+
+// PackInfoFile says how a pack looks. It's optional for your own packs.
+const PackInfoFile = "_pack.yaml"
+
+// packInfo is what's in a _pack.yaml.
+type packInfo struct {
+	Name        string   `yaml:"name"`        // what the menu calls the pack; from its folder if unset
+	Description string   `yaml:"description"` // shown by `clingon pack`
+	Default     bool     `yaml:"default"`     // installed until the user says otherwise
+	Requires    []string `yaml:"requires"`    // tools `clingon doctor` looks for
+	Icon        string   `yaml:"icon"`
+	Logo        string   `yaml:"logo"`
+	Color       string   `yaml:"color"`
+	Category    string   `yaml:"category"`
 }
 
 // Categories are the fixed top-level headings of the main menu, in order
 // (alphabetical, Other last). Sections without a category land under Other.
-var Categories = []string{"AI", "Code", "Databases", "Infrastructure", "System", Other}
+var Categories = []string{"AI", "Code", CommandLine, "Databases", "Infrastructure", "System", Other}
 
-const Other = "Other"
+const (
+	Other       = "Other"
+	CommandLine = "Command Line"
+)
 
 const DefaultIcon = "•"
 
@@ -56,10 +75,11 @@ type Section struct {
 }
 
 type Group struct {
-	Name     string    `yaml:"name"`
-	Requires []string  `yaml:"requires"` // hidden unless all of these are on PATH
-	When     []string  `yaml:"when"`     // its commands' when, unless they have their own
-	Commands []Command `yaml:"commands"`
+	Name        string    `yaml:"name"`
+	Description string    `yaml:"description"` // what's in it, shown when you pick it as part of a pack
+	Requires    []string  `yaml:"requires"`    // hidden unless all of these are on PATH
+	When        []string  `yaml:"when"`        // its commands' when, unless they have their own
+	Commands    []Command `yaml:"commands"`
 }
 
 // Risk levels. Warn: asks No/Yes before it runs (it changes or stops
@@ -84,6 +104,8 @@ type Command struct {
 
 // Arg fills one <name> placeholder in a command.
 type Arg struct {
+	AtLeastOne  bool     `yaml:"-"` // a checklist that needs something ticked before it can go on
+	CountAs     string   `yaml:"-"` // a checklist's description counts these once there are too many to name, like "pack"
 	Name        string   `yaml:"name"`
 	Type        string   `yaml:"type"` // text | choose | flags | secret; inferred when empty
 	Prompt      string   `yaml:"prompt"`
@@ -99,8 +121,9 @@ type Arg struct {
 
 // Option is a choice; in YAML either a plain string or {value, label}.
 type Option struct {
-	Value string `yaml:"value"`
-	Label string `yaml:"label"`
+	Value  string `yaml:"value"`
+	Label  string `yaml:"label"`
+	Indent bool   `yaml:"-"` // drawn under the option above it, as part of it
 }
 
 func (o *Option) UnmarshalYAML(n *yaml.Node) error {
@@ -183,67 +206,97 @@ func (s *Section) All() []*Command {
 	return out
 }
 
-// Dir is the config folder: $CLINGON_CONFIG, $XDG_CONFIG_HOME/clingon or ~/.config/clingon.
+// Dir is clingon's folder: $CLINGON_CONFIG or ~/.clingon. Packs and recipes are
+// at the top, to look at and change; the rest is in StateDir.
 func Dir() string {
 	if d := os.Getenv("CLINGON_CONFIG"); d != "" {
 		return d
 	}
-	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "clingon")
-	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "clingon")
+	return filepath.Join(home, ".clingon")
 }
+
+// StateDir is what clingon keeps for itself: its shell and editor setup, its
+// socket, crash logs, and which projects you've trusted.
+func StateDir() string { return filepath.Join(Dir(), "config") }
 
 // Load reads the installed packs (packs/remote) and then the user's own
 // (packs/local), merges sections and groups by name, and validates the
-// result. It returns the user's pack files too.
+// result. It returns the user's pack folders too.
 func Load() (*Config, []string, error) {
-	files, err := Files()
-	if err != nil {
-		return nil, nil, err
-	}
-	remote, err := packFiles(remoteDir())
-	if err != nil {
-		return nil, nil, err
-	}
+	local := packDirs(localDir())
 	cfg := &Config{}
-	for _, f := range append(remote, files...) {
-		fi, err := os.Stat(f)
+	for _, dir := range append(packDirs(remoteDir()), local...) {
+		parts, err := readPackDir(dir)
 		if err != nil {
 			return nil, nil, err
 		}
-		data, err := os.ReadFile(f)
-		if err != nil {
-			return nil, nil, err
-		}
-		part, err := parse(f, data)
-		if err != nil {
-			return nil, nil, err
-		}
-		remember(fi, f, part) // so describing the packs later needn't read them again
-		for i := range part.Sections {
-			part.Sections[i].Needs = part.Requires
-			part.Sections[i].pushDown()
-		}
-		cfg.merge(part)
+		cfg.merge(assemble(filepath.Base(dir), parts))
 	}
 	if errs := cfg.Validate(); len(errs) > 0 {
 		return nil, nil, errors.Join(errs...)
 	}
 	cfg.keepAvailable()
 	cfg.sort()
-	return cfg, files, nil
+	return cfg, local, nil
 }
 
-func parse(name string, data []byte) (*Config, error) {
-	var c Config
+// parsedFile is one file of a pack: its _pack.yaml, or a submenu.
+type parsedFile struct {
+	info  *packInfo
+	group *Group
+}
+
+// decodeStrict reads YAML into v, refusing fields it doesn't know.
+func decodeStrict(name string, data []byte, v any) error {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
-	if err := dec.Decode(&c); err != nil && err != io.EOF {
-		return nil, fmt.Errorf("%s: %w", name, err)
+	if err := dec.Decode(v); err != nil && err != io.EOF {
+		return fmt.Errorf("%s: %w", name, err)
 	}
-	return &c, nil
+	return nil
+}
+
+// parsePackFile reads one file of a pack, going by its name.
+func parsePackFile(path string, data []byte) (parsedFile, error) {
+	base := filepath.Base(path)
+	if base == PackInfoFile {
+		var in packInfo
+		err := decodeStrict(path, data, &in)
+		return parsedFile{info: &in}, err
+	}
+	var g Group
+	if err := decodeStrict(path, data, &g); err != nil {
+		return parsedFile{}, err
+	}
+	if g.Name == "" {
+		g.Name = sectionTitle(moduleSlug(base))
+	}
+	return parsedFile{group: &g}, nil
+}
+
+// assemble puts a pack's files together as the one menu item they make, called
+// after its folder unless its _pack.yaml says otherwise. A pack with no submenus
+// isn't in the menu at all.
+func assemble(folder string, parts []parsedFile) *Config {
+	s := Section{Name: sectionTitle(folder)}
+	for _, p := range parts {
+		switch {
+		case p.info != nil:
+			if p.info.Name != "" {
+				s.Name = p.info.Name
+			}
+			s.Icon, s.Logo, s.Color, s.Category = p.info.Icon, p.info.Logo, p.info.Color, p.info.Category
+			s.Needs = p.info.Requires
+		case p.group != nil:
+			s.Groups = append(s.Groups, *p.group)
+		}
+	}
+	if len(s.Groups) == 0 {
+		return &Config{}
+	}
+	s.pushDown()
+	return &Config{Sections: []Section{s}}
 }
 
 func (c *Config) merge(o *Config) {
@@ -425,8 +478,10 @@ func (c *Config) Validate() []error {
 			}
 		}
 		for g := range s.Groups {
-			if r, ok := Hidden(s.Groups[g].Name); ok {
-				bad(s.Name, "group %q has a character that can hide or change what's on screen (%U)", s.Groups[g].Name, r)
+			for _, text := range []string{s.Groups[g].Name, s.Groups[g].Description} {
+				if r, ok := Hidden(text); ok {
+					bad(s.Name, "group %q has a character that can hide or change what's on screen (%U)", text, r)
+				}
 			}
 		}
 		for _, cmd := range s.All() {

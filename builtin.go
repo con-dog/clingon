@@ -29,6 +29,25 @@ func packOptions(ps []config.Pack) []config.Option {
 	return out
 }
 
+// moduleOptions offers packs and, for those of more than one, each of their
+// submenus: they sort right under their pack.
+func moduleOptions(ps []config.Pack) []config.Option {
+	var out []config.Option
+	for _, p := range ps {
+		out = append(out, config.Option{Value: p.Ref(), Label: p.Description})
+		if len(p.Modules) > 1 {
+			for _, m := range p.Modules {
+				label := m.Description
+				if label == "" {
+					label = m.Name
+				}
+				out = append(out, config.Option{Value: p.Ref() + "/" + m.Slug, Label: label, Indent: true})
+			}
+		}
+	}
+	return out
+}
+
 // inspectable is every pack there is to look at, each once: yours, those you've
 // installed (some may no longer ship with clingon), and the rest that do.
 func inspectable(local, installed, catalog []config.Pack) []config.Pack {
@@ -52,6 +71,9 @@ func builtinSections() []*config.Section {
 	for _, p := range all {
 		if !config.IsInstalled(p.Name) {
 			available = append(available, p)
+		} else if missing := config.MissingModules(p.Name); len(missing) > 0 {
+			p.Modules = missing
+			available = append(available, p)
 		}
 	}
 	ups, _ := config.PackUpdates()
@@ -69,47 +91,38 @@ func builtinSections() []*config.Section {
 				{Name: "Create a pack", Desc: "Makes a pack of your own in packs/local from a working example, and opens it in micro to make it yours: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack create <name>", Args: []config.Arg{
 					{Name: "name", Prompt: "pack name", Desc: "Called <name>.", Placeholder: "letters, digits and dashes, e.g. work-tools"},
 				}},
-				{Name: "Edit a pack", Disabled: noLocal, Desc: "Opens one of your packs in micro: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack edit <pack>", Args: []config.Arg{
-					{Name: "pack", Options: packOptions(local), Desc: "Editing <pack>."},
+				{Name: "Edit a pack", Disabled: noLocal, Desc: "Opens <pack> in micro: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack edit <pack>", Args: []config.Arg{
+					{Name: "pack", Options: moduleOptions(local)},
 				}},
 				{Name: "List your packs", Disabled: noLocal, Desc: "Lists your own packs.", Cmd: self + " pack list --local"},
-				{Name: "Remove a pack", Disabled: noLocal, Desc: "Deletes one of your packs and every command in it, for good.", Risk: config.RiskDanger, Cmd: self + " pack remove <pack>", Args: []config.Arg{
-					{Name: "pack", Options: packOptions(local), Desc: "Removing <pack>."},
+				{Name: "Remove packs", Disabled: noLocal, Desc: "Deletes <pack> and every command in it, for good.", Risk: config.RiskDanger, Cmd: self + " pack remove <pack>", Args: []config.Arg{
+					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(local)},
 				}},
 			}},
 			{Name: "Installed packs", Commands: []config.Command{
-				{Name: "Add a pack", Disabled: unless(len(available) > 0, "Every pack is installed already."), Desc: "Installs a pack of ready-made commands into packs/remote.", Cmd: self + " pack add <pack>", Args: []config.Arg{
-					{Name: "pack", Options: packOptions(available), Desc: "Adding <pack>."},
+				{Name: "Add packs", Disabled: unless(len(available) > 0, "Every pack is installed already."), Desc: "Installs ready-made commands for <pack>.", Cmd: self + " pack add <pack>", Args: []config.Arg{
+					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(available)},
 				}},
 				{Name: "Available packs", Desc: "Lists the packs you can install and what each one covers.", Cmd: self + " pack available"},
-				{Name: "Inspect a pack", Desc: "Prints a pack's file, whether you have it or not, so you can see every command it holds and exactly what each one runs.", Cmd: self + " pack inspect <pack>", Args: []config.Arg{
-					{Name: "pack", Options: packOptions(inspectable(local, installed, all)), Desc: "Printing <pack>."},
+				{Name: "Inspect a pack", Desc: "Prints every command in <pack> and exactly what each one runs, whether you have it or not.", Cmd: self + " pack inspect <pack>", Args: []config.Arg{
+					{Name: "pack", Options: moduleOptions(inspectable(local, installed, all))},
 				}},
-				{Name: "List installed packs", Disabled: noneInstalled, Desc: "Lists the packs you've installed, with their versions.", Cmd: self + " pack list --remote"},
-				{Name: "Remove a pack", Disabled: noneInstalled, Desc: "Uninstalls a pack, taking its commands out of the menu.", Risk: config.RiskWarn, Cmd: self + " pack remove <pack>", Args: []config.Arg{
-					{Name: "pack", Options: packOptions(installed), Desc: "Removing <pack>."},
+				{Name: "List installed packs", Disabled: noneInstalled, Desc: "Lists the packs you've installed.", Cmd: self + " pack list --remote"},
+				{Name: "Remove packs", Disabled: noneInstalled, Desc: "Uninstalls <pack>, taking its commands out of the menu.", Risk: config.RiskWarn, Cmd: self + " pack remove <pack>", Args: []config.Arg{
+					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(installed)},
 				}},
-				{Name: "Update packs", Disabled: unless(len(ups) > 0, "Every installed pack is up to date."), Desc: "Installs newer versions of your installed packs, replacing their files in packs/remote, and removes any clingon no longer ships: changes you made to those files are lost.", Risk: config.RiskWarn, Cmd: self + " pack update"},
+				{Name: "Update packs", Disabled: unless(len(ups) > 0, "Every installed pack is up to date."), Desc: "Brings your installed packs up to date, replacing their files in packs/remote, and removes any clingon no longer ships: changes you made to those files are lost.", Risk: config.RiskWarn, Cmd: self + " pack update"},
 			}},
 		}},
-		{Name: "Health check", Icon: clingonMark, Color: clingonPink, Category: "Clingon", Groups: []config.Group{
-			{Name: "Everything", Commands: []config.Command{
+		{Name: "Clingon", Icon: clingonMark, Color: clingonPink, Category: "Clingon", Groups: []config.Group{
+			{Name: "Healthchecks", Commands: []config.Command{
 				{Name: "Run all checks", Desc: "Checks tmux, your packs and the tools every installed pack needs.", Cmd: self + " doctor"},
-			}},
-			{Name: "Crashes", Commands: []config.Command{
 				{Name: "Show last crash", Desc: "Shows why clingon last crashed, with the trace to put in a bug report.", Cmd: self + " crash"},
-			}},
-			{Name: "Packs", Commands: []config.Command{
 				{Name: "Check a pack's tools", Disabled: noneInstalled, Desc: "Checks that the tools an installed pack needs are on your PATH.", Cmd: self + " doctor <pack>", Args: []config.Arg{
 					{Name: "pack", Options: packOptions(installed), Desc: "Checking <pack>."},
 				}},
 				{Name: "Check all packs", Desc: "Checks every pack, yours and installed, for mistakes.", Cmd: self + " check"},
 			}},
-		}},
-		{Name: ui.RecipesSection, Icon: clingonMark, Color: clingonPink, Category: "Clingon", Groups: []config.Group{
-			{Name: "Current recipe"}, // the menu fills it in, with what's numbered
-		}},
-		{Name: "Update", Icon: clingonMark, Color: clingonPink, Category: "Clingon", Groups: []config.Group{
 			{Name: "clingon", Commands: []config.Command{
 				{Name: "Show version", Desc: "Shows which version of clingon you're running.", Cmd: self + " version"},
 				{Name: "Update clingon", Desc: "Upgrades clingon the same way you installed it.", Cmd: self + " update"},
@@ -117,6 +130,16 @@ func builtinSections() []*config.Section {
 			{Name: "Welcome", Commands: []config.Command{
 				{Name: "Worth doing", Desc: "Shows the welcome card: updates, packs for tools you have, and anything else worth doing.", Cmd: self + " welcome"},
 			}},
+		}},
+		{Name: ui.CommandLineSection, Icon: config.Logos["terminal"], Color: clingonPink, Category: config.CommandLine, Groups: []config.Group{
+			{Name: "Custom", Commands: []config.Command{
+				{ID: ui.CommandLineID, Name: "Type a command", Desc: "Runs one line of your own in the shell. In a recipe, it asks for the line each time the recipe gets here.", Cmd: "<command>", Args: []config.Arg{
+					{Name: "command", Placeholder: "echo hello world"},
+				}},
+			}},
+		}},
+		{Name: ui.RecipesSection, Icon: clingonMark, Color: clingonPink, Category: "Clingon", Groups: []config.Group{
+			{Name: "Current recipe"}, // the menu fills it in, with what's numbered
 		}},
 	}
 	sort.SliceStable(sections, func(i, j int) bool { return config.NaturalLess(sections[i].Name, sections[j].Name) })
@@ -201,6 +224,7 @@ func doctor(names []string) error {
 	var tools []row
 	for _, ref := range names {
 		_, n := config.SplitRef(ref)
+		n, _ = config.SplitModule(n) // a pack's tools are the same for all of it
 		p, found := byName[n]
 		if !found {
 			add(&tools, row{mark: warn, label: config.RemoteRef(n), detail: "clingon no longer ships it: `clingon pack update` removes it"})
@@ -226,8 +250,7 @@ func doctor(names []string) error {
 		outln(card("Pack tools", tools, cardWidth()))
 	}
 	if packErr != nil {
-		outln(failStyle.Render("Your packs have problems:"))
-		outln("  " + strings.ReplaceAll(packErr.Error(), "\n", "\n  "))
+		sayBoxed("Your packs have problems", packErr.Error())
 	}
 	if failed {
 		return errQuiet
@@ -278,6 +301,7 @@ func update() error {
 	}
 	c := exec.Command(cmd[0], cmd[1:]...)
 	c.Dir = dir
+	flushSaid() // brew has the terminal now, and its output is its own
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := c.Run(); err != nil {
 		return err

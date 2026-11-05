@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Utilities
+description: Generate secrets and UUIDs, print the time, and encode or decode Base64
+commands:
+  - name: Random secret
+    id: system-30c3105e
+    cmd: openssl rand -base64 <bytes> | tr -d '\n'; echo
+    desc: "Prints a random secret, good for API keys, tokens and passwords."
+    requires: [openssl]
+    args:
+      - name: bytes
+        desc: "Made from <bytes> random bytes."
+        options: ["32", "16", "64"]
+        default: "32"
+  - name: New UUID
+    id: system-c6b6486d
+    cmd: uuidgen
+    desc: "Prints a new random UUID."
+    requires: [uuidgen]
+  - name: Time now (ISO)
+    id: system-288a385c
+    cmd: date -u +%Y-%m-%dT%H:%M:%SZ
+    desc: "Prints the current time in UTC, in ISO 8601 format."
+  - name: Time now (Unix)
+    id: system-eb5a48fe
+    cmd: date +%s
+    desc: "Prints the current Unix time: seconds since 1 January 1970."
+  - name: Base64 encode
+    id: system-72a3a0b7
+    cmd: printf %s <text> | base64
+    desc: "Encodes some text as base64."
+    args:
+      - name: text
+        quote: true
+        desc: "Encoding \"<text>\"."
+  - name: Base64 decode
+    id: system-e8379df3
+    cmd: printf %s <text> | base64 --decode; echo
+    desc: "Decodes base64 back into text."
+    args:
+      - name: text
+        quote: true
+        desc: "Decoding <text>."

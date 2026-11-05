@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Stash
+description: Save work to a stash, list stashes, and apply, pop or drop one
+when: [.git]
+commands:
+  - name: Drop a stash
+    id: git-eee0bcc7
+    cmd: git stash drop <stash>
+    desc: "Deletes one stash entry. Its changes are gone unless you've applied them somewhere."
+    risk: danger
+    args:
+      - name: stash
+        quote: true
+        placeholder: "stash@{0}"
+  - name: List stashes
+    id: git-b71c5797
+    cmd: git stash list --format='%gd  %cr  %s'
+    desc: "Lists everything you've stashed, newest first."
+  - name: Stash with message
+    id: git-10305c97
+    cmd: git stash push -u -m <message>
+    desc: "Puts all uncommitted changes, new files included, aside in the stash."
+    args:
+      - name: message
+        quote: true
+        desc: "Labelled \"<message>\"."
+  - name: Apply stash
+    id: git-9b68aee6
+    cmd: git stash apply <stash>
+    desc: "Brings changes from the stash back into your files, keeping them in the stash too."
+    args:
+      - name: stash
+        quote: true
+        placeholder: "stash@{0}"
+  - name: Pop stash
+    id: git-2718fa6c
+    cmd: git stash pop <stash>
+    desc: "Brings changes from the stash back into your files and removes them from the stash."
+    args:
+      - name: stash
+        quote: true
+        placeholder: "stash@{0}"

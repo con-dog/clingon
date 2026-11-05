@@ -14,10 +14,9 @@ import (
 	"golang.org/x/term"
 )
 
-// How clingon's commands print, in its palette: cards for anything with
-// rows (the welcome, doctor, check, lists), a marked line for a single
-// result. Colour goes when the output isn't a terminal (lipgloss sees to
-// that); lists print plain there too, for scripts.
+// How clingon's commands print, in its palette: in a terminal, everything's in a
+// card, single results and errors too. Colour and cards go when the output isn't
+// a terminal (lipgloss sees to that for colour): scripts get plain lines.
 
 var (
 	nameStyle  = lipgloss.NewStyle().Foreground(ui.Pink).Bold(true)
@@ -70,21 +69,110 @@ func stdout() io.Writer {
 // stderr is stdout's counterpart for errors and usage.
 func stderr() io.Writer { return colorprofile.NewWriter(os.Stderr, os.Environ()) }
 
-func outln(a ...any)               { _, _ = fmt.Fprintln(stdout(), a...) }
-func outf(format string, a ...any) { _, _ = fmt.Fprintf(stdout(), format, a...) }
+func outln(a ...any) {
+	flushSaid()
+	_, _ = fmt.Fprintln(stdout(), a...)
+}
+
+func outf(format string, a ...any) {
+	flushSaid()
+	_, _ = fmt.Fprintf(stdout(), format, a...)
+}
+
 func errf(format string, a ...any) { _, _ = fmt.Fprintf(stderr(), format, a...) }
 
-// say prints a single result: `✓ installed git`.
+// said is what say has held for one card, and saidTitle what that's headed.
+var (
+	said      []string
+	saidTitle = "clingon"
+)
+
+// say gives a single result: `✓ installed git`. In a terminal, a command's results
+// share a card, drawn by flushSaid.
 func say(k mark, format string, a ...any) {
-	outln(k.render("") + " " + fmt.Sprintf(format, a...))
+	line := k.render("") + " " + fmt.Sprintf(format, a...)
+	if !isTerm() {
+		_, _ = fmt.Fprintln(stdout(), line)
+		return
+	}
+	said = append(said, line)
+}
+
+// flushSaid draws what say has held. It runs before anything else prints, before
+// a command hands the terminal to another program, and as clingon exits.
+func flushSaid() {
+	if len(said) == 0 {
+		return
+	}
+	lines := said
+	said = nil
+	_, _ = fmt.Fprintln(stdout(), boxed(headStyle.Render(saidTitle), lines, cardWidth()))
+}
+
+// commandTitle heads a command's card: `pack add` from `clingon pack add git`.
+func commandTitle(args []string) string {
+	if len(args) == 0 {
+		return "clingon"
+	}
+	switch args[0] {
+	case "pack", "packs", "command", "commands", "cmd", "recipe", "recipes":
+		if len(args) > 1 {
+			return args[0] + " " + args[1]
+		}
+	}
+	return args[0]
+}
+
+// boxed draws lines in a titled box, wrapping any too long for it: unlike a card's
+// details, none of this may be cut short.
+func boxed(title string, lines []string, w int) string {
+	var out []string
+	for _, l := range lines {
+		out = append(out, strings.Split(ansi.Wrap(l, max(w-4, 1), ""), "\n")...)
+	}
+	return titled(title, out, w)
+}
+
+// sayBoxed prints text in a box in a terminal, and as it is anywhere else.
+func sayBoxed(title, text string) {
+	text = strings.TrimRight(text, "\n")
+	if !isTerm() {
+		outln(text)
+		return
+	}
+	outln(boxed(headStyle.Render(title), strings.Split(text, "\n"), cardWidth()))
 }
 
 // step prints what's about to run, for commands that run others.
-func step(text string) { outln(markStyle.Render("→") + " " + text) }
+func step(text string) {
+	line := markStyle.Render("→") + " " + text
+	if !isTerm() {
+		outln(line)
+		return
+	}
+	said = append(said, line)
+	flushSaid() // what it's about to run may want the terminal
+}
 
-// sayErr prints an error, to stderr.
+// sayErr prints an error, to stderr: in a box, if that's a terminal.
 func sayErr(err error) {
+	flushSaid()
+	if term.IsTerminal(int(os.Stderr.Fd())) {
+		w := cardWidth()
+		_, _ = fmt.Fprintln(stderr(), boxed(failStyle.Render("✗ Problem"), strings.Split(err.Error(), "\n"), w))
+		return
+	}
 	_, _ = fmt.Fprintln(stderr(), failStyle.Render("✗")+" "+err.Error())
+}
+
+// errUsage prints usage to stderr: in a box, if that's a terminal.
+func errUsage(text string) {
+	text = strings.TrimRight(text, "\n")
+	if term.IsTerminal(int(os.Stderr.Fd())) {
+		_, _ = fmt.Fprintln(stderr(), boxed(headStyle.Render("Usage"), strings.Split(text, "\n"), cardWidth()))
+		return
+	}
+	errf("%s\n", text)
 }
 
 // A row of a card.

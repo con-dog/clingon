@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Debug
+description: Debug a test file, use UI mode, record traces and view traces and reports
+when: [playwright.config.ts, playwright.config.js, playwright.config.mts, playwright.config.mjs]
+commands:
+  - name: Debug a file
+    id: playwright-133d278e
+    cmd: npx playwright test --debug <file>
+    desc: "Runs a file's tests one step at a time in the Playwright Inspector."
+    args:
+      - name: file
+        quote: true
+        desc: "From <file>."
+        placeholder: "tests/example.spec.ts"
+  - name: Record traces
+    id: playwright-d9261621
+    cmd: npx playwright test --trace on
+    desc: "Runs the tests and records a trace of each, with screenshots, network and console, to open from the report."
+  - name: Show a trace
+    id: playwright-07f45479
+    cmd: npx playwright show-trace <file>
+    desc: "Opens a recorded trace in the trace viewer, to step through what a test did."
+    args:
+      - name: file
+        quote: true
+        desc: "From <file>."
+        placeholder: "tests/example.spec.ts"
+  - name: Show report
+    id: playwright-678017f6
+    cmd: npx playwright show-report
+    desc: "Opens the HTML report from the last run in your browser."
+  - name: UI mode
+    id: playwright-79060384
+    cmd: npx playwright test --ui
+    desc: "Opens a window to pick tests, run them, watch them and step back through each action."

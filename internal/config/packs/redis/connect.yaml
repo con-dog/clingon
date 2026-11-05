@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Connect
+description: Connect to Redis locally, to a server or with a URL, and check that it's up
+commands:
+  - name: Connect
+    id: redis-82ed4c1b
+    cmd: redis-cli
+    desc: "Opens a prompt on the local Redis server."
+  - name: Connect to a server
+    id: redis-4a4e3575
+    cmd: redis-cli -h <host> -p <port> <flags>
+    desc: "Opens a prompt on any Redis server."
+    args:
+      - name: host
+        quote: true
+        desc: "On <host>"
+        default: 127.0.0.1
+      - name: port
+        desc: "port <port>."
+        default: "6379"
+        pattern: "[0-9]+"
+      - name: flags
+        type: flags
+        options:
+          - { value: --askpass, label: ask for the password }
+          - { value: --tls, label: connect over TLS }
+  - name: Connect with a URL
+    id: redis-cff68e83
+    cmd: redis-cli --no-auth-warning -u <url>
+    desc: "Opens a prompt on any Redis server, from a redis:// URL. The URL is a secret: it never shows on screen or in your history."
+    args:
+      - name: url
+        type: secret
+        desc: "On the server at that URL."
+        placeholder: redis://user:password@host:6379/0
+  - name: Is it up
+    id: redis-e7bcbb72
+    cmd: redis-cli ping
+    desc: "Answers PONG if the Redis server is running."

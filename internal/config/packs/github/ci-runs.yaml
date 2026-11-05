@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: CI runs
+description: Watch a CI run and rerun failed jobs
+when: [.git]
+commands:
+  - name: Rerun failed jobs
+    id: github-fca5f0ee
+    cmd: gh run rerun <run> --failed
+    desc: "Runs only the failed jobs of a CI run again."
+    risk: warn
+    args:
+      - name: run
+        quote: true
+        placeholder: "run ID, from List runs"
+  - name: Watch CI run
+    id: github-652fb56b
+    cmd: gh run watch <run>
+    desc: "Follows a CI run live until it finishes."
+    args:
+      - name: run
+        quote: true
+        placeholder: "run ID, from List runs"

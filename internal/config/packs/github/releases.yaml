@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Releases
+description: List and download releases, and publish a new one
+when: [.git]
+commands:
+  - name: Download a release
+    id: github-4cf623db
+    cmd: gh release download <tag>
+    desc: "Downloads a release's files into this folder."
+    risk: warn
+    args:
+      - name: tag
+        quote: true
+        desc: "From <tag>."
+        placeholder: "v1.0.0"
+  - name: List releases
+    id: github-04890b51
+    cmd: gh release list
+    desc: "Lists this repository's releases, newest first."
+  - name: New release
+    id: github-c8c8970f
+    cmd: gh release create <tag> --generate-notes <flags>
+    desc: "Publishes a release on GitHub for a tag, with notes written from the pull requests since the last one."
+    risk: warn
+    args:
+      - name: tag
+        quote: true
+        desc: "For <tag>."
+        placeholder: "v1.0.0"
+      - name: flags
+        type: flags
+        options:
+          - { value: --draft, label: draft }
+          - { value: --prerelease, label: pre-release }

@@ -37,8 +37,9 @@ type Options struct {
 	WaitIdle  func() bool
 	FocusMenu func()
 	// LastFailed says whether the command that just finished failed, so a
-	// recipe stops there. Nil: it's taken to have worked.
-	LastFailed func() bool
+	// recipe stops there, and whether that could be told at all: if not, the
+	// recipe stops too. Nil: it's taken to have worked.
+	LastFailed func() (failed, known bool)
 	// Recipes lists the saved recipes, and Self is clingon as the shell runs it,
 	// which is what saves one. Recipes nil: recipes aren't saved.
 	Recipes func() []config.Recipe
@@ -60,7 +61,7 @@ type Options struct {
 	// Headline is the status bar's news on the top level, worked out each
 	// time the top level is shown. Nil: nothing to say there.
 	Headline func() Headline
-	// Project finds the project pack (.clingon.yaml) for the shell's
+	// Project finds the project packs (.clingon/packs) for the shell's
 	// folder; nil when there's none. Nil func: projects aren't looked for.
 	Project func(dir string) *config.Project
 	// SecretDir is where secret values wait, in 0600 files, for the one
@@ -100,7 +101,7 @@ const (
 	modeConfirm
 	modeTrust    // asking whether to trust a project pack
 	modeTyped    // the shell has something typed: go there, or clear it and run
-	modeQuit     // jobs would end with the session: stay, or quit
+	modeQuit     // quitting closes the shell: stay, or quit
 	modeSave     // about to run the recipe: save it first?
 	modeSaveName // what to save it as
 )
@@ -127,12 +128,12 @@ type job struct {
 	invalid string // why the value just entered was refused
 }
 
-// pending is a command ready to send, held while risky ones ask y/N.
+// pending is a command ready to send, held while risky ones ask No/Yes.
 type pending struct {
 	section, name, cmd string
 	sec                *config.Section
 	risk               string
-	desc               string // the filled-in description, for the y/N screen
+	desc               string // the filled-in description, for the No/Yes screen
 	shown              string // cmd as the user sees it (secrets as <name>), shown for risk: danger
 	code               string // risk: danger: a random code you type to go on (see newCode)
 	typed              bool   // risk: danger: code typed correctly, so on to No/Yes
@@ -197,6 +198,8 @@ type Model struct {
 	looking   bool                        // a shellLookMsg is on its way
 	recipe    []recipeStep                // the numbered commands, in order: at most 9
 	run       *recipeRun                  // the recipe going through its steps, if it is
+	stopped   int                         // the command the recipe stopped at, where its list starts; 0 if it didn't
+	resume    tea.Cmd                     // cursors to start blinking again, after a key brought focus back
 	quiet     bool                        // that's locked, but not worth a status bar's band yet
 	waiting   bool                        // a wait for the shell to finish (started on focus) is under way
 	scrolling bool                        // the shell is scrolled back: nothing can be sent until it stops
@@ -285,7 +288,7 @@ func (m *Model) showRoot(focus string) {
 				addSearch(&p.Config.Sections[i])
 			}
 		case p.Err != nil:
-			items = append(items, item{title: config.ProjectFile + " has problems", icon: "✗", disabled: true, ref: projectRef{}})
+			items = append(items, item{title: config.ProjectDir + " has problems", icon: "✗", disabled: true, ref: projectRef{}})
 		default:
 			items = append(items, item{title: "Use this folder's commands?", icon: warnGlyph, ref: projectRef{}})
 		}
@@ -311,9 +314,25 @@ func (m *Model) showRoot(focus string) {
 			items = append(items, it)
 			addSearch(s)
 		}
+		for _, s := range m.builtin { // clingon's own that belong among the packs
+			if s.Category != cat {
+				continue
+			}
+			if !started {
+				items = heading(items, cat)
+				started = true
+			}
+			items = append(items, sectionItem(s))
+			addSearch(s)
+		}
 	}
-	for i, s := range m.builtin {
-		if i == 0 {
+	divided := false
+	for _, s := range m.builtin {
+		if slices.Contains(config.Categories, s.Category) {
+			continue // listed above
+		}
+		if !divided {
+			divided = true
 			if len(items) > 0 {
 				items = append(items, item{header: true}, item{header: true, rule: true})
 			}
@@ -324,7 +343,7 @@ func (m *Model) showRoot(focus string) {
 	}
 	m.section, m.opened = nil, ""
 	m.list = newPicker(items, search, false)
-	m.list.step = m.itemStep
+	m.list.step = m.itemSteps
 	if m.opt.Headline != nil {
 		h := m.opt.Headline()
 		m.news = &h
@@ -441,9 +460,9 @@ func (m *Model) showSection(s *config.Section) {
 			} else {
 				items = append(items, item{title: "Run recipe", accent: true, ref: runRecipeRef{}})
 			}
-			for _, st := range m.recipe {
+			for i, st := range m.recipe {
 				c := st.ref.cmd
-				items = append(items, item{title: c.Name, indent: true, where: st.ref.section, keywords: c.Cmd, risk: c.Risk, disabled: m.unavailable(c) != "", ref: st.ref})
+				items = append(items, item{title: c.Name, stepAt: i + 1, indent: true, where: st.ref.section, keywords: c.Cmd, risk: c.Risk, disabled: m.unavailable(c) != "", ref: st.ref})
 			}
 			if len(saved) > 0 {
 				items = heading(items, "All recipes")
@@ -455,9 +474,12 @@ func (m *Model) showSection(s *config.Section) {
 	}
 	m.section = s
 	m.list = newPicker(items, nil, false)
-	m.list.step = m.itemStep
+	m.list.step = m.itemSteps
 	if s == m.recipesSection() && len(m.recipe) > 0 && m.opened == "" {
 		m.list.cursor = 1 // Run recipe, under its heading
+		if m.stopped > 0 && m.stopped <= len(m.recipe) {
+			m.list.cursor = 1 + m.stopped // where it stopped: enter runs it again, and on from there
+		}
 	}
 	if s == m.recipesSection() && m.removing != "" {
 		if m.opened == "" {
@@ -541,10 +563,19 @@ func (m *Model) regrey() {
 	}
 }
 
+// catchUp brings the menu up to date with what the shell may have changed: its
+// packs, and what fits its folder. It's for when a command finishes and when the
+// user comes back from the shell, the two ways the shell gets to change anything.
+func (m *Model) catchUp() {
+	if !m.reload() { // a reload has looked again already
+		m.lookAgain()
+	}
+}
+
 // lookAgain is for coming back to the menu, perhaps after a cd: the top
 // level is rebuilt (the project may differ), a section just regreys.
 func (m *Model) lookAgain() {
-	if m.mode != modeBrowse || m.list.filtering {
+	if m.mode != modeBrowse || m.list.filtered() {
 		return
 	}
 	if m.section == nil {
@@ -581,13 +612,16 @@ func (m *Model) missingFor(s *config.Section) []config.Missing {
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	_, cmd := m.update(msg)
+	if m.resume != nil {
+		cmd, m.resume = tea.Batch(cmd, m.resume), nil
+	}
 	// Every way of not going through with a step (←, esc, ctrl-c, "No") ends
 	// back in the list with nothing sent: that stops the recipe, and keeps it.
 	if m.run != nil && !m.run.sent && m.mode == modeBrowse {
 		if m.errMsg == "" {
-			m.hint = fmt.Sprintf("Recipe stopped at step %d · Run recipe starts again · x clears it", m.run.at+1)
+			m.hint = fmt.Sprintf("Recipe stopped at command %d%s", m.run.at+1, stoppedKeys)
 		}
-		m.run = nil
+		m.stopRun()
 	}
 	if bar := m.drawBar(msg); bar != nil {
 		return m, tea.Batch(cmd, bar)
@@ -645,12 +679,10 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// What the shell's doing first: the same look at it gets its folder,
 		// which looking again (below) then needn't ask for.
 		m.readShell()
-		if !m.reload() { // a reload has looked again already
-			m.lookAgain()
-		}
+		m.catchUp()
 		m.relistSaved()
 		var cmds []tea.Cmd
-		for _, in := range m.inputs() {
+		for _, in := range m.shownInputs() {
 			cmds = append(cmds, in.Focus())
 		}
 		// Something running in the shell (maybe started by hand) would get
@@ -684,6 +716,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.busy = ""
 		m.readShell()
+		m.catchUp() // it may have added a pack, or changed folder
 		m.relistSaved()
 		m.removing = ""
 		// Back to the menu only if the shell is really done: one left
@@ -722,9 +755,11 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if m.blurred { // keys mean focus is here, focus event or not: blurred inputs would drop them
 			m.blurred = false
-			for _, in := range m.inputs() {
-				in.Focus()
+			var blinks []tea.Cmd
+			for _, in := range m.shownInputs() {
+				blinks = append(blinks, in.Focus())
 			}
+			m.resume = tea.Batch(blinks...)
 		}
 		if m.notice.text != "" { // any key dismisses it, and does nothing else
 			m.notice = notice{seq: m.notice.seq}
@@ -777,9 +812,11 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) cancel() tea.Cmd {
 	m.errMsg, m.hint = "", ""
 	switch {
+	case m.mode == modeFill && m.job.usePick && m.job.pick.filtered(): // the filter first, as in the menu's list
+		m.job.pick.clearFilter()
 	case m.mode != modeBrowse:
 		m.pending, m.job, m.mode = nil, nil, modeBrowse
-	case m.list.filtering:
+	case m.list.filtered():
 		m.list.clearFilter()
 	case m.section != nil:
 		m.showRoot(m.section.Name)
@@ -789,9 +826,9 @@ func (m *Model) cancel() tea.Cmd {
 	return nil
 }
 
-// quit closes clingon, and with it the shell and everything in it: never
-// with a command running there, and only after asking with jobs in the
-// background or stopped.
+// quit closes clingon, and with it the shell and everything in it: never with
+// a command running there, and only after asking. Print mode has no shell to
+// lose, so it just goes.
 func (m *Model) quit() tea.Cmd {
 	if m.busy == "" {
 		m.readShell() // one may have started since the last look
@@ -800,17 +837,19 @@ func (m *Model) quit() tea.Cmd {
 		m.hint = m.busy + " is running in the shell: finish it there before quitting"
 		return nil
 	}
-	if m.opt.Jobs != nil {
-		if m.jobs = m.opt.Jobs(); len(m.jobs) > 0 {
-			m.mode, m.yes = modeQuit, false
-			return nil
-		}
+	if m.opt.Send == nil {
+		m.Quit = true
+		return tea.Quit
 	}
-	m.Quit = true
-	return tea.Quit
+	m.jobs = nil
+	if m.opt.Jobs != nil {
+		m.jobs = m.opt.Jobs()
+	}
+	m.mode, m.yes = modeQuit, false
+	return nil
 }
 
-// quitKey handles "still running, quit anyway?": No (first) or Yes.
+// quitKey handles "quit clingon?": No (first) or Yes.
 func (m *Model) quitKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch keyName(msg) {
 	case "up", "down", "ctrl+p", "ctrl+n", "ctrl+k", "ctrl+j", "tab":
@@ -821,8 +860,7 @@ func (m *Model) quitKey(msg tea.KeyPressMsg) tea.Cmd {
 			m.mode = modeBrowse
 			return nil
 		}
-	case "y", "Y":
-	case "n", "N", "esc", "left":
+	case "esc", "left":
 		m.mode = modeBrowse
 		return nil
 	default:
@@ -832,7 +870,7 @@ func (m *Model) quitKey(msg tea.KeyPressMsg) tea.Cmd {
 	return tea.Quit
 }
 
-// quitView asks whether to quit with jobs still going.
+// quitView asks whether to quit, saying what would end with it.
 func (m *Model) quitView(w int) string {
 	row := func(on bool, s string) string {
 		if on {
@@ -840,16 +878,19 @@ func (m *Model) quitView(w int) string {
 		}
 		return "  " + s
 	}
-	why := "Quitting closes the shell, and ends: " + strings.Join(m.jobs, ", ")
-	return warnStyle.Bold(true).Render("⚠ Still running in the shell") + "\n" + lipgloss.NewStyle().Width(w).Render(why) + "\n\n" +
-		row(!m.yes, "No, stay") + "\n" + row(m.yes, "Yes, quit")
+	title, why := headerStyle.Render("Quit clingon?"), "This closes its shell."
+	if len(m.jobs) > 0 {
+		title = warnStyle.Bold(true).Render("⚠ Still running in the shell")
+		why = "Quitting closes the shell, and ends: " + strings.Join(m.jobs, ", ")
+	}
+	return title + "\n" + lipgloss.NewStyle().Width(w).Render(why) + "\n\n" + panel([]string{row(!m.yes, "No, stay"), row(m.yes, "Yes, quit")}, w)
 }
 
 func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch keyName(msg) {
 	case "esc":
 		switch {
-		case m.list.filtering:
+		case m.list.filtered():
 			m.list.clearFilter()
 		case m.opened != "":
 			m.closeRecipe()
@@ -865,7 +906,7 @@ func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 			m.closeRecipe()
 		case m.section != nil:
 			m.showRoot(m.section.Name)
-		case m.list.filtering:
+		case m.list.filtered():
 			m.list.clearFilter()
 		}
 		return nil
@@ -873,7 +914,7 @@ func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.open()
 	case "/":
 		if m.list.filtering { // opening it is below, with the rest of what's typed
-			m.list.clearFilter()
+			m.list.stopFiltering()
 			return nil
 		}
 	case "r":
@@ -885,13 +926,9 @@ func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	case "x":
 		if len(m.recipe) > 0 && !m.list.filtering {
-			said := "Recipe cleared"
-			if m.run != nil {
-				said = "Recipe stopped and cleared"
-			}
-			m.run, m.recipe = nil, nil
+			m.run, m.recipe, m.stopped = nil, nil, 0
 			m.relistRecipe()
-			m.errMsg, m.hint = "", said
+			m.errMsg, m.hint = "", "Recipe cleared"
 			return nil
 		}
 	case "?":
@@ -902,19 +939,10 @@ func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	m.errMsg, m.hint = "", ""
 	if !m.list.filtering {
-		switch k := keyName(msg); {
-		case strings.HasPrefix(msg.Text, "/"): // fast typing can bring more with it
-			m.list.filtering = true
-			if msg.Text == "/" {
-				return nil
-			}
-			msg = typed(msg.Text[1:])
-		case m.numberKey(msg):
-			return nil
-		case msg.Text != "" && k != "[" && k != "]": // nothing's listening for text
-			m.hint = "Press / to filter"
+		if m.numberKey(msg) {
 			return nil
 		}
+		return m.keyOnClosedList(&m.list, msg)
 	}
 	return m.list.update(msg)
 }
@@ -935,25 +963,29 @@ func (m *Model) numberKey(msg tea.KeyPressMsg) bool {
 		return false
 	}
 	if m.run != nil { // the steps can't move under it
-		m.hint = "The recipe is running: x stops it"
+		m.hint = "The recipe is running: x clears it"
 		return true
 	}
-	n, had := int(k[0]-'0'), m.stepOf(r)
-	furthest := len(m.recipe) + 1
-	if had > 0 { // it would leave its own step first
-		furthest--
-	}
-	if n != had && n > furthest {
-		m.hint = fmt.Sprintf("No gaps in a recipe: this can go up to step %d", furthest)
+	n := int(k[0] - '0')
+	if n > len(m.recipe)+1 {
+		m.hint = fmt.Sprintf("No gaps in a recipe: this can go up to position %d", len(m.recipe)+1)
 		return true
 	}
 	m.setStep(r, n)
+	m.stopped = 0 // it's a different recipe now
 	m.relistRecipe()
 	return true
 }
 
 // RecipesSection is the name of clingon's own section that lists the recipe.
 const RecipesSection = "Recipes"
+
+// CommandLineSection is clingon's own section for commands you type yourself, and
+// CommandLineID is its one entry, Type a command.
+const (
+	CommandLineSection = "Commands"
+	CommandLineID      = "freeform-00000000"
+)
 
 // recipeStep is a command with a number.
 type recipeStep struct {
@@ -987,11 +1019,15 @@ func (m *Model) recipesListed(s *config.Section) *config.Section {
 // copies. A command that's gone leaves the recipe, and the rest close up.
 func (m *Model) refindRecipe() {
 	now := m.commandsByID()
+	before := len(m.recipe)
 	kept := m.recipe[:0]
 	for _, st := range m.recipe {
 		if r, ok := now[st.key]; ok {
 			kept = append(kept, recipeStep{st.key, r})
 		}
+	}
+	if len(kept) != before {
+		m.stopped = 0 // the steps have moved
 	}
 	m.recipe = kept
 }
@@ -1020,39 +1056,44 @@ func (m *Model) commandsByID() map[string]cmdRef {
 }
 
 // setStep makes a command step n, and the chain ends there: every later step
-// is cleared, and whichever had n makes way. It first leaves any step it has,
-// the steps after closing up. Its own number just does that, so a double press
-// can't lose the rest of the chain.
+// is cleared, and whichever had n makes way. Earlier steps stay, even ones of
+// the same command: a command can run more than once. If it's already step n,
+// that step comes off and the steps after close up, so a double press can't
+// lose the rest of the chain.
 func (m *Model) setStep(r cmdRef, n int) {
-	had := m.stepOf(r)
-	if had > 0 {
-		m.recipe = slices.Delete(m.recipe, had-1, had)
+	key := r.id()
+	if n <= len(m.recipe) && m.recipe[n-1].key == key {
+		m.recipe = slices.Delete(m.recipe, n-1, n)
+		return
 	}
-	if had != n {
-		m.recipe = append(m.recipe[:n-1], recipeStep{r.id(), r})
-	}
+	m.recipe = append(m.recipe[:n-1], recipeStep{key, r})
 }
 
-// stepOf is a command's step in the recipe, or 0.
-func (m *Model) stepOf(r cmdRef) int {
+// stepsOf is every step a command has in the recipe, ascending.
+func (m *Model) stepsOf(r cmdRef) []int {
 	if len(m.recipe) == 0 { // the usual case, asked for every row drawn
-		return 0
+		return nil
 	}
+	var steps []int
 	key := r.id()
 	for i, s := range m.recipe {
 		if s.key == key {
-			return i + 1
+			steps = append(steps, i+1)
 		}
 	}
-	return 0
+	return steps
 }
 
-// itemStep is stepOf for a list's row, or 0 if it isn't a command.
-func (m *Model) itemStep(it item) int {
-	if r, ok := it.ref.(cmdRef); ok {
-		return m.stepOf(r)
+// itemSteps is the numbers a list's row shows: its own, in the recipe's list,
+// where a row is one step; else all its command's.
+func (m *Model) itemSteps(it item) []int {
+	if it.stepAt > 0 {
+		return []int{it.stepAt}
 	}
-	return 0
+	if r, ok := it.ref.(cmdRef); ok {
+		return m.stepsOf(r)
+	}
+	return nil
 }
 
 // recipeBar lists the numbered commands in order, as the list marks them, on
@@ -1065,8 +1106,8 @@ func (m *Model) recipeBar(w int) string {
 		longest, total = max(longest, nw), total+nw
 	}
 	label := dimStyle.Render("Recipe")
-	if m.recipesSection() != nil { // the key in pink, like the footer's
-		label = accentStyle.Render("r") + " " + dimStyle.Render("recipe")
+	if m.recipesSection() != nil { // the keys in pink, as everywhere else
+		label = strings.Join(keyHints([]string{"r recipe", "x clear"}), faintStyle.Render(" · "))
 	}
 	const arrow = " →"
 	n := len(m.recipe)
@@ -1108,8 +1149,11 @@ func (m *Model) open() tea.Cmd {
 		}
 	case cmdRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x stops it"
+			m.hint = "The recipe is running: x clears it"
 			return nil
+		}
+		if it.stepAt > 0 { // a row of the recipe's own list: the recipe, from here
+			return m.runFrom(it.stepAt - 1)
 		}
 		if m.blocked() != "" {
 			m.readShell() // it may have finished without a word: look again
@@ -1120,7 +1164,7 @@ func (m *Model) open() tea.Cmd {
 		return m.startCommand(r)
 	case runRecipeRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x stops it"
+			m.hint = "The recipe is running: x clears it"
 			return nil
 		}
 		if m.opt.Recipes != nil && !m.recipeSaved() {
@@ -1133,7 +1177,7 @@ func (m *Model) open() tea.Cmd {
 		m.showSection(m.section)
 	case savedRecipeRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x stops it"
+			m.hint = "The recipe is running: x clears it"
 			return nil
 		}
 		now := m.commandsByID()
@@ -1141,17 +1185,17 @@ func (m *Model) open() tea.Cmd {
 		for i, id := range r.Steps {
 			c, ok := now[id]
 			if !ok {
-				m.errMsg = fmt.Sprintf("✗ %s can't run: the command for step %d is gone (%s)", r.Name, i+1, id)
+				m.errMsg = fmt.Sprintf("✗ %s can't run: the command at position %d is gone (%s)", r.Name, i+1, id)
 				return nil
 			}
 			steps = append(steps, recipeStep{id, c})
 		}
-		m.recipe, m.opened = steps, ""
+		m.recipe, m.opened, m.stopped = steps, "", 0
 		m.showSection(m.section)
 		return m.startRecipe()
 	case describeRecipeRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x stops it"
+			m.hint = "The recipe is running: x clears it"
 			return nil
 		}
 		if m.blocked() != "" {
@@ -1169,7 +1213,7 @@ func (m *Model) open() tea.Cmd {
 		return done
 	case removeRecipeRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x stops it"
+			m.hint = "The recipe is running: x clears it"
 			return nil
 		}
 		if m.blocked() != "" {
@@ -1183,6 +1227,19 @@ func (m *Model) open() tea.Cmd {
 		return m.finish(pending{section: m.section.Name, sec: m.section, name: "Delete " + r.name, desc: removeDesc, risk: config.RiskWarn, cmd: cmd, shown: cmd})
 	}
 	return nil
+}
+
+// recipeFromHere says what running a row of the recipe's own list does.
+func recipeFromHere(at, total int) string {
+	switch {
+	case total == 1:
+		return "Runs this recipe's one command."
+	case at == 1:
+		return "Runs the recipe from here, its first command."
+	case at == total:
+		return fmt.Sprintf("Runs the recipe from here, just its last command. The %s before it don't run.", plural(at-1, "command"))
+	}
+	return fmt.Sprintf("Runs the recipe from here, command %d of %d. The ones before it don't run.", at, total)
 }
 
 // runRecipeRef is the row that runs the recipe.
@@ -1238,7 +1295,7 @@ func (m *Model) landOnRecipe(name string) {
 // the shell has saved or removed one, from the menu or typed by hand. A filter
 // being typed is left alone, and it's looked at again next time.
 func (m *Model) relistSaved() {
-	if m.mode != modeBrowse || m.list.filtering || m.section == nil || m.section != m.recipesSection() {
+	if m.mode != modeBrowse || m.list.filtered() || m.section == nil || m.section != m.recipesSection() {
 		return
 	}
 	if !slices.EqualFunc(m.listed, m.savedRecipes(), func(a, b config.Recipe) bool { return a.Name == b.Name }) {
@@ -1250,9 +1307,40 @@ func (m *Model) describeCommand(name string) string {
 	return m.opt.Self + " recipe describe " + shellQuote(name)
 }
 
-func (m *Model) startRecipe() tea.Cmd {
-	m.run = &recipeRun{}
+func (m *Model) startRecipe() tea.Cmd { return m.runFrom(0) }
+
+// runFrom sets the recipe going from a step.
+func (m *Model) runFrom(at int) tea.Cmd {
+	m.run = &recipeRun{at: at}
+	m.clearStopped()
 	return m.runStep()
+}
+
+// clearStopped forgets where the recipe stopped.
+func (m *Model) clearStopped() {
+	if m.stopped > 0 {
+		m.stopped = 0
+		m.relistStopped()
+	}
+}
+
+// stoppedKeys ends what's said about a recipe that's stopped at a command.
+const stoppedKeys = " · r recipe · x clear"
+
+// stopRun ends the run at the command it's on, where the recipe's list then starts.
+func (m *Model) stopRun() {
+	if !m.run.saving {
+		m.stopped = m.run.at + 1
+	}
+	m.run = nil
+	m.relistStopped()
+}
+
+// relistStopped puts the recipe's list where it stopped. A filter keeps its list.
+func (m *Model) relistStopped() {
+	if !m.list.filtered() {
+		m.relistRecipe()
+	}
 }
 
 func (m *Model) savedRecipes() []config.Recipe {
@@ -1290,9 +1378,6 @@ func (m *Model) saveKey(msg tea.KeyPressMsg) tea.Cmd {
 		if m.yes {
 			return m.askName()
 		}
-	case "y", "Y":
-		return m.askName()
-	case "n", "N":
 	default:
 		return nil
 	}
@@ -1372,8 +1457,8 @@ func (m *Model) runStep() tea.Cmd {
 		why = m.blocked()
 	}
 	if why != "" {
-		m.errMsg = fmt.Sprintf("✗ Step %d, %s, can't run: %s", m.run.at+1, r.cmd.Name, why)
-		m.run = nil
+		m.errMsg = fmt.Sprintf("✗ Recipe stopped at command %d, %s, can't run: %s%s", m.run.at+1, r.cmd.Name, why, stoppedKeys)
+		m.stopRun()
 		return nil
 	}
 	return m.startCommand(r)
@@ -1385,34 +1470,45 @@ func (m *Model) runStep() tea.Cmd {
 func (m *Model) stepDone(ok bool) tea.Cmd {
 	n, name := m.run.at+1, m.recipe[m.run.at].ref.cmd.Name
 	why := ""
+	failed, known := false, true
+	if m.opt.LastFailed != nil {
+		failed, known = m.opt.LastFailed()
+	}
 	switch {
 	case !ok:
 		why = "couldn't tell if it finished"
 	case m.typed != "":
 		why = "the shell is still waiting for the rest of it"
-	case m.opt.LastFailed != nil && m.opt.LastFailed():
+	case !known:
+		why = "couldn't tell if it worked"
+	case failed:
 		why = "it failed"
 	}
 	if m.run.saving {
 		m.run.saving = false
 		if why != "" {
-			m.errMsg = "✗ Recipe not saved, so not run: " + why
+			said := "not saved"
+			if !failed {
+				said = "maybe not saved"
+			}
+			m.errMsg = fmt.Sprintf("✗ Recipe %s, so not run: %s", said, why)
 			m.run = nil
 			return nil
 		}
 		m.refresh() // it's on the list now
+		m.clearStopped()
 		return m.runStep()
 	}
 	if why != "" {
-		m.errMsg = fmt.Sprintf("✗ Recipe stopped at step %d, %s: %s · x clears it", n, name, why)
-		m.run = nil
+		m.errMsg = fmt.Sprintf("✗ Recipe stopped at command %d, %s: %s%s", n, name, why, stoppedKeys)
+		m.stopRun()
 		return nil
 	}
 	if m.run.at++; m.run.at < len(m.recipe) {
 		return m.runStep()
 	}
 	m.run = nil
-	m.hint = fmt.Sprintf("✓ Recipe finished: %s", plural(n, "step"))
+	m.hint = fmt.Sprintf("✓ Recipe finished: %s", plural(n, "command"))
 	return nil
 }
 
@@ -1424,7 +1520,7 @@ func (m *Model) relistRecipe() {
 	}
 	at := m.list.cursor
 	m.showSection(m.section)
-	if len(m.list.view) > 1 && m.removing == "" {
+	if len(m.list.view) > 1 && m.removing == "" && m.stopped == 0 { // stopped, showSection puts it where
 		m.list.cursor = min(at, len(m.list.view)-1)
 	}
 }
@@ -1442,7 +1538,7 @@ func (m *Model) prepare() tea.Cmd {
 	}
 	var items []item
 	for _, o := range a.Options {
-		items = append(items, item{title: o.Value, desc: o.Label, value: o.Value})
+		items = append(items, item{title: o.Value, desc: o.Label, value: o.Value, indent: o.Indent})
 	}
 	m.pickStep(items, a, prev)
 	return nil
@@ -1485,7 +1581,7 @@ func (m *Model) pickStep(items []item, a config.Arg, prev string) {
 		for _, v := range strings.Split(prev, a.Separator()) {
 			for _, it := range j.pick.items {
 				if v != "" && it.value == v {
-					j.pick.chosen[it.idx] = true
+					j.pick.tick(it.idx, true)
 				}
 			}
 		}
@@ -1563,17 +1659,54 @@ func (j *job) current(a config.Arg) string {
 // lastStep reports whether the arg being filled is the final one.
 func (j *job) lastStep() bool { return j.step == len(j.ref.cmd.Args)-1 }
 
+// keyOnClosedList is a key on a list with its filter closed, the same in every
+// list: / opens it, starting its cursor, and any other text says that's how. Fast
+// typing can bring more with the /, which goes on to be typed in. The rest goes to
+// the list.
+func (m *Model) keyOnClosedList(p *picker, msg tea.KeyPressMsg) tea.Cmd {
+	k := keyName(msg)
+	switch {
+	case strings.HasPrefix(msg.Text, "/"):
+		p.filtering = true
+		blink := p.filter.Focus()
+		if msg.Text == "/" {
+			return blink
+		}
+		return tea.Batch(blink, p.update(typed(msg.Text[1:])))
+	case msg.Text != "" && k != "[" && k != "]" && !(p.multi && k == "space"): // nothing's listening for text
+		m.hint = "Press / to filter"
+		return nil
+	}
+	return p.update(msg)
+}
+
 func (m *Model) fillKey(msg tea.KeyPressMsg) tea.Cmd {
 	j := m.job
+	m.hint = ""
 	// Arrows always navigate, text boxes included: ← back, → forward.
 	switch keyName(msg) {
-	case "esc", "left":
+	case "esc":
+		if j.usePick && j.pick.filtered() { // as in the menu's list: the filter goes first
+			j.pick.clearFilter()
+			return nil
+		}
 		return m.backFrom(j.step)
+	case "left":
+		return m.backFrom(j.step)
+	case "/":
+		if j.usePick && j.pick.filtering {
+			j.pick.stopFiltering()
+			return nil
+		}
 	case "enter", "right":
 		a := m.arg()
 		v := j.current(a)
 		if v == "" && !a.Optional && !a.Multi() {
 			return nil // the box's placeholder says a value is needed
+		}
+		if v == "" && a.AtLeastOne {
+			m.hint = "Press space to tick at least one"
+			return nil
 		}
 		if v != "" && (!j.usePick || j.pick.selected() == nil) && !a.Matches(v) {
 			j.invalid = "That doesn't look like a " + a.Label() + "."
@@ -1586,6 +1719,9 @@ func (m *Model) fillKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	j.invalid = ""
 	if j.usePick {
+		if !j.pick.filtering {
+			return m.keyOnClosedList(&j.pick, msg)
+		}
 		return j.pick.update(msg)
 	}
 	return typeInto(&j.input, msg)
@@ -1637,9 +1773,7 @@ func (m *Model) confirmKey(msg tea.KeyPressMsg) tea.Cmd {
 			return m.send()
 		}
 		return m.goBack()
-	case "y", "Y":
-		return m.send()
-	case "n", "N", "esc", "left":
+	case "esc", "left":
 		return m.goBack()
 	}
 	return nil
@@ -1658,9 +1792,6 @@ func (m *Model) typedKey(msg tea.KeyPressMsg) tea.Cmd {
 		if !m.yes {
 			return m.toShell()
 		}
-	case "y", "Y":
-	case "n", "N":
-		return m.toShell()
 	default:
 		return nil
 	}
@@ -1697,7 +1828,7 @@ func (m *Model) typedView(w int) string {
 		head, why = "✎ The shell is in the middle of a command", "It's waiting for the rest of one (a quote left open, say). Running this would become part of it."
 	}
 	return warnStyle.Bold(true).Render(head) + "\n" + lipgloss.NewStyle().Width(w).Render(why) + "\n\n" +
-		row(!m.yes, "No, take me to the shell") + "\n" + row(m.yes, "Yes, clear it and run this")
+		panel([]string{row(!m.yes, "No, take me to the shell"), row(m.yes, "Yes, clear it and run this")}, w)
 }
 
 // trustKey handles "use this folder's commands?": No (first) or Yes.
@@ -1729,12 +1860,7 @@ func (m *Model) trustKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "enter", "right":
 		yes = m.yes
-	case "y", "Y":
-		if !atEnd {
-			return nil
-		}
-		yes = true
-	case "n", "N", "esc", "left":
+	case "esc", "left":
 	default:
 		return nil
 	}
@@ -1802,11 +1928,11 @@ func (m *Model) trustView(w, avail int) string {
 			}
 		}
 	}
-	foot := strings.Split(strings.Join([]string{"", dimStyle.Render(ansi.Wrap("Only use them if you trust where this folder came from. If the file changes, clingon asks again.", w, "")), "",
-		row(!m.yes, "No, not now"), row(m.yes, "Yes, use them")}, "\n"), "\n")
+	choices := panel([]string{row(!m.yes, "No, not now"), row(m.yes, "Yes, use them")}, w)
+	foot := strings.Split(strings.Join([]string{"", dimStyle.Render(ansi.Wrap("Only use them if you trust where this folder came from. If the file changes, clingon asks again.", w, "")), "", choices}, "\n"), "\n")
 	// Short of room, the note goes first: the choices must stay on screen.
 	if len(lines)+len(foot)+2 > avail {
-		foot = []string{"", row(!m.yes, "No, not now"), row(m.yes, "Yes, use them")}
+		foot = strings.Split("\n"+choices, "\n")
 	}
 	room := max(avail-len(lines)-len(foot), 1)
 	if len(cmds) > room {
@@ -1827,17 +1953,16 @@ func (m *Model) trustView(w, avail int) string {
 func (m *Model) helpView(w int) string {
 	keys := [][2]string{
 		{"↑ ↓", "move"},
-		{"→ or enter", "open, or go on to the next blank"},
+		{"→ or enter", "open, next blank, run, or take the choice"},
 		{"←", "back"},
 		{"[ ]", "jump to the previous or next heading"},
 		{"/", "filter (on the top level, every command); again stops"},
 		{"esc", "clear the filter, go back, or quit at the top"},
 		{"ctrl-c", "cancel what you're doing"},
 		{"space", "tick or untick, in a checklist"},
-		{"1-9", "recipe step: clears later ones; again removes it"},
-		{"r", "go to the current recipe, to run it"},
+		{"1-9", "recipe position: clears later ones; again removes it"},
+		{"r", "go to the current recipe"},
 		{"x", "clear the recipe"},
-		{"y n", "yes or no, when asked (or choose with ↑ ↓ and enter)"},
 		{"tab/shift-tab", "switch panes: tab to the shell, shift-tab back"},
 		{"?", "this screen"},
 	}
@@ -1845,7 +1970,6 @@ func (m *Model) helpView(w int) string {
 	for _, k := range keys {
 		lines = append(lines, ansi.Truncate(cursorStyle.Render(fmt.Sprintf("%-13s", k[0]))+" "+k[1], w, "…"))
 	}
-	lines = append(lines, "", dimStyle.Render("Any key to go back"))
 	return strings.Join(lines, "\n")
 }
 
@@ -1968,14 +2092,14 @@ func (m *Model) view() string {
 		m.blurInputs()
 	}
 	w := m.w
-	top := banner(w, m.intro, "", dimStyle.Render(m.opt.Version))
-	// ‹ Category › icon Section, then the command once one is being run.
+	top := banner(w, m.intro, "", "")
+	// Category › icon Section, then the command once one is being run.
 	var parts []string
 	in := func(s *config.Section, name string) []string {
 		if s == nil {
 			return []string{name}
 		}
-		return []string{"‹ " + s.Category, iconStyle(s.Color).Render(slotIcon(s.Icon)) + strings.Repeat(" ", 3-ansi.StringWidth(s.Icon)) + s.Name}
+		return []string{s.Category, iconStyle(s.Color).Render(slotIcon(s.Icon)) + strings.Repeat(" ", 3-ansi.StringWidth(s.Icon)) + s.Name}
 	}
 	switch {
 	case m.mode != modeBrowse && m.pending != nil:
@@ -1997,12 +2121,33 @@ func (m *Model) view() string {
 		}
 	}
 	head := []string{top, ansi.Truncate(crumb, w, "…"), ""}
-	foot := m.footer(w)
+	var foot []string
+	if keys := m.footer(w); keys != "" {
+		foot = append(foot, keys)
+	}
 	if m.opt.Bar == nil {
-		foot += "\n" + m.statusBar(w)
+		foot = append(foot, m.statusBar(w))
 	}
 	info := m.infoPane(w)
-	avail := m.h - lipgloss.Height(strings.Join(head, "\n")) - lipgloss.Height(info) - lipgloss.Height(foot)
+	if len(foot) == 0 { // the pane's own border ends it: no rule to go above nothing
+		info = info[:strings.LastIndex(info, "\n")]
+	}
+	avail := m.h - lipgloss.Height(strings.Join(head, "\n")) - lipgloss.Height(info)
+	if len(foot) > 0 {
+		avail -= lipgloss.Height(strings.Join(foot, "\n"))
+	}
+	// The filter's row is on every screen, greyed out where it can't be used, so
+	// nothing below it moves from one screen to the next. A list draws its own.
+	full := avail
+	greyFilter := ""
+	need := minForFilterRow
+	if m.mode == modeTrust && m.notice.text == "" && !m.help {
+		need = minForFilterRowOnTrust
+	}
+	if list := m.notice.text == "" && !m.help && (m.mode == modeBrowse || m.mode == modeFill && m.job.usePick); !list && avail >= need {
+		greyFilter = faintStyle.Render("❯ / to filter") + "\n\n"
+		avail -= 2
+	}
 
 	var body string
 	switch {
@@ -2027,12 +2172,33 @@ func (m *Model) view() string {
 	case m.mode == modeConfirm:
 		body = m.confirmView(w, avail)
 	}
-	if avail <= 0 {
+	if full <= 0 {
 		body = "" // no room (MaxHeight(0) would mean no limit at all)
 	} else {
-		body = lipgloss.NewStyle().Height(avail).MaxHeight(avail).Render(body)
+		body = lipgloss.NewStyle().Height(full).MaxHeight(full).Render(greyFilter + body)
 	}
-	return strings.Join(append(head, body, info, foot), "\n")
+	return strings.Join(append(append(head, body, info), foot...), "\n")
+}
+
+// stepsNote says how many blanks the command on show has to fill in, by its
+// heading. One that just runs has no steps to mention.
+func (m *Model) stepsNote() string {
+	var c *config.Command
+	switch {
+	case m.notice.text != "" || m.help:
+	case m.mode == modeFill:
+		c = m.job.ref.cmd
+	case m.mode == modeBrowse:
+		if it := m.list.selected(); it != nil {
+			if r, ok := it.ref.(cmdRef); ok {
+				c = r.cmd
+			}
+		}
+	}
+	if c == nil || len(c.Args) == 0 {
+		return ""
+	}
+	return labelStyle.Italic(true).Render(" (" + strings.ToUpper(plural(len(c.Args), "step")) + ")")
 }
 
 // infoPane is the same on every screen: what will run, then what it's
@@ -2073,7 +2239,7 @@ func (m *Model) infoPane(w int) string {
 	}
 	return strings.Join([]string{
 		rule,
-		labelStyle.Render("COMMAND"),
+		labelStyle.Render("COMMAND") + m.stepsNote(),
 		strings.Join(code, "\n"),
 		"", // room between the two
 		labelStyle.Render("DESCRIPTION"),
@@ -2138,7 +2304,7 @@ func wrapSpaces(s string, w int) []string {
 func (m *Model) details() (cmd, desc string) {
 	switch m.mode {
 	case modeConfirm:
-		// The screen itself asks y/N, so skip the "asks before running" note.
+		// The screen itself asks No/Yes, so skip the "asks before running" note.
 		desc := strings.TrimSuffix(strings.TrimSuffix(m.pending.desc, " "+warnNote), " "+dangerNote)
 		return highlight(m.pending.shown), desc
 	case modeFill:
@@ -2161,15 +2327,21 @@ func (m *Model) details() (cmd, desc string) {
 		if why := m.unavailable(r.cmd); why != "" {
 			return preview(r.cmd, nil, -1, ""), "Not available: " + why
 		}
+		if it.stepAt > 0 {
+			return preview(r.cmd, nil, -1, ""), recipeFromHere(it.stepAt, len(m.recipe))
+		}
 		return preview(r.cmd, nil, -1, ""), describe(r.cmd, nil, nil, -1, "", "")
 	case runRecipeRef:
-		return "", "Runs " + plural(len(m.recipe), "step") + " in order, asking for any blanks as each is reached. Stops if one fails."
+		if m.stopped > 0 {
+			return "", "Starts again from command 1, running every command in order, including the ones that already ran."
+		}
+		return "", "Runs " + plural(len(m.recipe), "command") + " in order, asking for any blanks as each is reached. Stops if one fails."
 	case openRecipeRef:
-		return "", upperFirst(plural(len(r.Steps), "step")) + ". Run it, inspect it or delete it."
+		return "", upperFirst(plural(len(r.Steps), "command")) + ". Run it, inspect it or delete it."
 	case savedRecipeRef:
-		return strings.Join(r.Steps, " "), "Makes this the current recipe and runs its " + plural(len(r.Steps), "step") + ", asking for any blanks as each is reached. Stops if one fails."
+		return strings.Join(r.Steps, " "), "Makes this the current recipe and runs its " + plural(len(r.Steps), "command") + ", asking for any blanks as each is reached. Stops if one fails."
 	case describeRecipeRef:
-		return highlight(m.describeCommand(r.name)), "Lists this recipe's steps in the shell: what each one runs, what it does and what it will ask. Runs none of them."
+		return highlight(m.describeCommand(r.name)), "Lists this recipe's commands in the shell: what each one runs, what it does and what it will ask. Runs none of them."
 	case removeRecipeRef:
 		return highlight(m.removeCommand(r.name)), removeDesc + " " + warnNote
 	}
@@ -2180,6 +2352,7 @@ func (m *Model) details() (cmd, desc string) {
 // filled so far (through step, whose value is still tentative).
 func describe(c *config.Command, vals, said map[string]string, step int, tentative, tentativeSays string) string {
 	parts := []string{c.Desc}
+	filled := map[string]string{} // the command's own description can name what's filled in
 	for i, a := range c.Args {
 		v, says := vals[a.Name], said[a.Name]
 		switch {
@@ -2190,6 +2363,17 @@ func describe(c *config.Command, vals, said map[string]string, step int, tentati
 		}
 		if a.Kind() == "secret" && v != "" {
 			v = secretMask
+		}
+		if a.CountAs != "" && v != "" {
+			if n := len(strings.Split(v, a.Separator())); n >= countFrom { // too many to name
+				v = plural(n, a.CountAs)
+				if i != step { // and too many to say about, once they're chosen
+					says = ""
+				}
+			}
+		}
+		if v != "" {
+			filled[a.Name] = spoken(v)
 		}
 		switch {
 		case v == "":
@@ -2205,13 +2389,25 @@ func describe(c *config.Command, vals, said map[string]string, step int, tentati
 	case config.RiskDanger:
 		parts = append(parts, dangerNote)
 	}
+	parts[0] = tmpl.Render(c.Desc, func(n string) bool { _, ok := filled[n]; return ok }, filled)
 	return strings.TrimSpace(strings.Join(parts, " "))
 }
+
+// countFrom is how many ticks a checklist's description names before it counts.
+const countFrom = 3
 
 // describe for the command being filled in, including the arg in progress.
 func (j *job) describe() string {
 	a := j.ref.cmd.Args[j.step]
-	d := describe(j.ref.cmd, j.vals, j.said, j.step, j.current(a), j.optionSays())
+	says := j.optionSays()
+	// Too many to name in the room there is: about the one you're on instead.
+	if j.usePick && a.CountAs != "" && len(j.pick.picked()) >= countFrom {
+		says = ""
+		if it := j.pick.selected(); it != nil && j.pick.chosen[it.idx] {
+			says = it.desc
+		}
+	}
+	d := describe(j.ref.cmd, j.vals, j.said, j.step, j.current(a), says)
 	// In a checklist, say what the highlighted option does before it's ticked.
 	if j.usePick && j.pick.multi {
 		if it := j.pick.selected(); it != nil && it.desc != "" && !j.pick.chosen[it.idx] {
@@ -2229,8 +2425,8 @@ func (j *job) optionSays() string {
 	}
 	if j.pick.multi {
 		var says []string
-		for _, it := range j.pick.items {
-			if j.pick.chosen[it.idx] && it.desc != "" {
+		for _, it := range j.pick.picked() {
+			if it.desc != "" {
 				says = append(says, it.desc)
 			}
 		}
@@ -2256,9 +2452,9 @@ func shellValues(c *config.Command, vals map[string]string) map[string]string {
 		case k == "secret": // never shown: accept swaps in where it's kept
 			out[a.Name] = secretMask
 		case k == "choose" && !a.HasOption(v):
-			out[a.Name] = shellQuote(v) // typed in rather than picked
+			out[a.Name] = shellValue(v) // typed in rather than picked
 		case a.Quote:
-			out[a.Name] = shellQuote(v)
+			out[a.Name] = shellValue(v)
 		}
 	}
 	return out
@@ -2285,6 +2481,20 @@ func shellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// homePath finds a ~ or ~user folder at the start of a path.
+var homePath = regexp.MustCompile(`^~[A-Za-z0-9_.-]*/`)
+
+// shellValue makes a value typed into a blank one shell word, like shellQuote,
+// leaving a leading ~/ outside the quotes: in them, it wouldn't be your home.
+func shellValue(s string) string {
+	if !shellSafe.MatchString(s) {
+		if home := homePath.FindString(s); home != "" {
+			return home + shellQuote(s[len(home):])
+		}
+	}
+	return shellQuote(s)
 }
 
 // spoken reads a value aloud in a sentence: "." is this folder.
@@ -2389,46 +2599,128 @@ func (m *Model) footer(w int) string {
 	}
 	switch m.mode {
 	case modeBrowse:
-		keys = []string{"→ go", "← back", "/ filter", "[ ] jump", "tab/shift-tab panes", "? help"}
-		if m.section == nil {
-			keys = []string{"→ go", "/ filter", "[ ] jump", "esc quit", "tab/shift-tab panes", "? help"}
-		}
-		if m.list.filtering {
-			keys = []string{"→ go", "← back", "/ stop filtering", "[ ] jump", "tab/shift-tab panes"}
-		}
+		return "" // they're on the status bar
 	case modeFill:
 		j := m.job
 		keys = []string{"→ next", "← back"}
 		if j.lastStep() {
 			keys[0] = "→ run"
 		}
+		switch {
+		case j.usePick && j.pick.filtering:
+			keys = append(keys, "/ stop filtering", "esc clear filter")
+		case j.usePick && j.pick.filtered():
+			keys = append(keys, "/ edit filter", "esc clear filter")
+		case j.usePick:
+			keys = append(keys, "/ filter")
+		}
 		if j.usePick && j.pick.multi {
 			keys = append([]string{"space tick"}, keys...)
 		}
 	case modeConfirm:
-		keys = []string{"↑↓ choose", "enter select", "y yes", "n no"}
+		keys = []string{"↑↓ choose", "enter select"}
 		if p := m.pending; p.risk == config.RiskDanger && !p.typed {
 			keys = []string{"type the code", "enter go on", "← back"}
 		}
 	case modeTrust, modeTyped, modeQuit, modeSave:
-		keys = []string{"↑↓ choose", "enter select", "y yes", "n no"}
+		keys = []string{"↑↓ choose", "enter select"}
 	case modeSaveName:
 		keys = []string{"→ save and run", "← back"}
 	}
-	for i, k := range keys { // the key in pink, what it does in grey
+	return wrapJoin(keyHints(keys), faintStyle.Render(" · "), w)
+}
+
+// keyHints styles "key what it does": the key in pink, the rest in grey.
+func keyHints(keys []string) []string {
+	out := make([]string, len(keys))
+	for i, k := range keys {
 		key, what, _ := strings.Cut(k, " ")
 		if key == "[" { // "[ ] jump"
 			key, what = "[ ]", strings.TrimPrefix(k, "[ ] ")
 		}
-		keys[i] = accentStyle.Render(key) + " " + dimStyle.Render(what)
+		out[i] = accentStyle.Render(key) + " " + dimStyle.Render(what)
 	}
-	return wrapJoin(keys, faintStyle.Render(" · "), w)
+	return out
 }
 
-// statusBar is the always-there line at the very bottom: a send error or
-// tip if there is one, otherwise whether the tools for what's on screen
-// can be found.
+// barKeys is what the status bar shows when it has nothing else to say: the
+// keys that work right now. Prompts keep theirs in the menu, by the question.
+func (m *Model) barKeys() []string {
+	inClingon := m.opt.FocusMenu != nil // not in print mode: there's no shell pane
+	if m.blurred {
+		if inClingon {
+			return []string{"shift-tab menu"}
+		}
+		return nil
+	}
+	if m.mode != modeBrowse || m.help || m.notice.text != "" {
+		return nil
+	}
+	recipes := m.recipesSection() != nil
+	keys := []string{"→ go"}
+	if m.section != nil || m.list.filtered() {
+		keys = append(keys, "← back")
+	}
+	switch {
+	case m.list.filtering:
+		keys = append(keys, "/ stop filtering", "esc clear filter")
+	case m.list.filtered():
+		keys = append(keys, "/ edit filter", "esc clear filter")
+	default:
+		keys = append(keys, "/ filter")
+	}
+	keys = append(keys, "[ ] jump")
+	if m.section == nil && !m.list.filtered() {
+		keys = append(keys, "esc quit")
+	}
+	if !m.list.filtering && recipes {
+		if m.section != nil && m.section != m.recipesSection() {
+			keys = append(keys, "1-9 add")
+		}
+		keys = append(keys, "r recipe")
+	}
+	if inClingon {
+		keys = append(keys, "tab shell")
+	}
+	return keys
+}
+
+// keysBar is the status bar with nothing else to say.
+func (m *Model) keysBar(w int) string {
+	line := strings.Join(keyHints(m.barKeys()), faintStyle.Render(" · "))
+	return onBg(" "+ansi.Truncate(line, max(w-2, 0), "…"), raised, w)
+}
+
+// statusBar is the always-there line at the very bottom: the way to every key at
+// its left, the version at its right, and whatever barBody has to say between
+// them. The version gives way first if there's no room.
 func (m *Model) statusBar(w int) string {
+	chip := lipgloss.NewStyle().Background(accent).Foreground(ink).Bold(true).Padding(0, 1)
+	notch := chip.Render("? help")
+	nw := ansi.StringWidth(notch)
+	if w <= nw {
+		return ansi.Truncate(notch, max(w, 0), "")
+	}
+	version := ""
+	if m.opt.Version != "" {
+		version = chip.Render(m.opt.Version)
+	}
+	vw := ansi.StringWidth(version)
+	if w-nw-vw < minBarBody {
+		version, vw = "", 0
+	}
+	return notch + m.barBody(w-nw-vw) + version
+}
+
+// minBarBody is the least room the status bar's message gets before the version
+// makes way for it.
+const minBarBody = 40
+
+// barBody is the status bar beside its notch: a send error or tip
+// if there is one, what's stopping the shell taking a command, the recipe, the
+// tools missing for what's on screen, news that needs acting on, and otherwise
+// the keys.
+func (m *Model) barBody(w int) string {
 	switch {
 	case m.errMsg != "": // only when a command couldn't be sent to the shell at all
 		return bar(red, m.errMsg, w)
@@ -2461,18 +2753,16 @@ func (m *Model) statusBar(w int) string {
 		return m.recipeBar(w)
 	}
 	if s == nil { // the top level: news, not problems
-		if m.news == nil {
-			return bar(raised, "", w)
+		// Only what needs doing. A suggestion is on the welcome card already.
+		if m.news != nil && m.news.Kind == Attention {
+			return newsBar(*m.news, w)
 		}
-		return newsBar(*m.news, w)
+		return m.keysBar(w)
 	}
 	if miss := m.missingFor(s); len(miss) > 0 {
 		return bar(red, "✗ "+upperFirst(config.Needs(miss)), w)
 	}
-	if len(s.Needs) == 0 {
-		return bar(raised, "✓ Nothing to install", w)
-	}
-	return bar(raised, "✓ Everything "+s.Name+" needs is installed", w)
+	return m.keysBar(w)
 }
 
 // upperFirst capitalises s, to start a sentence.
@@ -2555,6 +2845,19 @@ func (m *Model) inputs() []*textinput.Model {
 // blurInputs hides the inputs' cursors while focus is in the shell, so the
 // only pink cursor is the one that types. (The view does it again, for an
 // input made since.)
+// shownInputs are the inputs with a cursor on screen: all of them but a filter
+// that's closed. Only these blink, and only while the menu has focus.
+func (m *Model) shownInputs() []*textinput.Model {
+	var out []*textinput.Model
+	for _, in := range m.inputs() {
+		closed := in == &m.list.filter && !m.list.filtering || m.mode == modeFill && m.job.usePick && in == &m.job.pick.filter && !m.job.pick.filtering
+		if !closed {
+			out = append(out, in)
+		}
+	}
+	return out
+}
+
 func (m *Model) blurInputs() {
 	for _, in := range m.inputs() {
 		in.Blur()
@@ -2563,11 +2866,27 @@ func (m *Model) blurInputs() {
 
 func (m *Model) browseView(w, h int) string {
 	m.list.blurred = m.blurred
-	filter := accentStyle.Render("❯ /") + faintStyle.Render(" to filter")
-	if m.list.filtering {
-		filter = inputView(&m.list.filter, w)
+	return filterLine(&m.list, w) + "\n\n" + m.list.render(w, h-2)
+}
+
+// minForFilterRow is the least room a screen needs to give two rows to a filter
+// it can't use: any less, and what it's asking comes first.
+const minForFilterRow = 6
+
+// minForFilterRowOnTrust is that for the trust screen, whose choices must stay on
+// screen under a folder's path and a command, however long.
+const minForFilterRowOnTrust = 16
+
+// filterLine is the same at the top of every list: how to filter it, or the
+// filter once / has opened it.
+func filterLine(p *picker, w int) string {
+	if p.filtering {
+		return inputView(&p.filter, w)
 	}
-	return filter + "\n\n" + m.list.render(w, h-2)
+	if p.filtered() { // closed, and still applied: it should be plain that it is
+		return ansi.Truncate(accentStyle.Render("❯ ")+p.query()+faintStyle.Render("  / to edit · esc to clear"), max(w, 1), "…")
+	}
+	return accentStyle.Render("❯ /") + faintStyle.Render(" to filter")
 }
 
 // preview renders the command with filled values, the current arg (showing
@@ -2603,39 +2922,73 @@ func preview(c *config.Command, vals map[string]string, step int, tentative stri
 func (m *Model) fillView(w, h int) string {
 	j := m.job
 	a := m.arg()
-	meta := fmt.Sprintf("  %d/%d", j.step+1, len(j.ref.cmd.Args))
+	inner := panelWidth(w)
+	step := fmt.Sprintf("Step %d of %d", j.step+1, len(j.ref.cmd.Args))
+	if r := m.recipeStep(); r != "" {
+		step = r + " · " + step
+	}
+	label := cursorStyle.Render(a.Label()) + dimStyle.Italic(true).Render(" ("+inputHint(a)+")")
 	if a.Optional {
-		meta += " · optional"
+		label += dimStyle.Render(" · optional")
 	}
-	lines := []string{cursorStyle.Render(a.Label()) + dimStyle.Render(meta)}
-	used := 1
-	if h >= 6 { // what's being filled in, room allowing: the blank comes first
-		lines = append([]string{m.commandHeader(j.ref.cmd.Name, w), ""}, lines...)
-		used = 3
+	// How far along stands alone, like a list's filter; the blank and its answer
+	// go together.
+	head := []string{dimStyle.Render(ansi.Truncate(step, inner, "…")), "", label}
+	room := h
+	if !j.usePick {
+		room += 2 // the filter's row is above, out of what it was given: the same either way
 	}
-
-	switch {
-	case j.usePick:
+	if room < 8 { // no room: the blank and how far along, on one line
+		head = []string{ansi.Truncate(label+dimStyle.Render("  "+step), inner, "…")}
+	}
+	if j.usePick {
 		j.pick.blurred = m.blurred
-		lines = append(lines, inputView(&j.pick.filter, w), "", j.pick.render(w, h-used-2))
-	default:
-		lines = append(lines, inputView(&j.input, w))
-		if j.invalid != "" {
-			lines = append(lines, errStyle.Render(ansi.Wrap(j.invalid, w, "")))
-		}
+		// The filter's where it is on every list. A list needs no panel: its
+		// highlighted row already looks like one.
+		used := len(head) + 2
+		return strings.Join(append(append([]string{filterLine(&j.pick, w), ""}, head...), j.pick.render(w, h-used)), "\n")
+	}
+	lines := append(head, panel([]string{inputView(&j.input, inner)}, w))
+	if j.invalid != "" {
+		lines = append(lines, errStyle.Render(ansi.Wrap(j.invalid, w, "")))
 	}
 	return strings.Join(lines, "\n")
 }
 
-// commandHeader names the command being filled in or confirmed, and how far
-// through the recipe it is, if it's a step of one.
-func (m *Model) commandHeader(name string, w int) string {
-	step := ""
-	if m.run != nil {
-		step = fmt.Sprintf(" · step %d of %d", m.run.at+1, len(m.recipe))
+// inputHint says how to answer a blank.
+func inputHint(a config.Arg) string {
+	switch a.Kind() {
+	case "choose":
+		return "↑↓ to choose"
+	case "flags":
+		return "space to tick"
 	}
-	name = ansi.Truncate(strings.ToUpper(name), max(w-ansi.StringWidth(step), 1), "…")
-	return headerStyle.Render(name) + dimStyle.Render(step)
+	return "type"
+}
+
+// recipeStep says which command of the recipe this is, if it's part of one.
+func (m *Model) recipeStep() string {
+	if m.run == nil {
+		return ""
+	}
+	return fmt.Sprintf("Recipe command %d of %d", m.run.at+1, len(m.recipe))
+}
+
+// panelWidth is the room for what's in a panel, inside its edge and padding.
+func panelWidth(w int) int { return max(w-3, 1) }
+
+// panel marks where your answer goes, the same wherever that is: a grey block
+// with a pink edge. What's being asked stays outside it. Long lines wrap: nothing
+// in it may be cut off.
+func panel(lines []string, w int) string {
+	inner := panelWidth(w)
+	var out []string
+	for _, line := range lines {
+		for _, l := range strings.Split(ansi.Wrap(line, inner, ""), "\n") {
+			out = append(out, accentStyle.Render("▌")+onBg(" "+l, raised, max(w-1, 1)))
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // saveView asks whether to save the recipe that's about to run.
@@ -2646,20 +2999,18 @@ func (m *Model) saveView(w int) string {
 		}
 		return "  " + s
 	}
-	return m.commandHeader("Run recipe", w) + "\n\n" + cursorStyle.Render("Save this recipe first?") + "\n\n" +
-		row(!m.yes, "No, just run it") + "\n" + row(m.yes, "Yes, save it and run it")
+	return cursorStyle.Render("Save this recipe first?") + "\n\n" + panel([]string{row(!m.yes, "No, just run it"), row(m.yes, "Yes, save it and run it")}, w)
 }
 
 // saveNameView asks what to call it.
 func (m *Model) saveNameView(w int) string {
-	lines := []string{m.commandHeader("Save recipe", w), "", cursorStyle.Render("Name this recipe"), inputView(&m.word, w)}
+	lines := []string{cursorStyle.Render("Name this recipe"), panel([]string{inputView(&m.word, panelWidth(w))}, w)}
 	if m.nameWhy != "" {
 		lines = append(lines, errStyle.Render(ansi.Wrap(m.nameWhy, w, "")))
 	}
 	return strings.Join(lines, "\n")
 }
 
-// noticeView replaces the list while a notice is up.
 func (m *Model) noticeView(w int) string {
 	return lipgloss.NewStyle().Width(w).Render(warnStyle.Bold(true).Render(warnGlyph+" "+m.notice.title) + "\n" +
 		m.notice.text + "\n\n" + dimStyle.Render(fmt.Sprintf("Back in %ds · any key to go back now", m.notice.left)))
@@ -2669,10 +3020,10 @@ func (m *Model) noticeView(w int) string {
 // the question and its answers matter more.
 func (m *Model) confirmView(w, h int) string {
 	body := m.confirmBody(w)
-	if strings.Count(body, "\n")+3 > h {
-		return body
+	if r := m.recipeStep(); r != "" && strings.Count(body, "\n")+3 <= h {
+		body = dimStyle.Render(r) + "\n\n" + body
 	}
-	return m.commandHeader(m.pending.name, w) + "\n\n" + body
+	return body
 }
 
 func (m *Model) confirmBody(w int) string {
@@ -2685,18 +3036,18 @@ func (m *Model) confirmBody(w int) string {
 	p := m.pending
 	if p.risk == config.RiskDanger {
 		if !p.typed {
-			out := highlight(p.shown) + "\n\n" +
-				dangerStyle.Render(dangerGlyph) + " It can't be undone. Type " + dangerStyle.Render(p.code) + " to go on:\n\n" + inputView(&m.word, w)
+			out := ansi.Wrap(highlight(p.shown), w, "") + "\n\n" +
+				ansi.Wrap(dangerStyle.Render(dangerGlyph)+" It can't be undone. Type "+dangerStyle.Render(p.code)+" to go on:", w, "") + "\n\n" + panel([]string{inputView(&m.word, panelWidth(w))}, w)
 			if m.wrong {
 				out += "\n" + errStyle.Render("That wasn't the code: here's a new one. Or esc to go back.")
 			}
 			return out
 		}
 		return dangerStyle.Render(dangerGlyph+" Last check: run it?") + "\n\n" +
-			row(!m.yes, "No, go back") + "\n" + row(m.yes, "Yes, run it")
+			panel([]string{row(!m.yes, "No, go back"), row(m.yes, "Yes, run it")}, w)
 	}
 	return warnStyle.Bold(true).Render(warnGlyph+" This command is risky. Run it?") + "\n\n" +
-		row(!m.yes, "No, go back") + "\n" + row(m.yes, "Yes, run it")
+		panel([]string{row(!m.yes, "No, go back"), row(m.yes, "Yes, run it")}, w)
 }
 
 // newCode is the code you type before a risk: danger command runs: four

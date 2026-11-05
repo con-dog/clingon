@@ -1,0 +1,59 @@
+TODO: menu commands on a remote machine over ssh
+
+Status: idea, not scheduled. Wait until dogfooding shows this is actually missed.
+Until then, keep the current behaviour.
+
+
+CURRENT BEHAVIOUR
+
+While ssh runs in clingon's shell pane, menu commands are greyed out and the
+bottom bar says why. They come back when ssh exits. Nothing is typed into the
+remote session. See State in internal/tmux/tmux.go.
+
+
+THE PROBLEM
+
+The menu is unavailable just when you're on a server, which is where people
+most often forget commands.
+
+
+WHAT NOT TO DO
+
+Don't send the menu's text through the existing ssh session with send-keys:
+
+- It could type into the wrong program. clingon can only see that the foreground
+  process is ssh, not what runs on the far side. That could be a shell prompt,
+  vim, psql or a sudo password prompt. This breaks the README's promise that the
+  menu "never types into a shell that isn't ready for it".
+- A dangerous command could hit the wrong machine. risk: danger commands would
+  run on the remote, perhaps production, and the confirmation doesn't say which
+  machine it's about.
+- The menu would describe the wrong machine. when: checks look at local files
+  and requires: checks local tools.
+- Secrets wouldn't work. Their values wait in local 0600 files, which don't exist
+  on the remote.
+- Focus return and failure detection would be off. clingon waits for the
+  foreground process to finish, and ssh doesn't finish until you disconnect.
+
+
+PROPOSED: AN EXPLICIT REMOTE MODE
+
+[ ] Enter and leave remote mode deliberately, choosing a host.
+[ ] Run each command as its own: ssh host -- 'cmd'
+    This gives each command its own exit code and finish, so focus return and
+    failure detection keep working.
+[ ] Always show the host name while in remote mode, including in danger
+    confirmations.
+[ ] Run when: and requires: checks on the remote.
+
+
+OPEN QUESTIONS
+
+- Each command is a separate ssh call, so cd and shell state don't carry over.
+  Track a remote folder, or rely on a persistent connection (ControlMaster)?
+- How to keep remote when: and requires: checks fast? They cost a network round
+  trip, and the menu's checks are currently cheap local lookups.
+- How to handle secrets? Passing a value on the remote command line could expose
+  it in the remote process list. Send it over stdin, or disable those commands?
+- How to handle interactive commands (vim, docker exec -it)? They need ssh -t.
+- What should the shell pane show during remote mode?

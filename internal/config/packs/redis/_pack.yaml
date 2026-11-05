@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
+name: Redis
+description: Connect to Redis, find and read keys, watch the server, snapshot and flush it with redis-cli
+requires: [redis-cli]
+logo: redis
+color: "#ff5f5f"
+category: Databases

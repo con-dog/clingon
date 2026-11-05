@@ -35,7 +35,7 @@ func TestYAMLMatchesMicro(t *testing.T) {
 
 // Colour is all it adds: every pack comes through otherwise as it is.
 func TestYAMLKeepsTheText(t *testing.T) {
-	files, _ := filepath.Glob("../config/packs/*.yaml")
+	files, _ := filepath.Glob("../config/packs/*/*.yaml")
 	if len(files) == 0 {
 		t.Fatal("no packs found")
 	}

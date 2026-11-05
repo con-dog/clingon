@@ -4,13 +4,7 @@
 
 <!-- ![clingon demo](demo.gif): add back once `vhs demo.tape` has made it -->
 
-Type `clingon`. Your commands open on the left, your normal shell on the right. Pick a command, fill in the blanks, and it's typed into the shell and run — as if you'd typed it yourself.
-
-The menu stays on screen, asks for the blanks one at a time, and checks with you before anything risky runs. And because clingon types into your actual shell, not a subshell, `cd`, `export AWS_PROFILE=prod`, `source venv/bin/activate` and friends just work:
-
-- `cd` stays changed, exports stay exported
-- your aliases, functions and prompt all work
-- every command lands in the shell's history, so `↑` brings it back
+Type `clingon`. Commands open on the left and your shell on the right. Pick a command, fill in the blanks, and it's typed into your shell and run, as if you'd typed it yourself. So `cd` stays changed, exports stay exported, your aliases work, and `↑` brings the command back.
 
 ## Install
 
@@ -18,9 +12,7 @@ The menu stays on screen, asks for the blanks one at a time, and checks with you
 brew install con-dog/tap/clingon
 ```
 
-clingon runs on macOS only, and needs zsh or bash as your login shell.
-
-That's the only way to install it, and it sets up tab completion for zsh and bash too (`clingon completion zsh` prints the script, if you need it elsewhere). Homebrew brings everything clingon needs along with it: tmux, [micro](https://micro-editor.github.io) (the pack editor).
+Needs macOS, with zsh or bash as your login shell. Homebrew brings everything else, including tab completion.
 
 ## Use
 
@@ -28,151 +20,132 @@ That's the only way to install it, and it sets up tab completion for zsh and bas
 clingon
 ```
 
+It opens in its own window of your terminal (Terminal, iTerm2, Ghostty, kitty or Alacritty).
+
 | Key | |
 |---|---|
-| `/` | filter: then type — at the top level it searches every command. `/` again stops |
 | `↑` `↓` | move |
-| `→` / `enter` | forward: open, next step, and finally run |
-| `←` | back a step |
+| `→` or `enter` | open, next blank, run |
+| `←` | back |
+| `/` | filter; at the top level it searches every command |
 | `space` | tick an option in a checklist |
-| `esc` | stop filtering or back a step; at the top, close clingon and return to your terminal |
-| `ctrl-c` | cancel what you're doing (never closes clingon) |
-| `tab` | in the menu: hop right to the shell |
-| `S-Tab` | at the shell prompt: hop left to the menu (inside vim, ssh etc. it passes through) |
-| `[` `]` | jump to the previous or next heading |
-| `?` | every key, on one screen |
+| `1`-`9` | put the command at that position in a recipe |
+| `r` | go to the current recipe |
+| `x` | clear the recipe |
+| `tab` | from the menu to the shell |
+| `shift-tab` | from the shell prompt back to the menu |
+| `esc` | back; at the top, quit |
+| `?` | every key |
 
-Clicking a pane works too, and selecting text with the mouse copies it to your clipboard (double-click a word, triple-click a line). When a command you picked from the menu finishes, focus comes back to the menu by itself; interactive ones (`vim`, `ssh`, `docker exec -it`) come back when you exit them. Commands you type in the shell yourself leave you in the shell.
+**It won't get in your way.** Running a command leaves you in the menu, so your keys always go where you think they're going. If a command needs you (vim, ssh, a password), the status bar says so: press `tab` to go to the shell. You come back to the menu when it finishes. While something is running, the menu's commands are greyed out. Commands that don't fit your folder are greyed out too, like Git's outside a repository.
 
-The menu never types into a shell that isn't ready for it. While something runs there (vim, ssh, a REPL, the command you just picked) or the shell is scrolled back, commands are greyed out and the bottom bar says why; they come back by themselves when it's done. If you've typed something at the prompt and not run it, picking a command asks first: go to the shell, or clear it and run.
+**It checks before risky commands.** ⚠ commands ask No/Yes first. ☠ commands can't be undone, so you type a short code first, then answer No/Yes.
 
-Commands marked ⚠ ask No/Yes before they run. Commands marked ☠, in red, can't be undone (dropping a database, deleting a remote branch, a hard reset): you type a random 4-letter code shown with the command first, then it asks No/Yes.
+## Recipes
 
-Commands that only make sense in certain folders are greyed out elsewhere, saying why: Git's need a repository, Compose's a compose file, Go's a `go.mod`. Go back to the menu after a `cd` and it catches up.
+A recipe runs several commands in order, and stops if one fails or clingon can't tell whether it worked.
 
-## Project packs
+**Build one.** On any command, press a number to put it at that position:
 
-Put a `.clingon.yaml` in a repository (same format as any pack) and its commands appear at the top of the menu, under **This project**, whenever your shell is in that repository. Commit it, and everyone on the team gets the repo's runbook commands.
+1. Open a section and press `1` on the first command.
+2. Press `2` on the next, from the same section or any other.
+3. Press `r` to see the recipe, then `enter` on **Run recipe**.
 
-Because a project pack's commands come from whoever wrote the repo, clingon asks first: it shows every command the file would run and uses them only once you say yes. That's remembered for that exact file; if it changes, clingon asks again. `clingon check` checks the one in the current folder.
+clingon offers to save the recipe before it runs, unless you've already saved those commands. Saved recipes are listed under **All recipes**, at **Clingon › Recipes**, where you can run, inspect or delete them.
 
-`clingon` always opens in a new, maximized window of your terminal app (not macOS full screen), in clingon's colours and its own font, Clingon Mono: [JetBrains Mono](https://www.jetbrains.com/lp/mono/) plus the logos packs show (Git, Docker, AWS…), bundled and installed for your user the first time. That window only: your terminal's default profile and other windows stay as they are. It works with Terminal, iTerm2, Ghostty, kitty and Alacritty (Terminal and iTerm2 get a "clingon" profile of their own; macOS asks once whether clingon may control them, only to open and style the window; if you said no, allow it in System Settings › Privacy & Security › Automation). Terminal can only start a command by typing it, so its new window's shell gets one line, the same every time: ` /bin/sh ~/Library/Caches/clingon/open-window`. It stays out of your history if you set `hist_ignore_space` (zsh) or `HISTCONTROL=ignorespace` (bash), and running it again from there does nothing. clingon doesn't run over SSH, because there's no window to open: `clingon print` is all you get there.
+**Positions work like this:**
 
-Want the menu without tmux? `clingon print` picks a command and prints it, e.g. `eval "$(clingon print)"`.
+- A command can be in a recipe more than once, like `git status`, `git pull`, `git status`. Its row shows each number: `1 3`.
+- Pressing a command's own number removes it from that position, and later ones close up.
+- Putting a new command at a position clears every position after it.
+- Recipes have up to 9 commands, with no gaps. Number keys don't work while you're filtering.
+- Press `x` to clear the recipe.
+
+**Blanks are asked for when each command is reached**, so earlier commands have already had their effect. Answers aren't saved: a saved recipe asks again every run. Risky commands still ask before they run.
+
+**Run from anywhere.** Press `enter` on a command in the recipe's list to run the recipe from there, leaving out the ones before it. If a command stops the recipe, the cursor waits on it when you press `r`: press `enter` to run it again and carry on, or move down a row to skip it, say if you've fixed things by hand in the shell. **Run recipe** always starts from the top.
+
+**Need a command that isn't in a pack?** Number **Command Line › Commands › Type a command** like any other command. It asks what to run each time the recipe gets there. If you run the same line every time, [add it to a pack of your own](#your-own-commands).
+
+From the command line:
+
+```sh
+clingon recipe list
+clingon recipe describe "My flow"   # what each command runs; runs nothing
+clingon recipe remove "My flow"
+```
 
 ## Packs
 
-clingon ships over 400 commands in packs. Out of the box you get the ones that only need tools every Mac already has; add the rest for the tools you use:
+Commands come in packs. These are installed to begin with: `files`, `network`, `package-managers`, `ssh`, `system`.
+
+Add the rest as you need them: `aws`, `claude-code`, `codex`, `docker`, `dotnet`, `git`, `github`, `go`, `macos`, `node`, `playwright`, `postgres`, `python`, `redis`, `security`.
 
 ```sh
 clingon pack available                      # what you can install
-clingon pack add remote/git remote/docker   # install
-clingon pack list                           # every pack you have, installed and your own
-clingon pack remove remote/docker           # works for either kind
-clingon pack update                         # newer versions of installed packs
-clingon pack inspect remote/docker          # print a pack's file, installed or not
+clingon pack add remote/git remote/docker
+clingon pack add remote/aws/ecs             # just part of a pack
+clingon pack list
+clingon pack remove remote/docker
+clingon pack update
+clingon pack inspect remote/docker          # print a pack's files
 ```
 
-Every pack is `remote/NAME` (it comes from clingon, and is a file in `packs/remote/` once installed) or `local/NAME` (your own, in `packs/local/`). Typing just `NAME` works too, unless you have both.
+A pack is a folder, with a file for each submenu. `remote/aws` is all of AWS and `remote/aws/ecs` is just its ECS commands. `clingon pack update` only updates what you have: it never adds a part you didn't choose, and tells you what else there is.
 
-| Pack | | |
-|---|---|---|
-| `files` | get around, look at, find, archive, copy and clean up files | installed |
-| `network` | ports, HTTP requests, serving a folder, ping, DNS and port checks | installed |
-| `package-managers` | search, install, remove and upgrade with Homebrew | installed |
-| `ssh` | hosts from `~/.ssh/config`, tunnels, keys and first-time setup | installed |
-| `system` | processes, shell history and env vars, disk space, JSON, and generators (secrets, UUIDs, timestamps, base64) | installed |
-| `aws` | first-time setup, profiles and SSO, S3, EC2/SSM sessions, ECS, EKS, CloudWatch logs | |
-| `claude-code` | start, continue and resume Claude Code, one-off questions | |
-| `codex` | start, resume and script OpenAI Codex, model and sandbox, sign-in and MCP servers | |
-| `docker` | first-time setup, containers, images, volumes, networks and Compose | |
-| `dotnet` | .NET: new, build, test and publish, NuGet packages, EF Core migrations, user secrets and SDKs | |
-| `git` | first-time setup, everyday Git, branches, remotes, tags, worktrees, bisect, undo and stash | |
-| `github` | sign-in, repos, pull requests, issues, releases, gists and CI runs with the GitHub CLI | |
-| `go` | modules, building, testing and tools | |
-| `macos` | power, Wi-Fi, DNS, Finder, clipboard and software updates | |
-| `node` | npm, pnpm, yarn and bun: each one only works where its lockfile is | |
-| `playwright` | run, debug and record tests, reports and traces, and installing browsers | |
-| `postgres` | PostgreSQL: connect, query, inspect, dump, restore and drop | |
-| `python` | virtualenvs, pip, pytest and uv | |
-| `redis` | connect, find and read keys, watch the server, snapshot and flush | |
-| `security` | TLS certificates, JWTs and checksums | |
-
-The same commands live in the menu under **Clingon › Packs**, at the bottom. The menu picks up changes when you come back to it. New packs and pack versions come with new releases of clingon; the menu tells you when `clingon pack update` has something to install.
-
-## Keeping it healthy
-
-```sh
-clingon doctor          # tmux, PATH, your packs, and each pack's tools
-clingon doctor docker   # just one pack
-clingon crash           # why clingon last crashed, if it has
-clingon update          # brew upgrade con-dog/tap/clingon
-```
-
-These are in the menu too, under **Health check** and **Update**.
-
-If clingon ever crashes, the window closes, so it saves what happened to `crash.log` in its config folder. The next welcome and the status bar say so until you've looked. `clingon crash` shows it in full; `clingon crash | pbcopy` copies it plain, for a bug report.
-
-The menu's bottom line checks as you go: open a section and it says whether that pack's tools are there. It stays grey while all's well, and turns red when one isn't: `✗ Needs aws (not installed)`, or `✗ Needs go (not on PATH: it's in ~/go/bin)` when it's installed somewhere your PATH leaves out. On the top level it shows news: a new release or pack updates in amber, packs worth adding in purple.
-
-Each time clingon starts, the shell side opens with a short welcome: the banner plus anything worth doing, like a newer release, packs for tools you already have (`docker` on your PATH but no `docker` pack), or packs whose tools are missing. Run it any time with `clingon welcome`. The release check never slows startup: it reads a cached answer and refreshes it in the background at most once a day.
+All of this is also in the menu, under **Clingon › Packs**.
 
 ## Your own commands
 
-Your commands live in packs of your own, in exactly the same format as the built-in ones. In the menu, **Clingon › Packs › Your packs › Create a pack** asks for a name, then opens a working example pack in micro (Ctrl-S saves, Ctrl-Q quits), with a comment on every line saying what it does. Change the example into your own commands; any `<blank>` in a command gets asked for each time you run it. When you quit, clingon tells you if anything's wrong. **Edit a pack** opens it again later.
-
-The same from the command line:
-
 ```sh
-clingon pack create work-tools  # start a pack from the example and open it in micro
-clingon pack edit work-tools    # edit it again
-clingon check                   # validate everything
-
-# or add simple commands without opening an editor
-clingon command add work-tools Deploy "Tail logs" 'kubectl logs -f deploy/<app>' "Streams an app's logs."
+clingon pack create work-tools   # opens a commented example in micro
+clingon pack edit work-tools
+clingon check                    # find mistakes
 ```
 
-`command add` edits the file for you and keeps your comments; it won't write anything that doesn't validate. For pick-lists, checklists and the rest, edit the YAML: each of your packs is a file in `~/.config/clingon/packs/local/`. A section named like a built-in one (say `AWS`) adds to it. Sections, groups and commands are listed alphabetically. Every section's commands sit under group headings; any you leave out of a group go under **Commands**. A command is a template whose `<placeholders>` get filled in, one at a time, while the command line builds up live:
+Your packs are folders in `~/.clingon/packs/local/`. All a pack needs is a file for each submenu:
+
+```
+~/.clingon/packs/local/work-tools/
+  _pack.yaml        # optional: how it looks in the menu
+  kubernetes.yaml   # a submenu
+```
+
+A `<blank>` in a command gets asked for each time it runs:
 
 ```yaml
-sections:
-  - name: Docker
-    logo: docker                                    # a brand logo (the names are in schema.json), or
-    # icon: ▣                                       # one glyph: a symbol or emoji
-    color: "#0087ff"                                # the logo's or icon's colour (grey if left out)
-    category: Infrastructure                        # heading on the main menu
-    groups:
-      - name: Containers
-        commands:
-          - name: Shell into container
-            cmd: docker exec -it <container> <shell>
-            desc: Opens an interactive shell inside a running container.
-            args:
-              - name: container                     # text: type it
-                quote: true                         # a name, so it's kept as one word
-                desc: Inside <container>.           # added to the description once filled in
-              - name: shell                         # choose: pick one
-                options: [sh, bash, zsh]
+# kubernetes.yaml
+name: Kubernetes
+commands:
+  - name: Tail logs
+    cmd: kubectl logs -f deploy/<app>
+    desc: Streams an app's logs.
+    args:
+      - name: app          # type a value
+        quote: true
 
-          - name: Remove container
-            cmd: docker rm <flags> <container>
-            risk: danger                            # ☠ type a code, then No/Yes (warn: ⚠ No/Yes)
-            args:
-              - name: container
-                quote: true
-              - name: flags                         # flags: tick any
-                type: flags
-                options:
-                  - { value: -f, label: force }
-                  - { value: -v, label: remove volumes }
-
-          - name: Build image
-            cmd: docker build -t <tag> .
-            when: [Dockerfile]                      # greyed out unless there's one here or above
-            args:
-              - name: tag                           # text: type it
-                placeholder: myapp:dev
+  - name: Restart app
+    cmd: kubectl rollout restart deploy/<app> -n <namespace>
+    risk: warn             # asks first; danger makes you type a code too
+    when: [k8s]            # greyed out unless this is here or in a folder above
+    args:
+      - name: app
+        quote: true
+      - name: namespace    # pick one
+        options: [staging, prod]
 ```
+
+Without a `_pack.yaml`, a pack is called after its folder and a submenu after its file. Add one to change that:
+
+```yaml
+# _pack.yaml
+name: Work tools
+description: What we run at work
+category: Infrastructure   # AI, Code, Command Line, Databases, Infrastructure, System or Other
+icon: ✶
+```
+
+Args can also be `type: flags` (tick any) or `type: secret` (typed hidden, and kept out of your shell history). [schema.json](schema.json) and [pack.schema.json](pack.schema.json) have every option, and editors with the YAML language server use them to autocomplete and check your packs.
 
 Give a command a `risk`:
 
@@ -181,69 +154,36 @@ Give a command a `risk`:
 
 Every built-in pack follows those rules, and a test keeps it that way.
 
-`when: [.git]` greys a command out unless one of the listed files is in your shell's folder or a folder above it (globs work: `['*.tf']`). Start it with `./` for tools that only look in the current folder: `['./*.tf']`. Put it on a group and it covers every command in the group.
+**Project packs:** put packs in `.clingon/packs/` in a repository, like `.clingon/packs/deploy/prod.yaml`, and their commands appear under **This project** whenever your shell is in that repository. clingon shows you every command and asks before using them, and asks again if any file changes.
 
-| Arg type | Asks you to | Keys |
-|---|---|---|
-| `text` | type a value | `default`, `placeholder`, `optional` |
-| `choose` | pick one | `options` — strings or `{value, label}` |
-| `flags` | tick any number | `options`, `join` (default: space), `default` (ticked to begin with) |
-| `secret` | type it hidden | the command reads it from a file that's deleted straight after, so it's never on screen or in your shell history |
+## Good to know
 
-Any typed value can have a `pattern` (a regular expression it must match, like `[0-9]+` for a port); clingon won't move on until it does.
-
-A section's `category` is one of `AI`, `Code`, `Databases`, `Infrastructure`, `System`; leave it out and the section goes under **Other**.
-
-`desc` says what a command does. Each arg can add a sentence of its own once it's filled in, with `<name>` standing for the value, so the description grows as you go: *"Opens an interactive shell inside a running container. Inside web. Using bash."* Options without one contribute their labels instead.
-
-`type` is inferred when you leave it out (`options` → choose, else text). Details that make it pleasant:
-
-- Only declared args are placeholders, so `cat < file` and `{{.Names}}` are left alone.
-- Keep the placeholder of a `quote: true` arg outside quotes, because clingon quotes the value itself: write `'DROP TABLE '<table>`, not `'DROP TABLE <table>'`. `clingon check` tells you if you've missed one.
-- A group or command with `requires: [brew]` only shows up when `brew` is on your PATH, so a pack can cover tools you may not have.
-
-The format has a [JSON schema](schema.json): editors with the YAML language server autocomplete and check it, and so can your AI assistant when you ask it to "add my usual kubectl commands to clingon".
-
-## How it works
-
-clingon starts a **private tmux server** on its own socket with its own config — it never reads `~/.tmux.conf` or touches your other tmux sessions, and it works from inside tmux too. The left pane runs the menu; the right pane runs your `$SHELL`. Picking a command sends its keystrokes to the shell pane with `tmux send-keys` (multi-line commands go in as a bracketed paste). Close either side and the whole thing goes away, along with anything still running in the shell, so clingon won't close from the menu while a command is running there, and asks first if there are jobs in the background or stopped.
-
-clingon has **one look, everywhere**, so every screenshot looks the same. Both panes get the same dark colours, whatever your terminal's theme. The shell pane is your own shell: zsh and bash load your config as usual (aliases, PATH, plugins), and then clingon's prompt goes on top: the folder, the git branch, the AWS profile if `AWS_PROFILE` is set, and, on a line of its own, a ❯ that turns red when a command fails. Starship, powerlevel10k and oh-my-zsh themes step aside only inside clingon. None of your files change: clingon's live in `~/.config/clingon/shell/`, and your terminal and any other shell are left exactly as they are. clingon needs zsh or bash as your login shell and won't start on anything else, though `clingon print` works in any shell.
-
-It's a single ~6 MB Go binary built on [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss) — the libraries behind gum — so it starts instantly. Homebrew brings everything else it needs.
-
-Everything clingon keeps is in one folder, `~/.config/clingon`. `$CLINGON_CONFIG` moves it; clingon's window starts a fresh login shell, so set it in your shell's startup files, not just for one command.
-
-| Path | |
-|---|---|
-| `packs/remote/*.yaml` | installed packs, one file each: `pack add` copies one in, `pack remove` deletes it, `pack update` replaces it |
-| `packs/local/*.yaml` | your own packs (names: letters, digits and dashes, not starting with a dash) |
-| `packs/_available.yaml` | every pack you can install (written by clingon) |
-| `micro/` | clingon's settings for micro, the pack editor (your own `~/.config/micro` is left alone) |
-| `shell/` | the startup files that give the shell inside clingon its look; each one reads yours first. On macOS, unless your config sets `HISTFILE`, zsh inside clingon keeps its history here too (`shell/zsh/.zsh_history`), apart from your usual one |
-| `latest-release` | the once-a-day check for a newer release |
-| `trusted-projects` | the project packs you've said yes to, by checksum |
-| `run/` | the socket of a running session, and secrets waiting for the command that reads them; empty otherwise |
+- **Your setup stays yours.** clingon runs a private tmux server and reads your shell config as usual, but never changes it. Its prompt and colours apply only inside its own window.
+- **What it adds.** Its own font, and a "clingon" profile in Terminal or iTerm2. macOS asks once whether clingon may control those two apps, only to open and style the window.
+- **Separate history.** Unless your config sets `HISTFILE`, zsh inside clingon keeps its own history, apart from your usual one.
+- **Everything else it keeps** is in `~/.clingon`: your packs and recipes at the top, and its own files in `~/.clingon/config`. Set `$CLINGON_CONFIG` in your shell's startup files to move it.
+- **Not on SSH.** clingon needs a window to open, so over SSH use `clingon print`, which prints the command you pick: `eval "$(clingon print)"`.
+- **Something wrong?** `clingon doctor` checks tmux and your packs' tools, and `clingon crash` shows why it last crashed.
+- **Updating:** `clingon update`.
 
 ## Removing clingon
 
 ```sh
 brew uninstall clingon
-rm -rf ~/.config/clingon
+rm -rf ~/.clingon
 rm -f ~/Library/Fonts/ClingonMono-*.otf
-rm -f ~/Library/Application\ Support/iTerm2/DynamicProfiles/clingon.json  # if you use iTerm2
-rm -rf ~/Library/Caches/clingon                                          # if you use Terminal
+rm -f ~/Library/Application\ Support/iTerm2/DynamicProfiles/clingon.json  # iTerm2
+rm -rf ~/Library/Caches/clingon                                          # Terminal
 ```
 
-If you use Terminal, delete any profiles named "clingon" in Settings › Profiles. clingon never deletes a profile itself, so an update that changes its font or colours can leave an older one behind.
+If you use Terminal, also delete any profiles named "clingon" in Settings › Profiles.
 
 ## Hacking on clingon
 
 ```sh
 go build -o clingon . && ./clingon
+go test ./...
 ```
-
-A local build behaves like an installed one: inside its session `clingon` on PATH is that build, so the menu's own commands, the welcome and anything you type use it. `clingon update` rebuilds it from the checkout, `clingon version` shows the commit it was built from, and `go test ./...` runs the tests.
 
 ## License
 

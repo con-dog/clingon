@@ -20,21 +20,23 @@ import (
 const packUsage = `Usage:
   clingon pack list              your packs, installed and local (--remote, --local: just those)
   clingon pack available         packs you can install
-  clingon pack add NAME...       install packs
-  clingon pack remove NAME...    remove packs (installed or your own)
-  clingon pack update [NAME...]  install newer versions of installed packs
+  clingon pack add NAME...       install packs, or parts of them, like aws/ecs
+  clingon pack remove NAME...    remove packs or parts of them (installed or your own)
+  clingon pack update [NAME...]  bring installed packs up to date
   clingon pack create NAME       start a pack of your own (from an example) in micro
   clingon pack edit NAME         edit your pack in micro
   clingon pack sections NAME     list the sections in your pack
-  clingon pack inspect NAME      print a pack's file, whether you have it or not
+  clingon pack inspect NAME      print a pack's files, whether you have it or not
 
 Every pack is remote/NAME (from clingon, in packs/remote once installed) or
 local/NAME (your own, in packs/local). NAME alone will do unless you have both.
+A pack is a folder, with a file for each section: remote/aws is all of AWS, and
+remote/aws/ecs is just its ECS commands.
 `
 
 func packCmd(args []string) error {
 	if len(args) == 0 {
-		outf("%s", styleUsage(packUsage))
+		sayBoxed("clingon pack", styleUsage(packUsage))
 		return nil
 	}
 	var rest []string
@@ -87,6 +89,10 @@ func packCmd(args []string) error {
 		for _, p := range all {
 			if !config.IsInstalled(p.Name) {
 				list = append(list, p)
+			} else if missing := config.MissingModules(p.Name); len(missing) > 0 {
+				p.Description = "you have part of this; also: " + moduleSlugs(missing)
+				p.Modules = missing
+				list = append(list, p)
 			}
 		}
 		printPacks("Packs you can add", list, namesOnly, "every pack is installed")
@@ -103,7 +109,7 @@ func packCmd(args []string) error {
 				return fmt.Errorf("%s: only remote packs are installed (yours are already there)", ref)
 			case !config.InCatalog(name):
 				return fmt.Errorf("no pack called %s to install (see `clingon pack available`); to start your own: `clingon pack create %s`", config.RemoteRef(name), name)
-			case config.IsInstalled(name):
+			case config.IsInstalled(name) && (strings.Contains(name, "/") || len(config.MissingModules(name)) == 0):
 				say(info, "%s is already installed", config.RemoteRef(name))
 			default:
 				if err := config.Install(name); err != nil {
@@ -163,10 +169,11 @@ func packCmd(args []string) error {
 			if where == "local" {
 				return fmt.Errorf("%s: only remote packs are updated (yours are yours to change)", ref)
 			}
-			if !config.IsInstalled(name) {
-				return fmt.Errorf("%s isn't installed", config.RemoteRef(name))
+			pack, _ := config.SplitModule(name) // the whole of what you have of it
+			if !config.IsInstalled(pack) {
+				return fmt.Errorf("%s isn't installed", config.RemoteRef(pack))
 			}
-			want[name] = true
+			want[pack] = true
 		}
 		done := 0
 		for _, u := range ups {
@@ -181,14 +188,21 @@ func packCmd(args []string) error {
 				done++
 				continue
 			}
-			if err := config.Install(u.Name); err != nil {
+			if err := config.UpdatePack(u.Name); err != nil {
 				return err
 			}
-			say(ok, "updated %s %s", config.RemoteRef(u.Name), greyStyle.Render(u.From+" → "+u.To))
+			say(ok, "updated %s", config.RemoteRef(u.Name))
 			done++
 		}
 		if done == 0 {
 			say(info, "all set: your installed packs are up to date")
+		}
+		// An update never adds to what you chose: this is how you hear what's there.
+		installed, _ := config.Installed()
+		for _, name := range installed {
+			if missing := config.MissingModules(name); len(missing) > 0 && (len(want) == 0 || want[name]) {
+				say(info, "%s also has %s: `clingon pack add remote/%s/%s`", config.RemoteRef(name), moduleSlugs(missing), name, missing[0].Slug)
+			}
 		}
 		return nil
 
@@ -208,8 +222,8 @@ func packCmd(args []string) error {
 		if err != nil {
 			return err
 		}
-		if isTerm() { // in micro's colours; to a file or a pipe it's the file as it is
-			outf("%s", micro.YAML(string(data)))
+		if isTerm() { // in micro's colours, in a box; to a file or a pipe it's the file as it is
+			sayBoxed(ref, micro.YAML(string(data)))
 			return nil
 		}
 		_, err = os.Stdout.Write(data)
@@ -221,14 +235,32 @@ func packCmd(args []string) error {
 			return err
 		}
 		_, name := config.SplitRef(ref)
-		for _, s := range config.SectionNames(name) {
+		names := config.SectionNames(name)
+		if isTerm() && len(names) > 0 {
+			var rows []row
+			for _, s := range names {
+				rows = append(rows, row{mark: info, label: s})
+			}
+			outln(card("Sections of "+ref, rows, cardWidth()))
+			return nil
+		}
+		for _, s := range names {
 			fmt.Println(s)
 		}
 		return nil
 	}
-	errf("%s", styleUsage(packUsage))
+	errUsage(styleUsage(packUsage))
 	os.Exit(2)
 	return nil
+}
+
+// moduleSlugs names modules, as you'd add them.
+func moduleSlugs(ms []config.Module) string {
+	out := make([]string, len(ms))
+	for i, m := range ms {
+		out[i] = m.Slug
+	}
+	return strings.Join(out, ", ")
 }
 
 // printPacks shows a card titled title (a table when it isn't printing to a
@@ -239,6 +271,11 @@ func printPacks(title string, ps []config.Pack, namesOnly bool, empty string) {
 	if namesOnly {
 		for _, p := range ps {
 			fmt.Printf("%s\t%s\n", p.Ref(), p.Description)
+			if len(p.Modules) > 1 {
+				for _, m := range p.Modules {
+					fmt.Printf("%s/%s\t%s\n", p.Ref(), m.Slug, m.Name)
+				}
+			}
 		}
 		return
 	}
@@ -249,16 +286,17 @@ func printPacks(title string, ps []config.Pack, namesOnly bool, empty string) {
 	if isTerm() {
 		// The note's parts are columns, each as wide as its widest, so they
 		// line up down the card: room for "XX commands" at least.
-		versionW, countW := 0, 2
+		countW := 2
 		for _, p := range ps {
-			versionW = max(versionW, len(p.Version))
 			countW = max(countW, len(strconv.Itoa(p.Commands)))
 		}
 		var rows []row
 		for _, p := range ps {
 			note := fmt.Sprintf("%*d commands", countW, p.Commands)
-			if versionW > 0 {
-				note = fmt.Sprintf("%-*s · ", versionW, p.Version) + note
+			if len(p.Modules) > 0 && p.Where == "remote" && config.IsInstalled(p.Name) {
+				if missing := len(config.MissingModules(p.Name)); missing > 0 {
+					note += fmt.Sprintf(" · %s not installed", plural(missing, "subpack"))
+				}
 			}
 			rows = append(rows, row{mark: info, label: p.Ref(), detail: p.Description, note: note})
 		}
@@ -267,7 +305,7 @@ func printPacks(title string, ps []config.Pack, namesOnly bool, empty string) {
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, p := range ps {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d commands\n", p.Ref(), p.Version, p.Description, p.Commands)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d commands\n", p.Ref(), p.Description, p.Commands)
 	}
 	_ = w.Flush()
 }
@@ -308,7 +346,7 @@ Each <placeholder> in COMMAND is asked for when you run it, e.g.
 
 func commandCmd(args []string) error {
 	if len(args) == 0 {
-		outf("%s", styleUsage(commandUsage))
+		sayBoxed("clingon command", styleUsage(commandUsage))
 		return nil
 	}
 	switch args[0] {
@@ -351,7 +389,7 @@ func commandCmd(args []string) error {
 		outln(card("Your commands", rows, cardWidth()))
 		return nil
 	}
-	errf("%s", styleUsage(commandUsage))
+	errUsage(styleUsage(commandUsage))
 	os.Exit(2)
 	return nil
 }
@@ -368,7 +406,7 @@ Clingon › Recipes, and lists it there; each ID is one of its commands.
 
 func recipeCmd(args []string) error {
 	if len(args) == 0 {
-		outf("%s", styleUsage(recipeUsage))
+		sayBoxed("clingon recipe", styleUsage(recipeUsage))
 		return nil
 	}
 	switch args[0] {
@@ -399,6 +437,14 @@ func recipeCmd(args []string) error {
 			say(info, "no saved recipes yet: run one from Clingon › Recipes, and save it")
 			return nil
 		}
+		if isTerm() {
+			var rows []row
+			for _, r := range rs {
+				rows = append(rows, row{mark: info, label: r.Name, detail: plural(len(r.Steps), "command")})
+			}
+			outln(card("Your recipes", rows, cardWidth()))
+			return nil
+		}
 		for _, r := range rs {
 			fmt.Printf("%s\t%s\n", r.Name, strings.Join(r.Steps, " "))
 		}
@@ -409,7 +455,7 @@ func recipeCmd(args []string) error {
 		}
 		return describeRecipe(args[1])
 	}
-	errf("%s", styleUsage(recipeUsage))
+	errUsage(styleUsage(recipeUsage))
 	os.Exit(2)
 	return nil
 }
@@ -469,7 +515,7 @@ func describeRecipe(name string) error {
 			add(failStyle, "☠ Can't be undone: you type a code before it runs")
 		}
 	}
-	title := headStyle.Render(r.Name) + greyStyle.Render(" · "+plural(len(r.Steps), "step")+", stops if one fails")
+	title := headStyle.Render(r.Name) + greyStyle.Render(" · "+plural(len(r.Steps), "command")+", stops if one fails")
 	outln(titled(title, lines, w))
 	return nil
 }

@@ -7,9 +7,10 @@ import (
 	"testing"
 )
 
+// writePack writes a module of your pack, like p/deploy.
 func writePack(t *testing.T, name, body string) {
 	t.Helper()
-	if err := os.MkdirAll(localDir(), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(PackPath(name)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(PackPath(name), []byte(body), 0o644); err != nil {
@@ -17,13 +18,13 @@ func writePack(t *testing.T, name, body string) {
 	}
 }
 
-func TestAddingToAPackWithAnEmptySectionsList(t *testing.T) {
+func TestAddingToASubmenuWithNoCommandsYet(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
-	writePack(t, "p", "description: mine\nsections:\n")
+	writePack(t, "p/deploy", "name: Deploy\ncommands:\n")
 	if err := AddCommand("p", "Deploy", "Ship", "./ship.sh", ""); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(PackPath("p")); !strings.Contains(string(b), "./ship.sh") {
+	if b, _ := os.ReadFile(PackPath("p/deploy")); !strings.Contains(string(b), "./ship.sh") {
 		t.Fatalf("it said it added it, so it should be in the file:\n%s", b)
 	}
 }
@@ -40,13 +41,19 @@ func TestAFailedAddLeavesNoEmptyPack(t *testing.T) {
 
 func TestMergedGroupsKeepEachFilesWhen(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
-	if err := os.MkdirAll(remoteDir(), 0o755); err != nil {
+	if err := os.MkdirAll(remotePath("a"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(remotePath("a"), []byte("sections:\n  - name: S\n    groups:\n      - name: G\n        when: [.git]\n        commands:\n          - name: one\n            cmd: ls\n"), 0o644); err != nil {
+	if err := os.WriteFile(remotePath("a/g"), []byte("name: G\nwhen: [.git]\ncommands:\n  - name: one\n    cmd: ls\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writePack(t, "b", "sections:\n  - name: S\n    groups:\n      - name: G\n        when: [go.mod]\n        commands:\n          - name: two\n            cmd: ls\n")
+	if err := os.WriteFile(remotePath("a/_pack"), []byte("name: S\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writePack(t, "b/g", "name: G\nwhen: [go.mod]\ncommands:\n  - name: two\n    cmd: ls\n")
+	if err := os.WriteFile(filepath.Join(PackPath("b"), PackInfoFile), []byte("name: S\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cfg, _, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +81,7 @@ func TestWhenWorksInFoldersWithGlobCharacters(t *testing.T) {
 
 func TestPackNamesAreCheckedBeforeTouchingFiles(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
-	writePack(t, "mine", "sections:\n  - name: S\n    commands:\n      - name: x\n        cmd: ls\n")
+	writePack(t, "mine/s", "commands:\n  - name: x\n    cmd: ls\n")
 	if err := Uninstall("../local/mine"); err == nil {
 		t.Fatal("../ shouldn't reach out of packs/remote")
 	}

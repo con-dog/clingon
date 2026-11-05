@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Containers
+description: List, inspect, restart, stop and remove containers, follow logs, shell in and copy files
+commands:
+  - name: Running containers
+    id: docker-f445cf10
+    cmd: docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+    desc: "Lists running containers with their image, status and ports."
+  - name: Shell into container
+    id: docker-c0d6db09
+    cmd: docker exec -it <container> <shell>
+    desc: "Opens an interactive shell inside a running container."
+    args:
+      - name: container
+        quote: true
+        desc: "Inside <container>."
+        placeholder: "web"
+      - name: shell
+        desc: "Using <shell>."
+        options: [sh, bash, zsh]
+        default: sh
+  - name: Follow logs
+    id: docker-8fe4b94a
+    cmd: docker logs -f --tail <lines> <container>
+    desc: "Streams a container's logs live as they're written."
+    args:
+      - name: container
+        quote: true
+        desc: "From <container>."
+        placeholder: "web"
+      - name: lines
+        desc: "Showing <lines> lines of history first."
+        options: ["100", "1000", all]
+        default: "100"
+  - name: Restart container
+    id: docker-9220393f
+    cmd: docker restart <container>
+    desc: "Stops a container and starts it again, keeping its configuration."
+    risk: warn
+    args:
+      - name: container
+        quote: true
+        desc: "Restarting <container>."
+        placeholder: "web"
+  - name: Remove container
+    id: docker-766987f6
+    cmd: docker rm <flags> <container>
+    desc: "Deletes a container for good."
+    risk: danger
+    args:
+      - name: container
+        quote: true
+        desc: "Removing <container>."
+        placeholder: "web"
+      - name: flags
+        type: flags
+        options:
+          - { value: -f, label: force (stop if running) }
+          - { value: -v, label: also remove anonymous volumes }
+  - name: Stop container
+    id: docker-9f5655f1
+    cmd: docker stop <container>
+    desc: "Stops a running container. It keeps its data and can be started again."
+    risk: warn
+    args:
+      - name: container
+        quote: true
+        desc: "Stopping <container>."
+        placeholder: "web"
+  - name: Copy a file out
+    id: docker-31110672
+    cmd: docker cp <container>:<path> <dest>
+    desc: "Copies a file or folder out of a container. Anything already at the destination is replaced."
+    risk: warn
+    args:
+      - name: container
+        quote: true
+        desc: "From <container>"
+        placeholder: "web"
+      - name: path
+        quote: true
+        desc: "at <path>"
+        placeholder: /app/logs
+      - name: dest
+        quote: true
+        desc: "to <dest>."
+        default: .
+  - name: Copy a file in
+    id: docker-dd5bda07
+    cmd: docker cp <file> <container>:<path>
+    desc: "Copies a file into a container. Anything already at that path is replaced."
+    risk: warn
+    args:
+      - name: file
+        quote: true
+        desc: "Copying <file>"
+        placeholder: "path/to/file"
+      - name: container
+        quote: true
+        desc: "into <container>"
+        placeholder: "web"
+      - name: path
+        quote: true
+        desc: "at <path>."
+        placeholder: /tmp/
+  - name: Inspect container
+    id: docker-9aa77780
+    cmd: docker inspect <container>
+    desc: "Shows everything Docker knows about a container: its config, mounts, network and state."
+    args:
+      - name: container
+        quote: true
+        desc: "For <container>."
+        placeholder: "web"
+  - name: Container stats
+    id: docker-1c682463
+    cmd: docker stats --no-stream
+    desc: "Shows each running container's CPU, memory, network and disk use right now."

@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Checksums
+description: Get the SHA-256 checksum of a file
+commands:
+  - name: SHA-256 of a file
+    id: security-00063d7a
+    cmd: openssl dgst -sha256 <file>
+    desc: "Prints a file's SHA-256 checksum, to compare with a published one."
+    args:
+      - name: file
+        quote: true
+        desc: "Of <file>."
+        placeholder: "path/to/file"

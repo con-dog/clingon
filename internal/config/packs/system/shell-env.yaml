@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Shell & env
+description: Search history, find, set and unset env vars, change PATH, time a command and reload the shell
+commands:
+  - name: Search shell history
+    id: system-425c2197
+    cmd: fc -l 1 | grep -i -- <text> || echo "No matches."
+    desc: "Searches the commands you've run before in this shell."
+    args:
+      - name: text
+        quote: true
+        desc: "Containing \"<text>\"."
+  - name: Find env var
+    id: system-28a0e6a4
+    cmd: env | grep -i -- <name> || echo "No matches."
+    desc: "Shows environment variables whose name or value contains some text."
+    args:
+      - name: name
+        quote: true
+        desc: "Containing \"<name>\"."
+        placeholder: "program name"
+  - name: Set env var
+    id: system-9ef85c54
+    cmd: export <name>=<value>
+    desc: "Sets an environment variable for this shell and everything you run from it."
+    args:
+      - name: name
+        quote: true
+        desc: "Setting <name>"
+        placeholder: NODE_ENV
+      - name: value
+        quote: true
+        desc: "to <value>."
+  - name: Unset env var
+    id: system-7f57f654
+    cmd: unset <name>
+    desc: "Removes an environment variable from this shell."
+    args:
+      - name: name
+        quote: true
+        desc: "Removing <name>."
+        placeholder: "program name"
+  - name: Add folder to PATH
+    id: system-f6936652
+    cmd: export PATH=<dir>:"$PATH"
+    desc: "Puts a folder first on your PATH for this shell, so its programs run by name."
+    args:
+      - name: dir
+        quote: true
+        desc: "Adding <dir>."
+        default: $PWD
+  - name: Where is a command
+    id: system-a29cad81
+    cmd: type -a <name>
+    desc: "Shows everything a command name could run: programs, aliases and functions."
+    args:
+      - name: name
+        quote: true
+        desc: "Looking up <name>."
+  - name: PATH, one per line
+    id: system-20b12f9b
+    cmd: echo "$PATH" | tr ':' '\n'
+    desc: "Lists each folder your shell searches for commands, in order."
+  - name: Time a command
+    id: system-f7b50313
+    cmd: time <command>
+    desc: "Runs a command and reports how long it took."
+    args:
+      - name: command
+        desc: "Timing <command>."
+  - name: Reload shell
+    id: system-466fc2cf
+    cmd: if [ -n "$CLINGON" ]; then exec clingon _shell; else exec "$SHELL" -l; fi
+    desc: "Restarts your shell in place so it picks up changes to your config files."

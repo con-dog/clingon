@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Find
+description: Find files by name and search for text inside them
+commands:
+  - name: Find files by name
+    id: files-00dbf7ca
+    cmd: find <dir> -iname '*'<pattern>'*' -not -path '*/node_modules/*' -not -path '*/.git/*'
+    desc: "Finds files and folders whose name contains some text, skipping node_modules and .git."
+    args:
+      - name: pattern
+        quote: true
+        desc: "Names containing \"<pattern>\"."
+      - name: dir
+        quote: true
+        desc: "Searching <dir>."
+        default: .
+  - name: Search text in files
+    id: files-a15d8a8d
+    cmd: grep -rn <flags> -- <pattern> <dir> || echo "No matches."
+    desc: "Searches inside files for some text and shows every match with its line number."
+    args:
+      - name: pattern
+        quote: true
+        desc: "Looking for \"<pattern>\"."
+      - name: flags
+        type: flags
+        options:
+          - { value: -i, label: ignore case }
+          - { value: -w, label: whole words }
+          - { value: -l, label: file names only }
+          - { value: --exclude-dir=node_modules --exclude-dir=.git, label: skip node_modules and .git }
+      - name: dir
+        quote: true
+        desc: "In <dir>."
+        default: .

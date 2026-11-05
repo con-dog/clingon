@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
+#
+# How your pack looks in the menu. This file is optional: without it, the pack
+# is called after its folder. Every other .yaml file here is a submenu.
+
+name: My commands                # shown in the menu
+description: My own commands     # shown by `clingon pack list`
+icon: ✶                          # one glyph shown before its name (or `logo: rust`: a brand logo)
+category: Other                  # AI, Code, Command Line, Databases, Infrastructure, System or Other

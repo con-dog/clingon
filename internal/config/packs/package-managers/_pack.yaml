@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
+name: Package managers
+description: Search, install, remove and upgrade packages with Homebrew
+default: true
+logo: box
+category: System

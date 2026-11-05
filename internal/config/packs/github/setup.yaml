@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Setup
+description: Sign in to GitHub, check that you are, add an SSH key and use gh for git passwords
+commands:
+  - name: Add SSH key to GitHub
+    id: github-12b5d8f8
+    cmd: gh ssh-key add <key> --title "$(hostname)"
+    desc: "Uploads your public SSH key so you can push and pull over SSH."
+    risk: warn
+    args:
+      - name: key
+        quote: true
+        desc: "Uploading <key>."
+        placeholder: "key ID"
+  - name: Am I signed in
+    id: github-704adcdd
+    cmd: gh auth status
+    desc: "Shows which GitHub accounts you're signed in to and how."
+  - name: Sign in
+    id: github-44a214b6
+    cmd: gh auth login
+    desc: "Signs you in to GitHub through your browser, asking a few questions first."
+  - name: Use gh for git passwords
+    id: github-edccf01b
+    cmd: gh auth setup-git
+    desc: "Lets git push and pull over HTTPS using your gh sign-in, so it never asks for a password."

@@ -5,18 +5,20 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
 
-// ProjectFile is a pack that lives in a repository, for the commands that
-// only make sense there. clingon finds it in the shell's folder or one
-// above it, and only uses it once you've trusted that exact file.
-const ProjectFile = ".clingon.yaml"
+// ProjectDir holds the packs that live in a repository, for the commands that
+// only make sense there. clingon finds it in the shell's folder or one above
+// it, and only uses it once you've trusted those exact files.
+const ProjectDir = ".clingon/packs"
 
-// Project is the project pack for a folder.
+// Project is the project packs for a folder.
 type Project struct {
 	Path    string
 	Config  *Config // nil if it has problems or isn't trusted
@@ -28,15 +30,33 @@ type Project struct {
 	sum     string
 }
 
-// FindProject returns the project pack for dir, or nil if there's none.
+// isOwnFolder says whether .clingon in folder d is your own clingon folder
+// rather than a project's: its packs are already yours, and needn't be trusted.
+func isOwnFolder(d string) bool {
+	here, err := os.Stat(filepath.Join(d, ".clingon"))
+	if err != nil {
+		return false
+	}
+	if own, err := os.Stat(Dir()); err == nil && os.SameFile(here, own) {
+		return true
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	own, err := os.Stat(filepath.Join(home, ".clingon"))
+	return err == nil && os.SameFile(here, own)
+}
+
+// FindProject returns the project packs for dir, or nil if there are none.
 func FindProject(dir string) *Project {
 	if dir == "" {
 		return nil
 	}
 	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
-		path := filepath.Join(d, ProjectFile)
-		if data, err := os.ReadFile(path); err == nil {
-			return loadProject(path, data)
+		path := filepath.Join(d, filepath.FromSlash(ProjectDir))
+		if fi, err := os.Stat(path); err == nil && fi.IsDir() && !isOwnFolder(d) {
+			return loadProject(path)
 		}
 		if d == filepath.Dir(d) {
 			return nil
@@ -44,25 +64,82 @@ func FindProject(dir string) *Project {
 	}
 }
 
-func loadProject(path string, data []byte) *Project {
-	sum := sha256.Sum256(data)
-	p := &Project{Path: path, sum: hex.EncodeToString(sum[:])}
-	known := trusted()
-	p.Trusted = known[path] == p.sum
-	p.Changed = known[path] != "" && !p.Trusted
-	cfg, err := parse(path, data)
-	if err == nil {
-		if errs := cfg.Validate(); len(errs) > 0 {
-			err = errs[0]
+// readProject reads everything under a project's packs folder into memory, so
+// that what's hashed for trust is just what's parsed. A repository is someone
+// else's until it's trusted, so only plain files and folders are read: a link
+// could point anywhere, and reading a named pipe would hang the menu.
+func readProject(path string) (map[string][]parsedFile, string, error) {
+	h := sha256.New()
+	out := map[string][]parsedFile{}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, e := range entries {
+		switch {
+		case e.Type()&os.ModeSymlink != 0 || !e.IsDir() && !e.Type().IsRegular():
+			return nil, "", fmt.Errorf("%s isn't a plain file or folder", filepath.Join(path, e.Name()))
+		case !e.IsDir() && strings.HasPrefix(e.Name(), "."):
+			continue
+		case !e.IsDir() && isYAML(e.Name()):
+			return nil, "", fmt.Errorf("%s: a pack is a folder, so this belongs in one, like %s", filepath.Join(path, e.Name()), filepath.Join(path, "deploy", e.Name()))
+		case !e.IsDir() || skippedName(e.Name()):
+			continue
+		}
+		files, err := os.ReadDir(filepath.Join(path, e.Name()))
+		if err != nil {
+			return nil, "", err
+		}
+		for _, f := range files {
+			full := filepath.Join(path, e.Name(), f.Name())
+			if f.Type()&os.ModeSymlink != 0 || !f.IsDir() && !f.Type().IsRegular() {
+				return nil, "", fmt.Errorf("%s isn't a plain file or folder", full)
+			}
+			if f.IsDir() || !isYAML(f.Name()) || !isPackFile(full) {
+				continue
+			}
+			data, err := os.ReadFile(full)
+			if err != nil {
+				return nil, "", err
+			}
+			// The names count: a file's name can be its submenu's.
+			fmt.Fprintf(h, "%s/%s\x00%d\x00", e.Name(), f.Name(), len(data))
+			h.Write(data)
+			part, err := parsePackFile(full, data)
+			if err != nil {
+				return nil, "", err
+			}
+			out[e.Name()] = append(out[e.Name()], part)
 		}
 	}
+	return out, hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func loadProject(path string) *Project {
+	p := &Project{Path: path}
+	known := trusted()
+	packs, sum, err := readProject(path)
 	if err != nil {
 		p.Err = err
 		return p
 	}
+	p.sum = sum
+	p.Trusted = known[path] == p.sum
+	p.Changed = known[path] != "" && !p.Trusted
+	cfg := &Config{}
+	names := make([]string, 0, len(packs))
+	for name := range packs {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		cfg.merge(assemble(name, packs[name]))
+	}
+	if errs := cfg.Validate(); len(errs) > 0 {
+		p.Err = errs[0]
+		return p
+	}
 	for i := range cfg.Sections {
-		cfg.Sections[i].Needs = cfg.Requires
-		cfg.Sections[i].pushDown()
 		for _, c := range cfg.Sections[i].All() {
 			p.Cmds = append(p.Cmds, c.Cmd)
 			for _, a := range c.Args {
@@ -87,9 +164,9 @@ func loadProject(path string, data []byte) *Project {
 	return p
 }
 
-func trustFile() string { return filepath.Join(Dir(), "trusted-projects") }
+func trustFile() string { return filepath.Join(StateDir(), "trusted-projects") }
 
-// trusted maps each trusted project pack's path to the sha256 it had when
+// trusted maps each trusted project's packs folder to the sha256 it had when
 // you trusted it.
 func trusted() map[string]string {
 	out := map[string]string{}
@@ -109,7 +186,7 @@ func trusted() map[string]string {
 	return out
 }
 
-// Trust records the project pack, exactly as it is now, as trusted.
+// Trust records the project's packs, exactly as they are now, as trusted.
 func (p *Project) Trust() error {
 	if strings.ContainsAny(p.Path, "\n\r") {
 		return errors.New("can't trust a project whose path has a line break in it")
@@ -117,7 +194,7 @@ func (p *Project) Trust() error {
 	known := trusted()
 	known[p.Path] = p.sum
 	var b strings.Builder
-	b.WriteString("# Project packs (.clingon.yaml) you've trusted, by sha256: editing one means trusting it again.\n")
+	b.WriteString("# Project packs (" + ProjectDir + ") you've trusted, by sha256: editing one means trusting them again.\n")
 	paths := make([]string, 0, len(known))
 	for path := range known {
 		paths = append(paths, path)
@@ -126,7 +203,7 @@ func (p *Project) Trust() error {
 	for _, path := range paths {
 		b.WriteString(known[path] + "  " + path + "\n")
 	}
-	if err := os.MkdirAll(Dir(), 0o755); err != nil {
+	if err := os.MkdirAll(StateDir(), 0o755); err != nil {
 		return err
 	}
 	return writeWhole(trustFile(), []byte(b.String()))

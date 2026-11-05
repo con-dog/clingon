@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Run tests
+description: Run Playwright tests by file, title or project, headed, failed or changed only, and update snapshots
+when: [playwright.config.ts, playwright.config.js, playwright.config.mts, playwright.config.mjs]
+commands:
+  - name: Changed files only
+    id: playwright-1b78dd12
+    cmd: npx playwright test --only-changed
+    desc: "Runs only the test files changed since the last commit, and those that import changed files."
+  - name: Headed
+    id: playwright-61a432ce
+    cmd: npx playwright test --headed
+    desc: "Runs the tests with the browser windows showing."
+  - name: Last failed
+    id: playwright-3b5ff442
+    cmd: npx playwright test --last-failed
+    desc: "Runs again only the tests that failed last time."
+  - name: One project
+    id: playwright-474abe3b
+    cmd: npx playwright test --project <project>
+    desc: "Runs the tests for one project from the config, like one browser or device."
+    args:
+      - name: project
+        quote: true
+        desc: "For <project>."
+        placeholder: "chromium"
+  - name: Repeat to find flaky tests
+    id: playwright-b3cb182e
+    cmd: npx playwright test --repeat-each <times>
+    desc: "Runs every test several times over, to catch ones that only fail sometimes."
+    args:
+      - name: times
+        desc: "<times> times each."
+        default: "10"
+        pattern: "[0-9]+"
+  - name: Test
+    id: playwright-4ed0c480
+    cmd: npx playwright test
+    desc: "Runs every test, headless, in every project in the config."
+  - name: Test a file
+    id: playwright-77a7dbff
+    cmd: npx playwright test <file>
+    desc: "Runs the tests in one file."
+    args:
+      - name: file
+        quote: true
+        desc: "From <file>."
+        placeholder: "tests/example.spec.ts"
+  - name: Tests matching a title
+    id: playwright-c9737af2
+    cmd: npx playwright test -g <title>
+    desc: "Runs only the tests whose title matches."
+    args:
+      - name: title
+        quote: true
+        desc: "Matching <title>."
+        placeholder: login
+  - name: Update snapshots
+    id: playwright-415eead0
+    cmd: npx playwright test --update-snapshots
+    desc: "Runs the tests and replaces the saved screenshots and snapshots with what they show now."
+    risk: warn

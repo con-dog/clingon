@@ -95,14 +95,18 @@ func TestCheckIncludesTheProjectPack(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	repo := t.TempDir()
 	t.Chdir(repo)
-	if err := os.WriteFile(filepath.Join(repo, config.ProjectFile), []byte("sections:\n  - name: Deploy\n    groups:\n      - name: Prod\n        commands:\n          - name: Ship\n            cmd: ./ship.sh\n"), 0o644); err != nil {
+	module := filepath.Join(repo, config.ProjectDir, "deploy", "prod.yaml")
+	if err := os.MkdirAll(filepath.Dir(module), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(module, []byte("name: Prod\ncommands:\n  - name: Ship\n    cmd: ./ship.sh\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, err := output(t, check)
 	if err != nil || !strings.Contains(out, "project pack") || !strings.Contains(out, "asks before using it") {
 		t.Fatalf("got %q %v", out, err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, config.ProjectFile), []byte("sections:\n  - name: Deploy\n    commands:\n      - name: Ship\n"), 0o644); err != nil {
+	if err := os.WriteFile(module, []byte("name: Prod\ncommands:\n  - name: Ship\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := output(t, check); err == nil || !strings.Contains(err.Error(), "project pack has problems") {
@@ -168,13 +172,16 @@ func TestHeadlinePicksTheMostUsefulNews(t *testing.T) {
 	if err := config.Install("git"); err != nil {
 		t.Fatal(err)
 	}
-	remote := filepath.Join(config.Dir(), "packs", "remote", "git.yaml")
+	remote := filepath.Join(config.Dir(), "packs", "remote", "git", "everyday.yaml")
 	data, _ := os.ReadFile(remote)
-	if err := os.WriteFile(remote, []byte(strings.Replace(string(data), "version: ", "version: 0.0.0-old-", 1)), 0o644); err != nil {
+	if err := os.WriteFile(remote, append(data, []byte("# old\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if h := headline(); !strings.Contains(h.Text, "Update 1 pack: git · Clingon › Packs › Update packs") {
 		t.Fatalf("a pack update beats all's well, got %+v", h)
+	}
+	if err := os.MkdirAll(config.StateDir(), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	if err := os.WriteFile(releaseCachePath(), []byte(strconv.FormatInt(time.Now().Unix(), 10)+" v0.2.0\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -202,6 +209,9 @@ func TestPacksWithAToolPerGroupAreSuggestedOnlyIfOneIsHere(t *testing.T) {
 func TestAFailedReleaseCheckKeepsWhatItKnew(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	t.Setenv("PATH", t.TempDir()) // no curl: the check fails
+	if err := os.MkdirAll(config.StateDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(releaseCachePath(), []byte("1 v9.9.9\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +226,10 @@ func TestDoctorCarriesOnPastAPackItDoesntKnow(t *testing.T) {
 	if err := config.Install("git"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(config.Dir(), "packs", "remote", "homemade.yaml"), []byte("sections:\n  - name: H\n    commands:\n      - name: x\n        cmd: ls\n"), 0o644); err != nil {
+	if err := os.MkdirAll(config.RemotePath("homemade"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(config.RemotePath("homemade"), "h.yaml"), []byte("commands:\n  - name: x\n    cmd: ls\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, _ := output(t, func() error { return doctor(nil) })
@@ -227,10 +240,10 @@ func TestDoctorCarriesOnPastAPackItDoesntKnow(t *testing.T) {
 
 func TestPackUpdateRemovesRetiredPacks(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
-	if err := os.MkdirAll(filepath.Dir(config.RemotePath("databases")), 0o755); err != nil {
+	if err := os.MkdirAll(config.RemotePath("databases"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(config.RemotePath("databases"), []byte("version: 1.0.0\nsections: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(config.RemotePath("databases"), "g.yaml"), []byte("commands: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, err := output(t, func() error { return packCmd([]string{"update"}) })
@@ -250,7 +263,10 @@ func TestCrashIsKeptSaidAndShown(t *testing.T) {
 		t.Fatal(err)
 	}
 	tmp := func(pid int) string {
-		return filepath.Join(config.Dir(), "crash-"+strconv.Itoa(pid)+".tmp")
+		return filepath.Join(config.StateDir(), "crash-"+strconv.Itoa(pid)+".tmp")
+	}
+	if err := os.MkdirAll(config.StateDir(), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	trace := "goroutine 1 [running]:\ngithub.com/con-dog/clingon/internal/ui.(*Model).update(0x1)\n\tgithub.com/con-dog/clingon/internal/ui/model.go:552 +0x10\n"
 	if err := os.WriteFile(tmp(dead.Process.Pid), []byte(crashHeader+"0.1.0\npanic: boom\n\n"+trace), 0o600); err != nil {
@@ -344,7 +360,7 @@ func TestPackInspect(t *testing.T) {
 	if err := config.Install("docker"); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := run("remote/docker"); err != nil || !strings.HasPrefix(out, "# Installed by clingon.") {
+	if out, err := run("remote/docker"); err != nil || !strings.Contains(out, "# Installed by clingon.") {
 		t.Errorf("installed: %.100q %v", out, err)
 	}
 	if err := config.AddCommand("docker", "Mine", "Hi", "echo hi", ""); err != nil {
@@ -438,7 +454,7 @@ func TestRecipeCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Ship it", "2 steps", " 1  Ship · Deploy", "ship <where>", "Ships it.", "Asks for: where", " 2  Not available here", "gone-00000000"} {
+	for _, want := range []string{"Ship it", "2 commands", " 1  Ship · Mine", "ship <where>", "Ships it.", "Asks for: where", " 2  Not available here", "gone-00000000"} {
 		if !strings.Contains(ansi.Strip(out), want) {
 			t.Errorf("describe should say %q:\n%s", want, out)
 		}
@@ -454,5 +470,81 @@ func TestRecipeCommands(t *testing.T) {
 	}
 	if _, err := run("remove", "My AWS ECS flow"); err == nil {
 		t.Error("removing it twice should say so")
+	}
+}
+
+// In a box, everything keeps inside the edges, however long; none of it's cut.
+func TestBoxedWrapsWithinItsEdges(t *testing.T) {
+	long := "✓ " + strings.Repeat("remote/aws also has compute-logs ", 8)
+	out := ansi.Strip(boxed("Title", []string{long, "short"}, 50))
+	lines := strings.Split(out, "\n")
+	if len(lines) < 5 || !strings.HasPrefix(lines[0], "╭─ Title") || !strings.HasPrefix(lines[len(lines)-1], "╰") {
+		t.Fatalf("box:\n%s", out)
+	}
+	for _, l := range lines {
+		if w := ansi.StringWidth(l); w != 50 {
+			t.Errorf("%d wide: %q", w, l)
+		}
+	}
+	if strings.Count(strings.ReplaceAll(out, "\n", " "), "compute-logs") != 8 {
+		t.Errorf("nothing should be cut:\n%s", out)
+	}
+}
+
+func TestCommandTitle(t *testing.T) {
+	for want, args := range map[string][]string{
+		"clingon": nil, "pack add": {"pack", "add", "git"}, "pack": {"pack"}, "recipe save": {"recipe", "save", "x", "y"}, "doctor": {"doctor", "git"},
+	} {
+		if got := commandTitle(args); got != want {
+			t.Errorf("%v: %q, want %q", args, got, want)
+		}
+	}
+}
+
+// Piped, a command's output is what scripts want: no boxes, and nothing held back.
+func TestPipedOutputHasNoBoxes(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	out, err := output(t, func() error { return packCmd([]string{"add", "git"}) })
+	if err != nil || strings.Contains(out, "╭") || !strings.Contains(out, "installed remote/git") {
+		t.Fatalf("add: %q %v", out, err)
+	}
+	if len(said) != 0 {
+		t.Errorf("nothing should be held: %q", said)
+	}
+	out, err = output(t, func() error { return packCmd([]string{"inspect", "remote/git/stash"}) })
+	if err != nil || strings.Contains(out, "╭") || !strings.Contains(out, "commands:") {
+		t.Fatalf("inspect: %.200q %v", out, err)
+	}
+}
+
+// Remove packs picks like Add packs does, for yours and for what's installed.
+func TestRemovePacksIsAChecklist(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if err := config.Install("git"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.NewPack("mine"); err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, s := range builtinSections() {
+		for _, c := range s.All() {
+			switch c.Name {
+			case "Remove a pack":
+				t.Error("it's Remove packs now")
+			case "Remove packs":
+				found++
+				if a := c.Args[0]; !a.Multi() || !a.AtLeastOne || a.CountAs != "pack" {
+					t.Errorf("%+v", a)
+				}
+			}
+		}
+	}
+	if found != 2 {
+		t.Errorf("found %d", found)
+	}
+	out, err := output(t, func() error { return packCmd([]string{"remove", "remote/git", "local/mine"}) })
+	if err != nil || !strings.Contains(out, "removed remote/git") || !strings.Contains(out, "removed local/mine") {
+		t.Fatalf("%q %v", out, err)
 	}
 }

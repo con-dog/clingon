@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Manage
+description: Create databases and users, disconnect everyone, and drop tables, databases and users
+commands:
+  - name: New database
+    id: postgresql-ee50a68a
+    cmd: createdb <name>
+    desc: "Creates an empty PostgreSQL database."
+    risk: warn
+    args:
+      - name: name
+        desc: "Called <name>."
+        pattern: "[A-Za-z0-9_]+"
+  - name: New user
+    id: postgresql-be1554f1
+    cmd: createuser --pwprompt <name>
+    desc: "Creates a PostgreSQL user that can log in, asking for its password."
+    risk: warn
+    args:
+      - name: name
+        desc: "Called <name>."
+        pattern: "[A-Za-z0-9_]+"
+  - name: Disconnect everyone
+    id: postgresql-f47d6f72
+    cmd: psql -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '"<database>"' AND pid <> pg_backend_pid()"
+    desc: "Ends every session connected to a database, so it can be dropped or renamed."
+    risk: danger
+    args:
+      - name: database
+        quote: true
+        desc: "From <database>."
+        placeholder: "mydb"
+  - name: Drop a table
+    id: postgresql-8f0367b1
+    cmd: psql -d <database> -c 'DROP TABLE '<table>
+    desc: "Deletes a table and every row in it."
+    risk: danger
+    args:
+      - name: database
+        quote: true
+        desc: "In <database>,"
+        placeholder: "mydb"
+      - name: table
+        quote: true
+        desc: "dropping <table>."
+        placeholder: "public.users"
+  - name: Drop a database
+    id: postgresql-f70fd15c
+    cmd: dropdb <flags> <database>
+    desc: "Deletes a PostgreSQL database and everything in it."
+    risk: danger
+    args:
+      - name: database
+        quote: true
+        desc: "Dropping <database>."
+        placeholder: "mydb"
+      - name: flags
+        type: flags
+        options:
+          - { value: --force, label: disconnect anyone using it first (PostgreSQL 13+) }
+  - name: Drop a user
+    id: postgresql-bb4518e2
+    cmd: dropuser <name>
+    desc: "Deletes a PostgreSQL user. It fails while the user still owns anything."
+    risk: danger
+    args:
+      - name: name
+        quote: true
+        desc: "Dropping <name>."
+        placeholder: "name"

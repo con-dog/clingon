@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: New project
+description: Start a project with npm, pnpm or bun, or run a package without installing it
+commands:
+  - name: Run a package without installing
+    id: node-9d51752b
+    cmd: npx <package>
+    desc: "Downloads a package's command if needed and runs it."
+    requires: [npx]
+    args:
+      - name: package
+        desc: "Running <package>."
+        placeholder: create-vite@latest
+  - name: Start a bun project
+    id: node-eeda89e7
+    cmd: bun init -y
+    desc: "Creates package.json, tsconfig.json and an index.ts here, set up for bun."
+    requires: [bun]
+  - name: Start a pnpm project
+    id: node-45d3b948
+    cmd: pnpm init && pnpm install
+    desc: "Creates a package.json and lockfile here, for pnpm."
+    requires: [pnpm]
+  - name: Start an npm project
+    id: node-2d52fbf5
+    cmd: npm init -y && npm install
+    desc: "Creates a package.json and lockfile here, with the usual defaults."
+    requires: [npm]

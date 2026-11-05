@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Ports
+description: See what's listening, find who's on a port and kill it
+commands:
+  - name: What's listening
+    id: network-8a117db7
+    cmd: lsof -nP -iTCP -sTCP:LISTEN
+    desc: "Lists your programs listening for network connections, and on which port. Other users' programs only show with sudo."
+  - name: Who's on port
+    id: network-0fecd847
+    cmd: lsof -nP -iTCP:<port> -sTCP:LISTEN || echo "Nothing of yours is listening on port <port>."
+    desc: "Shows which of your programs is listening on a port. Other users' programs only show with sudo."
+    args:
+      - name: port
+        desc: "Checking port <port>."
+        placeholder: "3000"
+        pattern: "[0-9]+"
+  - name: Kill whatever is on port
+    id: network-1a91a745
+    cmd: pids=$(lsof -t -iTCP:<port> -sTCP:LISTEN); if [ -n "$pids" ]; then echo "$pids" | xargs kill && echo "Stopped what was on port <port>."; else echo "Nothing of yours is listening on port <port>."; fi
+    desc: "Stops whichever of your programs is listening on a port."
+    risk: warn
+    args:
+      - name: port
+        desc: "On port <port>."
+        placeholder: "3000"
+        pattern: "[0-9]+"

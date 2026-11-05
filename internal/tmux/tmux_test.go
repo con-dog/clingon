@@ -359,13 +359,22 @@ func TestLastFailedReadsThePromptsColour(t *testing.T) {
 		if !c.WaitIdle(pane) {
 			t.Fatal("WaitIdle should know when it's done")
 		}
-		if got := c.LastFailed(pane); got != want {
-			t.Errorf("after %q: failed = %v, want %v", cmd, got, want)
+		if got, known := c.LastFailed(pane); got != want || !known {
+			t.Errorf("after %q: failed = %v, known = %v, want %v, true", cmd, got, known, want)
 		}
 	}
 	run("true", false)
 	run("false", true)
 	run("true", false)
+
+	// No prompt at the cursor: that's not a command that worked.
+	if err := c.Send(pane, `precmd() { PROMPT='plain> ' }`); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitIdle(pane)
+	if _, known := c.LastFailed(pane); known {
+		t.Error("with no prompt mark to read, the result can't be known")
+	}
 }
 
 func TestJobNames(t *testing.T) {
@@ -411,5 +420,28 @@ func TestWaitIdleWaitsForASlowPrompt(t *testing.T) {
 	}
 	if st := c.State(pane); st.Typed != "an unfinished command" {
 		t.Fatalf("an open quote is an unfinished command, got %+v", st)
+	}
+}
+
+// Sending a command leaves focus where it is: keys meant for the menu mustn't
+// land in the shell.
+func TestSendLeavesFocusAlone(t *testing.T) {
+	c, pane := serverWith(t, "env TERM=xterm-256color zsh -f")
+	c.WaitForPrompt(pane, 2*time.Second)
+	menu, err := c.run("split-window", "-d", "-P", "-F", "#{pane_id}", "-t", pane, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.run("select-pane", "-t", menu); err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range []string{"true", "printf 'a\\tb\\n'", strings.Repeat("true; ", 800) + "true"} {
+		if err := c.Send(pane, cmd); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := c.run("display-message", "-p", "#{pane_id}"); got != menu {
+			t.Errorf("after %.20q focus is on %s, want the menu %s", cmd, got, menu)
+		}
+		c.WaitIdle(pane)
 	}
 }

@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Modules
+description: Start a module, add, update and tidy dependencies, see why one is needed and install tools
+commands:
+  - name: Add a dependency
+    id: go-045531e7
+    cmd: go get <module>
+    when: [go.mod]
+    desc: "Adds a module to go.mod, or changes the version you use."
+    args:
+      - name: module
+        quote: true
+        desc: "Adding <module>."
+        placeholder: github.com/owner/module@latest
+  - name: Install a tool
+    id: go-7a836f85
+    cmd: go install <package>
+    desc: "Builds a command and puts it in $(go env GOPATH)/bin."
+    args:
+      - name: package
+        quote: true
+        desc: "Installing <package>."
+        placeholder: golang.org/x/tools/gopls@latest
+  - name: Start a module
+    id: go-0ab9f3b7
+    cmd: go mod init <module>
+    desc: "Creates a go.mod here, making this folder a Go module."
+    args:
+      - name: module
+        quote: true
+        desc: "Called <module>."
+        placeholder: github.com/you/project
+  - name: Tidy
+    id: go-5ce941ce
+    cmd: go mod tidy
+    when: [go.mod]
+    desc: "Adds missing requirements to go.mod and removes unused ones."
+  - name: Update dependencies
+    id: go-68417155
+    cmd: go get -u ./... && go mod tidy
+    when: [go.mod]
+    desc: "Updates every dependency to its newest minor or patch version."
+    risk: warn
+  - name: Why is this a dependency
+    id: go-84345ea6
+    cmd: go mod why -m <module>
+    when: [go.mod]
+    desc: "Shows which of your packages pulls a module in."
+    args:
+      - name: module
+        quote: true
+        desc: "For <module>."
+        placeholder: "github.com/owner/name"

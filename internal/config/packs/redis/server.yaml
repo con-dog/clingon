@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Server
+description: See memory use, server info, live stats, latency, clients and slow queries, and watch every command
+commands:
+  - name: Memory use
+    id: redis-ca70a942
+    cmd: redis-cli info memory
+    desc: "Shows how much memory Redis is using."
+  - name: Server info
+    id: redis-cfd12681
+    cmd: redis-cli info <part>
+    desc: "Shows the server's version, uptime, clients, persistence and stats."
+    args:
+      - name: part
+        desc: "Showing the <part> part."
+        options: [server, clients, persistence, stats, replication, keyspace, all]
+        default: server
+  - name: Live stats
+    id: redis-c06d2f67
+    cmd: redis-cli --stat
+    desc: "Prints keys, memory, clients and requests every second until you press Ctrl-C."
+  - name: Latency
+    id: redis-012fed9c
+    cmd: redis-cli --latency
+    desc: "Measures how long the server takes to answer, live, until you press Ctrl-C."
+  - name: Watch every command
+    id: redis-612c9641
+    cmd: redis-cli monitor
+    desc: "Prints every command the server runs as it happens, until you press Ctrl-C. It slows a busy server down."
+  - name: Connected clients
+    id: redis-c2f0e080
+    cmd: redis-cli client list
+    desc: "Lists every client connected to the server, with its address and last command."
+  - name: Slow queries
+    id: redis-aa28905e
+    cmd: redis-cli slowlog get <count>
+    desc: "Shows recent commands that took longer than the server's slow-log limit."
+    args:
+      - name: count
+        desc: "The last <count>."
+        default: "10"
+        pattern: "[0-9]+"

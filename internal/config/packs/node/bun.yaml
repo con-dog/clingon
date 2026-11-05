@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: bun
+description: Install, add, remove and update packages, run scripts and tests with bun
+requires: [bun]
+when: [bun.lock, bun.lockb]
+commands:
+  - name: Add a package
+    id: node-86fdc0ab
+    cmd: bun add <flags> <package>
+    desc: "Adds a package to package.json and installs it."
+    args:
+      - name: package
+        desc: "Adding <package>."
+      - name: flags
+        type: flags
+        options:
+          - { value: -d, label: dev dependency }
+  - name: Clean install (CI)
+    id: node-d5e92305
+    cmd: bun install --frozen-lockfile
+    desc: "Installs exactly what bun.lock lists, and fails if package.json has moved on from it. Best for CI."
+  - name: Install dependencies
+    id: node-03c81b32
+    cmd: bun install
+    desc: "Installs every dependency in package.json."
+  - name: Outdated packages
+    id: node-b55f069e
+    cmd: bun outdated
+    desc: "Lists dependencies with newer versions available."
+  - name: Remove a package
+    id: node-124adb11
+    cmd: bun remove <package>
+    desc: "Takes a dependency out of package.json and node_modules."
+    risk: warn
+    args:
+      - name: package
+        quote: true
+        desc: "Removing <package>."
+        placeholder: "lodash"
+  - name: Run a script
+    id: node-91ca062a
+    cmd: bun run <script>
+    desc: "Runs one of the scripts in package.json."
+    args:
+      - name: script
+        quote: true
+        placeholder: "test"
+  - name: Run tests
+    id: node-38c7d061
+    cmd: bun test
+    desc: "Runs the tests with bun's test runner."
+  - name: Update dependencies
+    id: node-e22b4bfc
+    cmd: bun update
+    desc: "Updates dependencies to the newest versions package.json allows."
+    risk: warn

@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Setup
+description: Start a project, install browsers, record a test and check the version
+commands:
+  - name: Install browsers
+    id: playwright-eb8b0c9b
+    cmd: npx playwright install <browsers>
+    desc: "Downloads the browsers Playwright uses."
+    risk: warn
+    args:
+      - name: browsers
+        type: flags
+        desc: "Only <browsers>."
+        options: [chromium, firefox, webkit]
+  - name: Record a test
+    id: playwright-70996ef6
+    cmd: npx playwright codegen <url>
+    desc: "Opens a browser and writes test code as you click around."
+    args:
+      - name: url
+        quote: true
+        desc: "Starting at <url>."
+        placeholder: http://localhost:3000
+  - name: Start a project
+    id: playwright-9ee1ad2f
+    cmd: npm init playwright@latest
+    desc: "Adds Playwright to this project: the config, an example test and the browsers."
+    requires: [npm]
+  - name: Version
+    id: playwright-0c53f4a4
+    cmd: npx playwright --version
+    when: [playwright.config.ts, playwright.config.js, playwright.config.mts, playwright.config.mjs]
+    desc: "Shows which version of Playwright this project uses."

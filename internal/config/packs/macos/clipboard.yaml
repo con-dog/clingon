@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Clipboard
+description: Show the clipboard, copy a file into it and paste it into a file
+commands:
+  - name: Copy a file's contents
+    id: macos-f3be166f
+    cmd: pbcopy < <file>
+    desc: "Puts a file's text on the clipboard."
+    args:
+      - name: file
+        quote: true
+        desc: "From <file>."
+        placeholder: "path/to/file"
+  - name: Paste into a file
+    id: macos-11b8ecba
+    cmd: pbpaste > <file>
+    desc: "Writes what's on the clipboard to a file, replacing what's in it."
+    risk: danger
+    args:
+      - name: file
+        quote: true
+        desc: "Into <file>."
+        placeholder: notes.txt
+  - name: Show the clipboard
+    id: macos-c0286b92
+    cmd: pbpaste
+    desc: "Prints what's on the clipboard."

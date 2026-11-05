@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Volumes
+description: List and inspect Docker volumes, and remove one or all unused ones
+commands:
+  - name: List volumes
+    id: docker-53f23a4d
+    cmd: docker volume ls
+    desc: "Lists Docker's volumes, where containers keep data that outlives them."
+  - name: Remove a volume
+    id: docker-58423803
+    cmd: docker volume rm <volume>
+    desc: "Deletes a volume and every file in it."
+    risk: danger
+    args:
+      - name: volume
+        quote: true
+        desc: "Deleting <volume>."
+        placeholder: "my-volume"
+  - name: Remove unused volumes
+    id: docker-a5f841fb
+    cmd: docker volume prune -af
+    desc: "Deletes every volume no container is using, and every file in them."
+    risk: danger
+  - name: Volume details
+    id: docker-f9593d15
+    cmd: docker volume inspect <volume>
+    desc: "Shows where a volume lives and how it was made."
+    args:
+      - name: volume
+        quote: true
+        desc: "For <volume>."
+        placeholder: "my-volume"

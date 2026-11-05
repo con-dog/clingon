@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Networks
+description: List and inspect Docker networks, and remove unused ones
+commands:
+  - name: Inspect a network
+    id: docker-25d1e9e0
+    cmd: docker network inspect <network>
+    desc: "Shows a network's settings and which containers are on it."
+    args:
+      - name: network
+        quote: true
+        desc: "For <network>."
+        placeholder: "my-network"
+  - name: List networks
+    id: docker-89ae7820
+    cmd: docker network ls
+    desc: "Lists Docker's networks."
+  - name: Remove unused networks
+    id: docker-ae88048d
+    cmd: docker network prune -f
+    desc: "Deletes every network no container is using."
+    risk: warn

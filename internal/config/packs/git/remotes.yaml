@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Remotes
+description: Show remotes, add one and change a remote's URL
+when: [.git]
+commands:
+  - name: Add a remote
+    id: git-16ec6e11
+    cmd: git remote add <name> <url>
+    desc: "Connects this repository to another copy of it somewhere else."
+    args:
+      - name: name
+        quote: true
+        desc: "Called <name>"
+        default: origin
+      - name: url
+        quote: true
+        desc: "at <url>."
+        placeholder: git@github.com:owner/repo.git
+  - name: Change a remote's URL
+    id: git-4b6d7ae7
+    cmd: git remote set-url <remote> <url>
+    desc: "Points a remote somewhere new, for example after a repository moves or to switch from HTTPS to SSH."
+    args:
+      - name: remote
+        quote: true
+        desc: "Moving <remote>"
+        placeholder: "origin"
+      - name: url
+        quote: true
+        desc: "to <url>."
+        placeholder: git@github.com:owner/repo.git
+  - name: Show remotes
+    id: git-3dccedf5
+    cmd: git remote -v
+    desc: "Lists the remotes this repository pushes to and pulls from."

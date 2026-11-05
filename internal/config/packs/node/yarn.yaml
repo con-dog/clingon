@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: yarn
+description: Install, add and remove packages, run scripts and tests, and see why one is installed with yarn
+requires: [yarn]
+when: [yarn.lock]
+commands:
+  - name: Add a package
+    id: node-f8659029
+    cmd: yarn add <flags> <package>
+    desc: "Adds a package to package.json and installs it."
+    args:
+      - name: package
+        desc: "Adding <package>."
+      - name: flags
+        type: flags
+        options:
+          - { value: -D, label: dev dependency }
+  - name: Install dependencies
+    id: node-501f28ff
+    cmd: yarn install
+    desc: "Installs every dependency in package.json."
+  - name: Remove a package
+    id: node-9cb13eea
+    cmd: yarn remove <package>
+    desc: "Takes a dependency out of package.json and node_modules."
+    risk: warn
+    args:
+      - name: package
+        quote: true
+        desc: "Removing <package>."
+        placeholder: "lodash"
+  - name: Run a script
+    id: node-5f299ef4
+    cmd: yarn run <script>
+    desc: "Runs one of the scripts in package.json."
+    args:
+      - name: script
+        quote: true
+        placeholder: "test"
+  - name: Run tests
+    id: node-502b2547
+    cmd: yarn test
+    desc: "Runs the project's test script."
+  - name: Why is this installed
+    id: node-5b2443be
+    cmd: yarn why <package>
+    desc: "Shows which of your dependencies pulls a package in."
+    args:
+      - name: package
+        quote: true
+        desc: "For <package>."
+        placeholder: lodash

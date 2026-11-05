@@ -39,15 +39,14 @@ func welcome(execShell bool) {
 	if execShell {
 		defer becomeShell()
 	}
-	if !execShell { // in clingon's shell pane, the menu's banner already says it
-		outln() // a gap below the command that ran it
-		outln(nameStyle.Render("clingon") + " " + greyStyle.Render(getVersion()))
-		outln()
-	}
 	rows := recommendations()
 	title := "Worth doing"
 	if len(rows) == 0 {
 		rows, title = []row{allSet()}, "clingon"
+	}
+	if !execShell { // in clingon's shell pane, the status bar already says it
+		outln() // a gap below the command that ran it
+		title += " · " + getVersion()
 	}
 	outln(card(title, rows, cardWidth()))
 	outln()
@@ -58,7 +57,7 @@ func welcome(execShell bool) {
 func recommendations() []row {
 	acts := news()
 	if _, _, err := config.Load(); err != nil {
-		acts = append(acts, row{mark: fail, label: "Fix your packs", detail: "they have mistakes", note: "Clingon › Health check › Check all packs"})
+		acts = append(acts, row{mark: fail, label: "Fix your packs", detail: "they have mistakes", note: "Clingon › Clingon › Check all packs"})
 	}
 	return acts
 }
@@ -73,7 +72,7 @@ func news() []row {
 		acts = append(acts, r)
 	}
 	if latest := latestRelease(); latest != "" {
-		acts = append(acts, row{mark: todo, glyph: "↑", label: "Update clingon", detail: getVersion() + " → " + latest, note: "Clingon › Update › Update clingon"})
+		acts = append(acts, row{mark: todo, glyph: "↑", label: "Update clingon", detail: getVersion() + " → " + latest, note: "Clingon › Clingon › Update clingon"})
 	}
 	if ups, err := config.PackUpdates(); err == nil && len(ups) > 0 {
 		var names []string
@@ -84,12 +83,12 @@ func news() []row {
 	}
 	suggest, broken := packAdvice()
 	if len(suggest) > 0 {
-		acts = append(acts, row{mark: todo, glyph: packGlyph(), label: "Add " + plural(len(suggest), "pack"), detail: "you have the tools for " + strings.Join(suggest, ", "), note: "Clingon › Packs › Add a pack"})
+		acts = append(acts, row{mark: todo, glyph: packGlyph(), label: "Add " + plural(len(suggest), "pack"), detail: "you have the tools for " + strings.Join(suggest, ", "), note: "Clingon › Packs › Add packs"})
 	}
 	if len(broken) > 0 { // nothing in the menu installs tools: no note; its rows say what's missing
 		acts = append(acts, row{mark: todo, glyph: "↓", label: "Install tools", detail: strings.Join(broken, ", "), nudge: true})
 	}
-	if files, err := config.Files(); err == nil && len(files) == 0 {
+	if len(config.LocalPacks()) == 0 {
 		acts = append(acts, row{mark: todo, glyph: "⊕", label: "Create a pack", detail: "the commands you keep looking up, in one place", note: "Clingon › Packs › Create a pack", nudge: true})
 	}
 	return acts
@@ -193,7 +192,7 @@ func becomeShell() {
 	if sh == "" {
 		sh = "/bin/sh"
 	}
-	err := shell.Exec(config.Dir(), sh) // with clingon's look; only returns if it couldn't
+	err := shell.Exec(config.StateDir(), sh) // with clingon's look; only returns if it couldn't
 	sayErr(err)
 	argv0 := "-" + filepath.Base(sh) // a leading dash makes it a login shell
 	_ = syscall.Exec(sh, []string{argv0}, os.Environ())
@@ -229,7 +228,7 @@ func readReleaseCache() releaseCache {
 	return c
 }
 
-func releaseCachePath() string { return filepath.Join(config.Dir(), "latest-release") }
+func releaseCachePath() string { return filepath.Join(config.StateDir(), "latest-release") }
 
 var semverRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)$`)
 

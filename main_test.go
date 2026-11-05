@@ -118,6 +118,9 @@ func TestReleaseCacheRoundTrip(t *testing.T) {
 	if c := readReleaseCache(); !c.Checked.IsZero() || c.Latest != "" {
 		t.Fatalf("no file: nothing known, got %+v", c)
 	}
+	if err := os.MkdirAll(config.StateDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(releaseCachePath(), []byte("1767225600 v1.2.3\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

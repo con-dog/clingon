@@ -312,13 +312,15 @@ func escape(s string) string {
 	return s
 }
 
-// Send types text into pane as if the user had, presses Enter, and moves
-// focus there. Text with several lines, tabs or other control characters,
+// Send types text into pane as if the user had and presses Enter, leaving focus
+// where it is. Text with several lines, tabs or other control characters,
 // or too long for one tmux message, is bracketed-pasted instead: the shell
 // takes it as it is, rather than running it line by line or completing at
 // each tab.
 func (c *Client) Send(pane, text string) error {
-	then := []string{";", "send-keys", "-t", pane, "Enter", ";", "select-pane", "-t", pane}
+	// Focus stays where it is: only the user moves it into the shell (tab), so a key
+	// meant for the menu can never end up typed into the shell by surprise.
+	then := []string{";", "send-keys", "-t", pane, "Enter"}
 	if len(text) > 4000 || strings.ContainsFunc(text, func(r rune) bool { return r < ' ' || r == 0x7f }) {
 		_, err := c.runInput([]byte(text), append([]string{"load-buffer", "-b", "clingon", "-", ";",
 			"paste-buffer", "-p", "-d", "-b", "clingon", "-t", pane}, then...)...)
@@ -538,19 +540,23 @@ const failMark = "38;5;204"
 // LastFailed says whether the command that just finished failed, going by the
 // colour of the prompt at the cursor. The shell says so nowhere else that
 // wouldn't mean changing what's sent to it, and so what's in its history.
-func (c *Client) LastFailed(pane string) bool {
+// known is false if there's no prompt there to read.
+func (c *Client) LastFailed(pane string) (failed, known bool) {
 	out, err := c.run("display-message", "-p", "-t", pane, "#{cursor_y}", ";", "capture-pane", "-p", "-e", "-t", pane)
 	if err != nil {
-		return false
+		return false, false
 	}
 	head, screen, _ := strings.Cut(out, "\n")
 	y, err := strconv.Atoi(head)
 	lines := strings.Split(screen, "\n")
-	if err != nil || y >= len(lines) {
-		return false
+	if err != nil || y < 0 || y >= len(lines) {
+		return false, false
 	}
 	before, _, ok := strings.Cut(lines[y], promptMark)
-	return ok && strings.Contains(before, failMark)
+	if !ok {
+		return false, false
+	}
+	return strings.Contains(before, failMark), true
 }
 
 // Clear throws away what's typed at the shell's prompt (Ctrl-C, which also

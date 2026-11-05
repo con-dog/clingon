@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Images
+description: Build, pull, list and run images, check disk usage and prune unused data
+commands:
+  - name: Run image
+    id: docker-14d24cbf
+    cmd: docker run --rm -it <flags> <image> <command>
+    desc: "Starts a throwaway container from an image and drops you into it. It's deleted when you exit."
+    args:
+      - name: image
+        quote: true
+        desc: "From <image>."
+        placeholder: "nginx:latest"
+      - name: flags
+        type: flags
+        options:
+          - { value: '-v "$PWD":/work -w /work', label: mount current dir }
+          - { value: --network host, label: host network }
+          - { value: --entrypoint sh, label: override entrypoint }
+      - name: command
+        desc: "Running <command> instead of the image's default."
+        optional: true
+        placeholder: e.g. sh
+  - name: Build image
+    id: docker-03ff7d92
+    cmd: docker build -t <tag> .
+    when: [./Dockerfile]
+    desc: "Builds an image from the Dockerfile in this folder."
+    args:
+      - name: tag
+        quote: true
+        desc: "Tagged <tag>."
+        placeholder: myapp:dev
+  - name: Prune unused data
+    id: docker-8199229e
+    cmd: docker system prune -af <volumes>
+    desc: "Deletes every stopped container, unused image, network and build cache to free disk space."
+    risk: danger
+    args:
+      - name: volumes
+        type: flags
+        options:
+          - { value: --volumes, label: anonymous volumes too }
+  - name: Disk usage
+    id: docker-73e7b349
+    cmd: docker system df
+    desc: "Shows how much disk space images, containers, volumes and build cache take up."
+  - name: Pull image
+    id: docker-5943629d
+    cmd: docker pull <image>
+    desc: "Downloads an image from its registry."
+    args:
+      - name: image
+        quote: true
+        desc: "Pulling <image>."
+        placeholder: postgres:17
+  - name: List images
+    id: docker-532c5486
+    cmd: docker images
+    desc: "Lists the images on this machine with their tags and sizes."

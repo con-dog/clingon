@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Compute & logs
+description: Connect kubectl to EKS, list EC2 instances, open an SSM shell and tail CloudWatch logs
+commands:
+  - name: Connect kubectl to EKS
+    id: aws-7de0c715
+    cmd: aws eks update-kubeconfig --name <cluster>
+    desc: "Adds an EKS cluster to your kubeconfig and makes it kubectl's current context."
+    requires: [kubectl]
+    args:
+      - name: cluster
+        quote: true
+        desc: "For <cluster>."
+        placeholder: "my-cluster"
+  - name: Running instances
+    id: aws-f12a6f70
+    cmd: aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'Reservations[].Instances[].[InstanceId,InstanceType,Tags[?Key==`Name`]|[0].Value]' --output table
+    desc: "Lists running EC2 instances with their ID, type and Name tag."
+  - name: Shell into instance (SSM)
+    id: aws-cb5c6f56
+    cmd: aws ssm start-session --target <instance>
+    desc: "Opens a shell on an EC2 instance through SSM: no SSH keys or open ports needed. Anything you run there affects that machine."
+    risk: danger
+    requires: [session-manager-plugin]
+    args:
+      - name: instance
+        quote: true
+        placeholder: "i-0123456789abcdef0"
+  - name: Tail log group
+    id: aws-3bdce9d4
+    cmd: aws logs tail <group> --follow --since <since>
+    desc: "Streams a CloudWatch log group live."
+    args:
+      - name: group
+        quote: true
+        desc: "From <group>."
+        placeholder: "/aws/lambda/my-function"
+      - name: since
+        desc: "Starting <since> ago."
+        options: [10m, 1h, 1d]
+        default: 10m

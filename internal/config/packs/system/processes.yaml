@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Processes
+description: See the top CPU and memory users, uptime and load, and stop a running program
+commands:
+  - name: Top memory users
+    id: system-d1a14a89
+    cmd: ps aux | sort -rnk 4 | head -n 15
+    desc: "Lists the 15 processes using the most memory."
+  - name: Top CPU users
+    id: system-840b527e
+    cmd: ps aux | sort -rnk 3 | head -n 15
+    desc: "Lists the 15 processes using the most CPU."
+  - name: Stop a running program
+    id: system-0a1dcd7b
+    cmd: pkill -x <name> || echo "No running program called "<name>"."
+    desc: "Stops every running copy of a program."
+    risk: warn
+    args:
+      - name: name
+        quote: true
+        desc: "Stopping <name>."
+        placeholder: "program name"
+  - name: Uptime and load
+    id: system-9017815a
+    cmd: uptime
+    desc: "Shows how long this machine has been up and how busy it is."

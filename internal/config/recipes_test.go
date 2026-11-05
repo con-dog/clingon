@@ -16,8 +16,7 @@ func TestPackCommandsHaveTheirOwnIDs(t *testing.T) {
 	}
 	seen := map[string]string{}
 	for _, p := range pks {
-		data, _ := packFS.ReadFile("packs/" + p.Name + ".yaml")
-		c, err := parse(p.Name, data)
+		c, err := loadPack(p.Name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,6 +113,6 @@ func TestSavedRecipes(t *testing.T) {
 
 func readDocText(t *testing.T) (string, error) {
 	t.Helper()
-	b, err := os.ReadFile(PackPath("mine"))
+	b, err := os.ReadFile(PackPath("mine/deploy"))
 	return string(b), err
 }

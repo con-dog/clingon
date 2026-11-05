@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
+name: Claude Code
+description: Start, continue and resume Claude Code, or ask it one-off questions
+requires: [claude]
+logo: claude
+color: "#d7875f"
+category: AI

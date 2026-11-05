@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
+name: System
+description: Processes, shell environment, disk space and handy generators
+requires: [ps, pkill, df, du, base64]
+default: true
+logo: cpu
+category: System

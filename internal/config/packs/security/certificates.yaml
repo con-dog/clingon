@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Certificates
+description: Read a site's or a file's certificate, check when it expires and make a self-signed one
+commands:
+  - name: A site's certificate
+    id: security-d8097d20
+    cmd: openssl s_client -connect <host>:<port> -servername <host> </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -text | grep -E '^(subject|issuer|notBefore|notAfter)|DNS:'
+    desc: "Shows who a site's TLS certificate is for, who issued it, and when it's valid."
+    args:
+      - name: host
+        quote: true
+        desc: "For <host>"
+        placeholder: example.com
+      - name: port
+        desc: "on port <port>."
+        default: "443"
+        pattern: "[0-9]+"
+  - name: Read a certificate file
+    id: security-f87af6eb
+    cmd: openssl x509 -in <file> -noout -text
+    desc: "Prints everything in a certificate file."
+    args:
+      - name: file
+        quote: true
+        desc: "From <file>."
+        placeholder: "path/to/file"
+  - name: Self-signed certificate
+    id: security-124ee94a
+    cmd: openssl req -x509 -newkey rsa:2048 -nodes -keyout <name>.key -out <name>.crt -days <days> -subj '/CN='<host> -addext 'subjectAltName=DNS:'<host>
+    desc: "Makes a certificate and key for local HTTPS. Files with the same names are replaced."
+    risk: warn
+    args:
+      - name: host
+        quote: true
+        desc: "For <host>,"
+        default: localhost
+      - name: name
+        quote: true
+        desc: "saved as <name>.crt and <name>.key,"
+        default: localhost
+      - name: days
+        desc: "valid for <days> days."
+        default: "365"
+        pattern: "[0-9]+"
+  - name: When does it expire
+    id: security-de2fe708
+    cmd: openssl s_client -connect <host>:443 -servername <host> </dev/null 2>/dev/null | openssl x509 -noout -enddate
+    desc: "Shows the date a site's TLS certificate runs out."
+    args:
+      - name: host
+        quote: true
+        desc: "For <host>."
+        placeholder: example.com

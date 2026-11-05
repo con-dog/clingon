@@ -34,7 +34,7 @@ Shift+Tab
 Type "/delete files matching" Sleep 500ms Enter
 Type "*.log" Enter Enter
 Sleep 1.5s
-Type "n"
+Enter
 Sleep 1s
 
 Escape

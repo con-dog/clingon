@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
 #
-# Your own clingon pack. Change the example below into your commands, then
-# Ctrl-S to save and Ctrl-Q to quit; clingon tells you if anything's wrong.
+# A submenu of your clingon pack: one file for each. Change the example below
+# into your commands, then Ctrl-S to save and Ctrl-Q to quit; clingon tells you
+# if anything's wrong.
 #
 # Each <blank> in a cmd is asked for when you run it. Give it an entry
 # under args to say how:
@@ -18,20 +19,14 @@
 # danger marks it ☠ in red, and you type a random code before the
 # No/Yes: use it for anything that destroys data for good. when: [.git]
 # greys a command out unless .git is in the shell's folder or one above.
-# Add more groups or sections: see the built-in packs in ../remote.
+# See the built-in packs in ../../remote for more.
 
-description: My own commands         # shown by `clingon pack list`
-
-sections:
-  - name: My commands                # the section shown in the menu
-    icon: ✶                          # one glyph shown before its name (or `logo: rust`: a brand logo)
-    category: Other                  # AI, Code, Databases, Infrastructure, System or Other
-    groups:
-      - name: Examples                 # a heading in the section; add as many as you like
-        commands:
-          - name: Say hello              # what the menu shows
-            cmd: echo "Hello, <who>."    # what runs
-            desc: Prints a greeting.     # shown in the Description area
-            args:
-              - name: who
-                default: world
+name: Examples                   # a heading in the menu
+description: Friendly examples   # what's in this submenu
+commands:
+  - name: Say hello              # what the menu shows
+    cmd: echo "Hello, <who>."    # what runs
+    desc: Prints a greeting.     # shown in the Description area
+    args:
+      - name: who
+        default: world

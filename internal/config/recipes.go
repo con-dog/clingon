@@ -105,7 +105,7 @@ func SaveRecipe(name string, steps []string) error {
 		return errors.New("a recipe needs a name")
 	}
 	if len(steps) == 0 || len(steps) > MaxRecipeSteps {
-		return fmt.Errorf("a recipe has 1 to %d steps (not %d)", MaxRecipeSteps, len(steps))
+		return fmt.Errorf("a recipe has 1 to %d commands (not %d)", MaxRecipeSteps, len(steps))
 	}
 	rs, err := Recipes()
 	if err != nil {

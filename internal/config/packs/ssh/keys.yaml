@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Keys
+description: Make a new SSH key, add it to the agent, show or copy your public key and copy it to a host
+commands:
+  - name: Copy my key to host
+    id: ssh-ae6ec41a
+    cmd: ssh-copy-id <host>
+    desc: "Installs your public key on a host so you can log in without a password."
+    risk: warn
+    args:
+      - name: host
+        quote: true
+        desc: "On <host>."
+        placeholder: "my-server"
+  - name: New SSH key
+    id: ssh-ad08c095
+    cmd: ssh-keygen -t ed25519 -C <comment>
+    desc: "Creates a new ed25519 SSH key pair in ~/.ssh."
+    args:
+      - name: comment
+        quote: true
+        desc: "Labelled \"<comment>\"."
+        placeholder: you@laptop
+  - name: Add key to agent
+    id: ssh-c1f0ba33
+    cmd: ssh-add --apple-use-keychain <key>
+    desc: "Unlocks a key once and saves its passphrase in your keychain, so you aren't asked again."
+    requires: [ipconfig]   # macOS
+    args:
+      - name: key
+        quote: true
+        desc: "Adding <key>."
+        placeholder: "~/.ssh/id_ed25519"
+  - name: Copy my public key
+    id: ssh-2966f66e
+    cmd: pbcopy < <key>
+    desc: "Copies a public key to the clipboard, ready to paste into GitHub or a server's settings."
+    requires: [pbcopy]
+    args:
+      - name: key
+        quote: true
+        desc: "Copying <key>."
+        placeholder: "~/.ssh/id_ed25519"
+  - name: Show my public key
+    id: ssh-dbb5dcd7
+    cmd: cat <key>
+    desc: "Prints a public key, the half you give to GitHub and servers."
+    args:
+      - name: key
+        quote: true
+        desc: "Showing <key>."
+        placeholder: "~/.ssh/id_ed25519"

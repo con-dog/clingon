@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json",
+  "title": "clingon pack: _pack.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Shown in the top menu. Called after the folder if omitted. Packs with the same name are merged."
+    },
+    "description": {
+      "type": "string",
+      "description": "One line shown by `clingon pack`."
+    },
+    "default": {
+      "type": "boolean",
+      "description": "Installed for new users."
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Commands `clingon doctor` checks are on PATH."
+    },
+    "icon": {
+      "type": "string",
+      "description": "One glyph shown before the name: a symbol like ★ ◆ ⚙, or an emoji."
+    },
+    "logo": {
+      "enum": [
+        "amazon",
+        "ansible",
+        "apple",
+        "argo",
+        "box",
+        "claude",
+        "clingon",
+        "cloud",
+        "cloudflare",
+        "cplusplus",
+        "cpu",
+        "database",
+        "deno",
+        "docker",
+        "folder",
+        "gemini",
+        "git",
+        "github",
+        "globe",
+        "go",
+        "googlecloud",
+        "hash",
+        "helm",
+        "java",
+        "kubernetes",
+        "mongodb",
+        "nginx",
+        "node",
+        "ollama",
+        "openai",
+        "php",
+        "play",
+        "postgres",
+        "pulumi",
+        "python",
+        "redis",
+        "ruby",
+        "rust",
+        "server",
+        "shield",
+        "sqlite",
+        "terminal",
+        "terraform",
+        "vault",
+        "vercel",
+        "window"
+      ],
+      "description": "A brand logo shown before the name instead of the icon, from clingon's font."
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "description": "The icon's or logo's colour, like #ff5f5f. One of the 256 standard terminal colours looks the same in every terminal (others are rounded to the nearest). Grey if omitted."
+    },
+    "category": {
+      "enum": [
+        "AI",
+        "Code",
+        "Command Line",
+        "Databases",
+        "Infrastructure",
+        "System",
+        "Other"
+      ],
+      "description": "Fixed heading the section is listed under on the main menu. Omitted means Other."
+    }
+  }
+}

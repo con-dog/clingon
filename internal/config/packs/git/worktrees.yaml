@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Worktrees
+description: List, create and remove worktrees
+when: [.git]
+commands:
+  - name: List worktrees
+    id: git-ebd128b3
+    cmd: git worktree list
+    desc: "Lists the folders this repository is checked out in."
+  - name: New worktree
+    id: git-b9cf4257
+    cmd: git worktree add <path> <branch>
+    desc: "Checks a branch out in a second folder, so you can work on two branches at once."
+    args:
+      - name: branch
+        quote: true
+        desc: "<branch>"
+        placeholder: "main"
+      - name: path
+        quote: true
+        desc: "in <path>."
+        placeholder: ../repo-feature
+  - name: Remove a worktree
+    id: git-e528f15c
+    cmd: git worktree remove <worktree>
+    desc: "Deletes a worktree's folder. Git refuses if it has changes you haven't committed."
+    risk: warn
+    args:
+      - name: worktree
+        quote: true
+        desc: "Removing <worktree>."
+        placeholder: "../my-feature"

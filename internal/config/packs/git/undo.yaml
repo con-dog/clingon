@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Undo
+description: Unstage files, undo or amend the last commit, discard changes, delete untracked files and hard reset
+when: [.git]
+commands:
+  - name: Unstage file
+    id: git-4fd05065
+    cmd: git restore --staged <file>
+    desc: "Takes a file out of the next commit but keeps your changes to it."
+    args:
+      - name: file
+        quote: true
+        desc: "Unstaging <file>."
+        placeholder: "path/to/file"
+  - name: Undo last commit, keep changes
+    id: git-ffa6ccc2
+    cmd: git reset --soft HEAD~1
+    desc: "Undoes the last commit but keeps its changes, staged and ready to commit again."
+    risk: warn
+  - name: Discard changes to file
+    id: git-0a254a24
+    cmd: git restore <file>
+    desc: "Throws away your uncommitted changes to a file."
+    risk: danger
+    args:
+      - name: file
+        quote: true
+        desc: "Putting <file> back as it was at the last commit."
+        placeholder: "path/to/file"
+  - name: Hard reset to origin
+    id: git-a7c90b9a
+    cmd: git fetch origin && git reset --hard origin/<branch>
+    desc: "Makes your branch exactly match the remote, throwing away local commits and changes."
+    risk: danger
+    args:
+      - name: branch
+        quote: true
+        desc: "Matching origin/<branch>."
+        placeholder: "main"
+  - name: Add to last commit
+    id: git-5e0cdcc5
+    cmd: git commit --amend --no-edit
+    desc: "Folds your staged changes into the last commit, keeping its message. Don't use it on commits you've pushed and shared."
+    risk: warn
+  - name: Change last commit message
+    id: git-4429d19e
+    cmd: git commit --amend -m <message>
+    desc: "Rewrites the last commit's message. Don't use it on commits you've pushed and shared."
+    risk: warn
+    args:
+      - name: message
+        quote: true
+        desc: "To \"<message>\"."
+  - name: Delete untracked files
+    id: git-501ae038
+    cmd: git clean -di
+    desc: "Deletes files git isn't tracking, after showing you the list and asking what to remove."
+    risk: danger

@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Repos
+description: Clone your repos, open one in the browser and publish this folder
+commands:
+  - name: Clone one of my repos
+    id: github-15bba7c2
+    cmd: gh repo clone <repo>
+    desc: "Downloads one of your repositories into a new folder here."
+    args:
+      - name: repo
+        quote: true
+        placeholder: "owner/name"
+  - name: Open repo in browser
+    id: github-a525cce8
+    cmd: gh browse
+    when: [.git]
+    desc: "Opens this repository on GitHub in your browser."
+  - name: Publish this folder
+    id: github-20a9a672
+    cmd: gh repo create --source . --remote origin --push <visibility>
+    when: [.git]
+    desc: "Creates a GitHub repository named after this folder and pushes your commits to it. Commit something first."
+    risk: warn
+    args:
+      - name: visibility
+        desc: "Making it <visibility>."
+        options:
+          - { value: --private, label: private }
+          - { value: --public, label: public }
+        default: --private

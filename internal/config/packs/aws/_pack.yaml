@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
+name: AWS
+description: AWS setup, profiles and SSO, S3, EC2/SSM sessions, ECS, EKS and CloudWatch logs
+requires: [aws]
+logo: amazon
+color: "#ff8700"
+category: Infrastructure

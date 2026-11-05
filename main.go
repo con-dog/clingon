@@ -52,6 +52,9 @@ func main() {
 		cmd = os.Args[1]
 	}
 	var err error
+	if len(os.Args) > 1 {
+		saidTitle = commandTitle(os.Args[1:])
+	}
 	if cmd == "" || cmd == "menu" || cmd == "print" || cmd == "welcome" {
 		// Reading the built-in packs takes a few ms: do it while the
 		// installed ones load.
@@ -105,13 +108,14 @@ func main() {
 	case "completion":
 		err = completion(os.Args[2:])
 	case "version", "--version", "-v":
-		outln(nameStyle.Render("clingon") + " " + greyStyle.Render(getVersion()))
+		sayBoxed("clingon", getVersion())
 	case "help", "--help", "-h":
-		outf("%s", styleUsage(fmt.Sprintf(usage, config.Dir())))
+		sayBoxed("clingon", styleUsage(fmt.Sprintf(usage, config.Dir())))
 	default:
-		errf("%s", styleUsage(fmt.Sprintf(usage, config.Dir())))
+		errUsage(styleUsage(fmt.Sprintf(usage, config.Dir())))
 		os.Exit(2)
 	}
+	flushSaid()
 	if err == errQuiet {
 		os.Exit(1)
 	}
@@ -201,7 +205,8 @@ func launch() error {
 	if !isSelf("clingon") {
 		env = append(env, "PATH="+filepath.Dir(self)+string(os.PathListSeparator)+os.Getenv("PATH"), "CLINGON_BIN="+filepath.Dir(self))
 	}
-	err = tmux.Launch(self, env, filepath.Join(config.Dir(), "run"), ready)
+	flushSaid() // tmux takes over the terminal
+	err = tmux.Launch(self, env, filepath.Join(config.StateDir(), "run"), ready)
 	if err != nil {
 		// Only now, so starting up never waits on it: an old tmux explains
 		// most failures to build the session.
@@ -241,7 +246,7 @@ func menu(args []string) error {
 		// After a command from the menu finishes, focus comes back here,
 		// unless the user has moved elsewhere themselves.
 		WaitIdle:   func() bool { return c.WaitIdle(*pane) },
-		LastFailed: func() bool { return c.LastFailed(*pane) },
+		LastFailed: func() (bool, bool) { return c.LastFailed(*pane) },
 		Recipes: func() []config.Recipe {
 			rs, _ := config.Recipes() // a broken file: `clingon recipe list` says what's wrong with it
 			return rs
@@ -315,7 +320,7 @@ func openWindow() error {
 // Ones still there after ten minutes weren't run (a printed command never
 // eval'd, say): they're deleted.
 func secretDir() string {
-	dir := filepath.Join(config.Dir(), "run")
+	dir := filepath.Join(config.StateDir(), "run")
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
 		if fi, err := e.Info(); err == nil && strings.HasPrefix(e.Name(), "secret-") && time.Since(fi.ModTime()) > 10*time.Minute {
@@ -370,15 +375,28 @@ func editPack(ref string) error {
 		path = config.RemotePath(name)
 		say(warn, "`clingon pack update` overwrites installed packs")
 	case !config.IsLocal(name):
+		if strings.Contains(name, "/") {
+			return fmt.Errorf("you don't have local/%s: `clingon command add` starts a section", name)
+		}
 		if err := config.NewPack(name); err != nil {
 			return err
 		}
 	}
-	dir, err := micro.ConfigDir(config.Dir())
+	dir, err := micro.ConfigDir(config.StateDir())
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("micro", "-config-dir", dir, path, "+/^sections:")
+	// A whole pack opens with a tab for each submenu, at its commands.
+	args := []string{"-config-dir", dir}
+	targets := []string{path}
+	if !strings.HasSuffix(path, ".yaml") {
+		targets = config.ModuleFiles(path)
+	}
+	for _, f := range targets {
+		args = append(args, f, "+/^commands:")
+	}
+	flushSaid() // micro takes over the terminal
+	cmd := exec.Command("micro", args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return err
@@ -413,6 +431,9 @@ func check() error {
 		return err
 	}
 	rows := []row{{mark: ok, label: "packs", detail: fmt.Sprintf("%d sections, %d commands from %d installed packs and %d of your own", len(cfg.Sections), n, len(pkgs), len(files))}}
+	for _, f := range config.LoosePackFiles() {
+		rows = append(rows, row{mark: warn, label: "not read", detail: f + ": a pack is a folder, so this belongs in one"})
+	}
 	for _, w := range cfg.UnknownLogos() {
 		rows = append(rows, row{mark: warn, label: "logo", detail: w + ": it shows its icon instead"})
 	}

@@ -24,13 +24,18 @@ func TestPacksAndStarterAreValid(t *testing.T) {
 		if errs := cfg.Validate(); len(errs) > 0 {
 			t.Errorf("%s: %v", p.Name, errs)
 		}
-		if p.Description == "" || p.Commands == 0 || p.Version == "" {
-			t.Errorf("%s: needs a description, a version and commands", p.Name)
+		if p.Description == "" || p.Commands == 0 {
+			t.Errorf("%s: needs a description and commands", p.Name)
+		}
+		for _, m := range p.Modules {
+			if m.Description == "" {
+				t.Errorf("%s/%s: needs a description, shown when you pick it in Add packs", p.Name, m.Slug)
+			}
 		}
 		if len(p.Requires) == 0 {
 			for _, s := range cfg.Sections {
-				for _, g := range s.Groups {
-					if len(g.Requires) == 0 {
+				for _, c := range s.All() { // a group's come down to its commands
+					if len(c.Requires) == 0 {
 						t.Errorf("%s: needs requires, on the pack or on every group", p.Name)
 					}
 				}
@@ -47,11 +52,15 @@ func TestPacksAndStarterAreValid(t *testing.T) {
 			}
 		}
 	}
-	cfg, err := parse("starter", Starter)
+	info, err := parsePackFile(PackInfoFile, StarterInfo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if errs := cfg.Validate(); len(errs) > 0 {
+	module, err := parsePackFile("examples.yaml", Starter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := assemble("starter", []parsedFile{info, module}).Validate(); len(errs) > 0 {
 		t.Fatal(errs)
 	}
 }
@@ -134,34 +143,56 @@ sections:
 }
 
 func TestUnknownFieldIsAnError(t *testing.T) {
-	if _, err := parse("t", []byte("sections:\n  - name: S\n    comands: []\n")); err == nil {
+	if _, err := parsePackFile("s.yaml", []byte("name: S\ncomands: []\n")); err == nil {
 		t.Fatal("typo'd field should fail")
+	}
+	if _, err := parsePackFile(PackInfoFile, []byte("name: S\nversion: 1.0.0\n")); err == nil {
+		t.Fatal("a typo'd field in _pack.yaml should fail too")
 	}
 }
 
 func TestLoadMergesFiles(t *testing.T) {
 	dir := userDir(t)
-	write := func(name, body string) {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+	write := func(pack, name, body string) {
+		if err := os.MkdirAll(filepath.Join(dir, pack), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, pack, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	write("a.yaml", "sections:\n  - name: Git\n    groups:\n      - name: G\n        commands:\n          - {name: one, cmd: git status}\n")
-	write("b.yml", "sections:\n  - name: Git\n    groups:\n      - name: G\n        commands:\n          - {name: two, cmd: git log}\n  - name: Other\n    commands:\n      - {name: three, cmd: ls}\n")
+	// Two packs called the same thing in the menu, and one that's not.
+	write("a", "_pack.yaml", "name: Git\n")
+	write("a", "g.yaml", "name: G\ncommands:\n  - {name: one, cmd: git status}\n")
+	write("b", "_pack.yaml", "name: Git\n")
+	write("b", "g.yml", "name: G\ncommands:\n  - {name: two, cmd: git log}\n")
+	write("other", "h.yaml", "commands:\n  - {name: three, cmd: ls}\n")
 	cfg, files, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2 || len(cfg.Sections) != 2 || len(cfg.Sections[0].Groups[0].Commands) != 2 {
+	if len(files) != 3 || len(cfg.Sections) != 2 || len(cfg.Sections[0].Groups[0].Commands) != 2 {
 		t.Fatalf("bad merge: files=%v sections=%+v", files, cfg.Sections)
+	}
+	if o := cfg.Sections[1]; o.Name != "Other" || o.Groups[0].Name != "H" {
+		t.Fatalf("with no _pack.yaml or name, the folder and file name them: %+v", o)
 	}
 }
 
 func TestLoadSortsAlphabetically(t *testing.T) {
 	dir := userDir(t)
-	src := "sections:\n  - name: zed\n    groups:\n      - {name: Later, commands: [{name: b, cmd: ls}, {name: A, cmd: ls}]}\n      - {name: early, commands: [{name: x, cmd: ls}]}\n  - name: Alpha\n    commands: [{name: c, cmd: ls}]\n"
-	if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(src), 0o644); err != nil {
-		t.Fatal(err)
+	for f, src := range map[string]string{
+		"zed/later.yaml": "name: Later\ncommands: [{name: b, cmd: ls}, {name: A, cmd: ls}]\n",
+		"zed/early.yaml": "name: early\ncommands: [{name: x, cmd: ls}]\n",
+		"alpha/one.yaml": "commands: [{name: c, cmd: ls}]\n",
+		"zed/_pack.yaml": "name: zed\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	cfg, _, err := Load()
 	if err != nil {
@@ -175,9 +206,17 @@ func TestLoadSortsAlphabetically(t *testing.T) {
 
 func TestGroupsNeedTheirTools(t *testing.T) {
 	dir := userDir(t)
-	src := "sections:\n  - name: A\n    groups:\n      - {name: here, requires: [sh], commands: [{name: a, cmd: ls}]}\n      - {name: gone, requires: [no-such-tool-xyz], commands: [{name: b, cmd: ls}]}\n  - name: B\n    groups:\n      - {name: gone, requires: [no-such-tool-xyz], commands: [{name: c, cmd: ls}]}\n"
-	if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(src), 0o644); err != nil {
-		t.Fatal(err)
+	for f, src := range map[string]string{
+		"a/here.yaml": "name: here\nrequires: [sh]\ncommands: [{name: a, cmd: ls}]\n",
+		"a/gone.yaml": "name: gone\nrequires: [no-such-tool-xyz]\ncommands: [{name: b, cmd: ls}]\n",
+		"b/gone.yaml": "name: gone\nrequires: [no-such-tool-xyz]\ncommands: [{name: c, cmd: ls}]\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	cfg, _, err := Load()
 	if err != nil {

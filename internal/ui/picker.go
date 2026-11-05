@@ -29,11 +29,12 @@ type item struct {
 	disabled bool   // drawn greyed out; can be highlighted but not opened
 	missing  string // a section's tools that aren't installed: drawn dim, naming them, but it opens as usual
 	indent   bool   // sits under the row above it
+	stepAt   int    // the one recipe position this row is, in the recipe's own list
 	ref      any
 	idx      int
 }
 
-// picker is a type-to-filter list, single or multi select. With search set,
+// picker is a list with a filter / opens, single or multi select. With search set,
 // a non-empty filter matches against search instead of items (the root menu
 // lists sections but searches every command).
 type picker struct {
@@ -45,13 +46,13 @@ type picker struct {
 	iconW   int     // widest icon among items, so names line up
 	risky   [2]bool // some row has a risk mark, in items [0] and search [1]: every row keeps a slot for one, so names line up
 	cursor  int
-	blurred bool           // focus is elsewhere: the cursor's row in grey, not pink
-	step    func(item) int // a command's place in the recipe (0 for none), if this list shows them
+	blurred bool             // focus is elsewhere: the cursor's row in grey, not pink
+	step    func(item) []int // a command's places in the recipe, ascending, if this list shows them
 	offset  int
 	height  int
 	filter  textinput.Model
-	// filtering is the menu's list only: / has opened its filter, so keys
-	// type into it. Pickers for an arg always filter.
+	// filtering: / has opened its filter, so keys type into it. / again closes it
+	// with what's been typed still applied (filtered), to use the list as it is.
 	filtering bool
 }
 
@@ -64,8 +65,7 @@ func newPicker(items, search []item, multi bool) picker {
 	if iconW > 0 {
 		iconW = 2 // logos are drawn two cells wide: every icon gets that slot
 	}
-	f := newInput(accentStyle, "type to filter")
-	f.Focus()
+	f := newInput(accentStyle, "type to filter") // focused when / opens it
 	hasRisk := func(it item) bool { return it.risk != "" }
 	risky := [2]bool{slices.ContainsFunc(items, hasRisk), slices.ContainsFunc(search, hasRisk)}
 	p := picker{items: items, search: search, multi: multi, chosen: map[int]bool{}, filter: f, height: 10, iconW: iconW, risky: risky}
@@ -83,8 +83,21 @@ func (p *picker) searching() int {
 
 func (p *picker) query() string { return strings.TrimSpace(p.filter.Value()) }
 
+// filtered says whether a filter is open or still being applied: esc has it to clear.
+func (p *picker) filtered() bool { return p.filtering || p.filter.Value() != "" }
+
+// stopFiltering closes the filter and leaves what's been typed applied.
+func (p *picker) stopFiltering() {
+	p.filtering = false
+	p.filter.Blur() // its cursor's gone: nothing to keep blinking
+	if p.query() == "" {
+		p.filter.SetValue("")
+	}
+}
+
 func (p *picker) clearFilter() {
 	p.filtering = false
+	p.filter.Blur()
 	p.filter.SetValue("")
 	p.refilter()
 }
@@ -248,12 +261,76 @@ func (p *picker) selected() *item {
 	return &p.view[p.cursor]
 }
 
+// tick sets an option's tick. A parent takes its indented children with it, and
+// a parent is ticked exactly when all of its children are.
+func (p *picker) tick(idx int, on bool) {
+	p.chosen[idx] = on
+	if !p.items[idx].indent {
+		for _, c := range p.childrenOf(idx) {
+			p.chosen[c] = on
+		}
+		return
+	}
+	parent := idx
+	for parent > 0 && p.items[parent].indent {
+		parent--
+	}
+	if !p.items[parent].indent {
+		p.chosen[parent] = p.allChosen(p.childrenOf(parent))
+	}
+}
+
+// childrenOf lists the indented options under an option.
+func (p *picker) childrenOf(idx int) []int {
+	var out []int
+	for i := idx + 1; i < len(p.items) && p.items[i].indent; i++ {
+		out = append(out, i)
+	}
+	return out
+}
+
+func (p *picker) allChosen(idxs []int) bool {
+	for _, i := range idxs {
+		if !p.chosen[i] {
+			return false
+		}
+	}
+	return len(idxs) > 0
+}
+
+// partly says whether some of an option's children are ticked, but not all.
+func (p *picker) partly(idx int) bool {
+	if p.items[idx].indent || p.chosen[idx] {
+		return false
+	}
+	for _, c := range p.childrenOf(idx) {
+		if p.chosen[c] {
+			return true
+		}
+	}
+	return false
+}
+
+// picked lists the ticked options that count: a ticked parent stands for its
+// children, so asking for the whole of something says so once.
+func (p *picker) picked() []item {
+	var out []item
+	covered := false
+	for _, it := range p.items {
+		if !it.indent {
+			covered = p.chosen[it.idx]
+		}
+		if p.chosen[it.idx] && !(it.indent && covered) {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
 func (p *picker) values() []string {
 	var out []string
-	for _, it := range p.items {
-		if p.chosen[it.idx] {
-			out = append(out, it.value)
-		}
+	for _, it := range p.picked() {
+		out = append(out, it.value)
 	}
 	return out
 }
@@ -283,10 +360,13 @@ func (p *picker) update(msg tea.KeyPressMsg) tea.Cmd {
 	case "space":
 		if p.multi {
 			if it := p.selected(); it != nil {
-				p.chosen[it.idx] = !p.chosen[it.idx]
+				p.tick(it.idx, !p.chosen[it.idx])
 			}
 			return nil
 		}
+	}
+	if !p.filtering {
+		return nil // only / opens the filter, in every list
 	}
 	before := p.filter.Value()
 	cmd := typeInto(&p.filter, msg)
@@ -354,6 +434,36 @@ const stepW = 3
 // stepBadge is a recipe number, marked the same wherever it shows.
 func stepBadge(n int) string { return stepStyle.Render(" " + strconv.Itoa(n) + " ") }
 
+// minNameW is the room a row keeps for its name, however many badges it has.
+const minNameW = 12
+
+// stepBadges draws a row's numbers in the order given, and how wide they are:
+// at least one badge's width, so empty rows share the column. What won't fit in
+// room is left off, with an ellipsis in its place.
+func stepBadges(steps []int, room int) (string, int) {
+	if len(steps) == 0 {
+		return "", stepW
+	}
+	const ellipsis = 2 // a space and …
+	width := func(n int) int { return n*(stepW+1) - 1 }
+	shown := len(steps)
+	if width(shown) > room {
+		for shown > 1 && width(shown)+ellipsis > room {
+			shown--
+		}
+	}
+	parts := make([]string, shown)
+	for i, n := range steps[:shown] {
+		parts[i] = stepBadge(n)
+	}
+	line, w := strings.Join(parts, " "), width(shown)
+	if shown < len(steps) {
+		line += faintStyle.Render(" …")
+		w += ellipsis
+	}
+	return line, w
+}
+
 // StepBadge is a step's number as the menu shows it, for clingon's other screens.
 func StepBadge(n int) string { return stepBadge(n) }
 
@@ -378,14 +488,16 @@ func (p *picker) row(it item, active bool, width int) string {
 		return st.Render(ansi.Truncate(strings.ToUpper(it.title), width, "…"))
 	}
 	// Commands keep the last cells for their number's badge, set or not, so
-	// badges share a column and a name doesn't change where it's cut.
+	// badges share a column and a name doesn't change where it's cut. More
+	// badges, for a command that's more than one step, grow to the left.
 	full := width
 	_, isCmd := it.ref.(cmdRef)
 	numbered := isCmd && p.step != nil
-	step := 0
+	var badges string
+	badgesW := stepW
 	if numbered {
-		width -= stepW + 2 // a cell either side, off the name and the frame
-		step = p.step(it)
+		badges, badgesW = stepBadges(p.step(it), width-minNameW)
+		width -= badgesW + 2 // a cell either side, off the name and the frame
 	}
 	cur := cursorStyle
 	if p.blurred {
@@ -401,6 +513,8 @@ func (p *picker) row(it item, active bool, width int) string {
 	if p.multi {
 		if p.chosen[it.idx] {
 			prefix += accentStyle.Render("✓ ")
+		} else if p.partly(it.idx) {
+			prefix += accentStyle.Render("− ")
 		} else {
 			prefix += faintStyle.Render("• ")
 		}
@@ -429,7 +543,7 @@ func (p *picker) row(it item, active bool, width int) string {
 		title = dangerStyle.Render(title)
 	case active, it.accent:
 		title = cur.Render(title)
-	case step > 0: // ties the name to its badge, across the gap
+	case badges != "": // ties the name to its badges, across the gap
 		title = valueStyle.Render(title)
 	case it.missing != "":
 		title = dimStyle.Render(title)
@@ -441,8 +555,8 @@ func (p *picker) row(it item, active bool, width int) string {
 		title += dimStyle.Render(" · " + ansi.Truncate(it.where, room, "…"))
 	}
 	line := prefix + title
-	if step > 0 {
-		line += strings.Repeat(" ", max(0, full-stepW-1-ansi.StringWidth(line))) + stepBadge(step) + " "
+	if badges != "" {
+		line += strings.Repeat(" ", max(0, full-badgesW-1-ansi.StringWidth(line))) + badges + " "
 	}
 	if active { // the cursor's row is a bar across the list
 		return onBg(line, raised, full)
@@ -492,7 +606,7 @@ func inputView(in *textinput.Model, w int) string {
 }
 
 // newInput is a text input in clingon's look: a ❯ prompt and cursor in st,
-// a faint placeholder, and a steady (not blinking) cursor.
+// a faint placeholder, and a blinking cursor.
 func newInput(st lipgloss.Style, placeholder string) textinput.Model {
 	in := textinput.New()
 	in.Prompt = "❯ "
@@ -500,7 +614,7 @@ func newInput(st lipgloss.Style, placeholder string) textinput.Model {
 	s.Focused.Prompt, s.Blurred.Prompt = st, st
 	s.Focused.Placeholder, s.Blurred.Placeholder = faintStyle, faintStyle
 	s.Cursor.Color = st.GetForeground()
-	s.Cursor.Blink = false
+	s.Cursor.Blink = true
 	in.SetStyles(s)
 	in.Placeholder = placeholder
 	return in

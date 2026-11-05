@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: History
+description: Show commits and file history, see who changed each line, cherry-pick and recover lost commits
+when: [.git]
+commands:
+  - name: Find a lost commit
+    id: git-74355931
+    cmd: git reflog -n 50 --date=relative
+    desc: "Lists where HEAD has been lately, so you can find commits lost to a reset, rebase or deleted branch."
+  - name: Get a lost commit back
+    id: git-849da657
+    cmd: git branch <name> <commit>
+    desc: "Makes a new branch at a commit from the reflog, so a lost commit is safe again."
+    args:
+      - name: commit
+        quote: true
+        desc: "At <commit>"
+        placeholder: "a1b2c3d or HEAD~1"
+      - name: name
+        quote: true
+        desc: "called <name>."
+        placeholder: rescued
+  - name: Cherry-pick a commit
+    id: git-1bdbb943
+    cmd: git cherry-pick <commit>
+    desc: "Copies one commit from anywhere onto this branch."
+    risk: warn
+    args:
+      - name: commit
+        quote: true
+        placeholder: "a1b2c3d or HEAD~1"
+  - name: Show a commit
+    id: git-1ce837b7
+    cmd: git show <commit>
+    desc: "Shows a commit's message and every change it made."
+    args:
+      - name: commit
+        quote: true
+        placeholder: "a1b2c3d or HEAD~1"
+  - name: File history
+    id: git-71be6c85
+    cmd: git log --follow -p -- <file>
+    desc: "Shows every commit that changed a file, with its changes, following renames."
+    args:
+      - name: file
+        quote: true
+        desc: "For <file>."
+        placeholder: "path/to/file"
+  - name: Who changed each line
+    id: git-5dec9acf
+    cmd: git blame <file>
+    desc: "Shows, for every line of a file, the commit and author that last changed it."
+    args:
+      - name: file
+        quote: true
+        desc: "In <file>."
+        placeholder: "path/to/file"

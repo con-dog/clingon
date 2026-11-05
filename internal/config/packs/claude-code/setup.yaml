@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Setup
+description: Check your Claude Code install, see its MCP servers and update it
+commands:
+  - name: Check installation
+    id: claude-code-8ea9f105
+    cmd: claude doctor
+    desc: "Checks your Claude Code install and settings for problems."
+  - name: MCP servers
+    id: claude-code-769762d8
+    cmd: claude mcp list
+    desc: "Lists the MCP servers Claude Code is set up to use, and whether each one connects."
+  - name: Update Claude Code
+    id: claude-code-978df091
+    cmd: claude update
+    desc: "Updates Claude Code to its latest version."
+    risk: warn

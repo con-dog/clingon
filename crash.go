@@ -25,16 +25,16 @@ import (
 
 const crashHeader = "version: "
 
-func crashPath() string     { return filepath.Join(config.Dir(), "crash.log") }
-func crashSeenPath() string { return filepath.Join(config.Dir(), "crash-seen") }
+func crashPath() string     { return filepath.Join(config.StateDir(), "crash.log") }
+func crashSeenPath() string { return filepath.Join(config.StateDir(), "crash-seen") }
 
 // catchCrashes sends crashes to this process's file until stop is called
 // with what the menu ended with. Bubble Tea catches panics and prints them to
 // os.Stderr; the rest (other goroutines, fatal errors) the runtime prints to
 // its crash output.
 func catchCrashes() (stop func(error)) {
-	_ = os.MkdirAll(config.Dir(), 0o755)
-	f, err := os.OpenFile(filepath.Join(config.Dir(), fmt.Sprintf("crash-%d.tmp", os.Getpid())), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	_ = os.MkdirAll(config.StateDir(), 0o755)
+	f, err := os.OpenFile(filepath.Join(config.StateDir(), fmt.Sprintf("crash-%d.tmp", os.Getpid())), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return func(error) {}
 	}
@@ -58,7 +58,7 @@ var crashTmp = regexp.MustCompile(`^crash-(\d+)\.tmp$`)
 // collectCrashes keeps any crash its process didn't live to keep, and tidies
 // up after the rest. Another session's running menu is left alone.
 func collectCrashes() {
-	entries, _ := os.ReadDir(config.Dir())
+	entries, _ := os.ReadDir(config.StateDir())
 	for _, e := range entries {
 		m := crashTmp.FindStringSubmatch(e.Name())
 		if m == nil {
@@ -68,7 +68,7 @@ func collectCrashes() {
 		if pid != os.Getpid() && syscall.Kill(pid, 0) == nil {
 			continue
 		}
-		path := filepath.Join(config.Dir(), e.Name())
+		path := filepath.Join(config.StateDir(), e.Name())
 		b, err := os.ReadFile(path)
 		if err != nil {
 			continue
@@ -142,7 +142,7 @@ func crashNews() (row, bool) {
 	if _, err := os.Stat(crashSeenPath()); err == nil {
 		return row{}, false
 	}
-	return row{mark: fail, glyph: "✗", label: "Crash", detail: "clingon crashed " + ago(c.when), note: "Clingon › Health check › Show last crash"}, true
+	return row{mark: fail, glyph: "✗", label: "Crash", detail: "clingon crashed " + ago(c.when), note: "Clingon › Clingon › Show last crash"}, true
 }
 
 func ago(t time.Time) string {

@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: uv
+description: Start a project, add packages, sync the environment and run things with uv
+requires: [uv]
+commands:
+  - name: Add a package
+    id: python-ca6f5405
+    cmd: uv add <package>
+    when: [pyproject.toml]
+    desc: "Adds a dependency to pyproject.toml and installs it."
+    args:
+      - name: package
+        quote: true
+        desc: "Adding <package>."
+        placeholder: requests
+  - name: Run in the project
+    id: python-6e44614d
+    cmd: uv run <command>
+    when: [pyproject.toml]
+    desc: "Runs a command inside the project's environment, syncing it first."
+    args:
+      - name: command
+        desc: "Running <command>."
+        placeholder: python main.py
+  - name: Start a project
+    id: python-030aad5a
+    cmd: uv init
+    desc: "Creates a pyproject.toml and starter files in this folder."
+  - name: Sync environment
+    id: python-8814d042
+    cmd: uv sync
+    when: [pyproject.toml]
+    desc: "Makes .venv match the lockfile exactly, installing and removing packages as needed."
+    risk: warn

@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Branches
+description: See recent branches, merge and rebase, and delete branches locally or on the remote
+when: [.git]
+commands:
+  - name: Delete a remote branch
+    id: git-6288f4b0
+    cmd: git push origin --delete <branch>
+    desc: "Deletes a branch on origin, for everyone who uses it."
+    risk: danger
+    args:
+      - name: branch
+        quote: true
+        desc: "Deleting origin/<branch>."
+        placeholder: "main"
+  - name: Recent branches
+    id: git-823aa00a
+    cmd: git branch --sort=-committerdate --format='%(committerdate:relative)%09%(refname:short)' | head -n 15
+    desc: "Lists your 15 most recently worked-on branches, newest first."
+  - name: Delete a branch
+    id: git-a5b24b23
+    cmd: git branch -d <branch>
+    desc: "Deletes a local branch. Git refuses if it has commits that aren't merged anywhere."
+    risk: warn
+    args:
+      - name: branch
+        quote: true
+        desc: "Deleting <branch>."
+        placeholder: "main"
+  - name: Merge a branch
+    id: git-9465524e
+    cmd: git merge <branch>
+    desc: "Brings another branch's commits into this one."
+    risk: warn
+    args:
+      - name: branch
+        quote: true
+        desc: "Merging <branch> in."
+        placeholder: "main"
+  - name: Rebase onto a branch
+    id: git-4cc7a257
+    cmd: git rebase <branch>
+    desc: "Replays this branch's commits on top of another branch, as if you'd started from there."
+    risk: warn
+    args:
+      - name: branch
+        quote: true
+        desc: "Onto <branch>."
+        placeholder: "main"

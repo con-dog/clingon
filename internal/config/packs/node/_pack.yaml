@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
+# One group per package manager. Each only shows if you have that manager,
+# and is greyed out except where its lockfile is, so in any project only
+# the right one can be used.
+name: Node
+description: npm, pnpm, yarn and bun, each where its lockfile is
+requires: [node]
+logo: node
+color: "#5faf5f"
+category: Code

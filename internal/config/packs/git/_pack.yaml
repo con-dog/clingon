@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
+name: Git
+description: First-time setup, everyday Git, branches, remotes, undo and stash
+requires: [git]
+logo: git
+color: "#ff5f5f"
+category: Code

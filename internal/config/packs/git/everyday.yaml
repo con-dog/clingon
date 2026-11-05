@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Everyday
+description: Status, diff, log, commit, pull and push, switch or create branches and go to the repo root
+when: [.git]
+commands:
+  - name: Status
+    id: git-a6cd55f8
+    cmd: git status -sb
+    desc: "Shows your branch and which files are changed, staged or untracked."
+  - name: Switch branch
+    id: git-8ba959e9
+    cmd: git switch <branch>
+    desc: "Switches to another branch."
+    args:
+      - name: branch
+        quote: true
+        desc: "Moving to <branch>."
+        placeholder: "main"
+  - name: New branch
+    id: git-0dd8b39f
+    cmd: git switch -c <name>
+    desc: "Creates a new branch from where you are and switches to it."
+    args:
+      - name: name
+        quote: true
+        desc: "Called <name>."
+        placeholder: feature/thing
+  - name: Commit everything
+    id: git-0019fd99
+    cmd: git add -A && git commit -m <message>
+    desc: "Stages every change, new and deleted files included, and commits it. New files means all of them, a .env you forgot to ignore too: check Status first."
+    risk: warn
+    args:
+      - name: message
+        quote: true
+        desc: "With the message \"<message>\"."
+  - name: Pretty log
+    id: git-fad99981
+    cmd: git log --oneline --graph --decorate -n <count> <flags>
+    desc: "Shows recent commits as a compact graph with branch and tag names."
+    args:
+      - name: count
+        quote: true
+        desc: "The last <count> commits."
+        default: "20"
+      - name: flags
+        type: flags
+        options:
+          - { value: --all, label: all branches }
+          - { value: --first-parent, label: first parent only }
+          - { value: --stat, label: files changed }
+  - name: Pull (rebase)
+    id: git-513e31ad
+    cmd: git pull --rebase --autostash
+    desc: "Fetches new commits and replays yours on top, tucking uncommitted work away while it does."
+    risk: warn
+  - name: Diff
+    id: git-8fbd98ab
+    cmd: git diff
+    desc: "Shows your changes that aren't staged yet, line by line."
+  - name: Diff staged
+    id: git-9702f217
+    cmd: git diff --staged
+    desc: "Shows what's staged: exactly what your next commit will contain."
+  - name: Push this branch
+    id: git-d493e248
+    cmd: git push -u origin HEAD
+    desc: "Pushes this branch to origin, creating it there and tracking it if it's new."
+    risk: warn
+  - name: Fetch everything
+    id: git-287af4a1
+    cmd: git fetch --all --prune
+    desc: "Downloads new commits and branches from every remote, and forgets branches deleted there. Your files don't change."
+  - name: Go to repo root
+    id: git-e95a2814
+    cmd: root=$(git rev-parse --show-toplevel) && cd "$root"
+    desc: "Moves your shell to the top folder of this repository."

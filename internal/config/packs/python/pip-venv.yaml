@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: pip & venv
+description: Make and use virtualenvs, install packages and requirements with pip, and save requirements
+commands:
+  - name: Activate virtualenv
+    id: python-2ba82614
+    cmd: . .venv/bin/activate
+    when: [./.venv]
+    desc: "Switches this shell to the project's .venv, so python and pip use it."
+  - name: Deactivate virtualenv
+    id: python-d0e7e1e0
+    cmd: deactivate
+    desc: "Switches this shell back to your system Python."
+  - name: Install a package
+    id: python-23050cca
+    cmd: python3 -m pip install <package>
+    desc: "Installs a package into the active Python. Outside a virtualenv, Homebrew's Python refuses."
+    args:
+      - name: package
+        quote: true
+        desc: "Installing <package>."
+        placeholder: requests
+  - name: Install requirements
+    id: python-45a5e9c8
+    cmd: python3 -m pip install -r <file>
+    when: ['./requirements*.txt']
+    desc: "Installs every package a requirements file lists. Outside a virtualenv, Homebrew's Python refuses."
+    args:
+      - name: file
+        quote: true
+        desc: "From <file>."
+        placeholder: "path/to/file"
+  - name: Make a virtualenv
+    id: python-ecdd8ad4
+    cmd: python3 -m venv .venv && . .venv/bin/activate
+    desc: "Creates a private Python environment in .venv and switches this shell to it."
+  - name: Outdated packages
+    id: python-611441ce
+    cmd: python3 -m pip list --outdated
+    desc: "Lists installed packages that have newer versions available."
+  - name: Save requirements
+    id: python-57b8f27f
+    cmd: python3 -m pip freeze > requirements.txt
+    desc: "Writes every installed package and its exact version to requirements.txt, replacing what's there."
+    risk: warn

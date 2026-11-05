@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: HTTP
+description: Check headers and status, time requests, download files, POST JSON, serve a folder and find your public IP
+commands:
+  - name: Response headers
+    id: network-3d52ab13
+    cmd: curl -sSI <url>
+    desc: "Fetches just a URL's response headers: status, redirects, caching and so on."
+    args:
+      - name: url
+        quote: true
+        desc: "From <url>."
+        placeholder: https://example.com
+  - name: Status code only
+    id: network-95e73f3d
+    cmd: curl -o /dev/null -sS -w '%{http_code}\n' <url>
+    desc: "Requests a URL and prints only the HTTP status code."
+    args:
+      - name: url
+        quote: true
+        desc: "For <url>."
+        placeholder: https://example.com
+  - name: Time a request
+    id: network-6f511473
+    cmd: curl -o /dev/null -sS -w 'dns %{time_namelookup}s  connect %{time_connect}s  ttfb %{time_starttransfer}s  total %{time_total}s\n' <url>
+    desc: "Times a request: DNS lookup, connecting, first byte and total."
+    args:
+      - name: url
+        quote: true
+        desc: "Timing <url>."
+        placeholder: https://example.com
+  - name: Download a file
+    id: network-92ef10f9
+    cmd: curl -fLO <url>
+    desc: "Downloads a file into this folder, following redirects."
+    risk: warn
+    args:
+      - name: url
+        quote: true
+        desc: "From <url>."
+        placeholder: https://example.com/file.zip
+  - name: POST some JSON
+    id: network-7fd0a99d
+    cmd: "curl -sS -X POST -H 'Content-Type: application/json' -d <json> <url>"
+    desc: "Sends JSON to a URL in a POST request and prints the response."
+    risk: warn
+    args:
+      - name: url
+        quote: true
+        desc: "To <url>."
+        placeholder: http://localhost:3000/api
+      - name: json
+        quote: true
+        desc: "Sending <json>."
+        default: "{}"
+  - name: Serve this folder
+    id: network-8c254820
+    cmd: python3 -I -m http.server --bind 127.0.0.1 <port>
+    desc: "Serves the files in this folder over HTTP, to this machine only, until you press Ctrl-C."
+    risk: warn
+    requires: [python3]
+    args:
+      - name: port
+        quote: true
+        desc: "At http://localhost:<port>."
+        default: "8000"
+  - name: Serve this folder on your network
+    id: network-0fce7ab6
+    cmd: python3 -I -m http.server <port>
+    desc: "Serves the files in this folder over HTTP until you press Ctrl-C. Anyone on your network can read them while it runs."
+    risk: warn
+    requires: [python3]
+    args:
+      - name: port
+        quote: true
+        desc: "At port <port> of this machine's address."
+        default: "8000"
+  - name: My public IP
+    id: network-b4457f7b
+    cmd: curl -s https://ifconfig.me && echo
+    desc: "Shows the public IP address the internet sees you coming from."

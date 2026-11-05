@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: pnpm
+description: Install, add, remove, update and audit packages, and run scripts and tests with pnpm
+requires: [pnpm]
+when: [pnpm-lock.yaml]
+commands:
+  - name: Add a package
+    id: node-2a8d9c88
+    cmd: pnpm add <flags> <package>
+    desc: "Adds a package to package.json and installs it."
+    args:
+      - name: package
+        desc: "Adding <package>."
+      - name: flags
+        type: flags
+        options:
+          - { value: -D, label: dev dependency }
+  - name: Clean install (CI)
+    id: node-bfd7eb10
+    cmd: pnpm install --frozen-lockfile
+    desc: "Installs exactly what pnpm-lock.yaml lists, and fails if package.json has moved on from it. Best for CI."
+  - name: Install dependencies
+    id: node-ac489ee7
+    cmd: pnpm install
+    desc: "Installs every dependency in package.json."
+  - name: Outdated packages
+    id: node-b96dbcbb
+    cmd: pnpm outdated
+    desc: "Lists dependencies with newer versions available."
+  - name: Remove a package
+    id: node-d546d697
+    cmd: pnpm remove <package>
+    desc: "Takes a dependency out of package.json and node_modules."
+    risk: warn
+    args:
+      - name: package
+        quote: true
+        desc: "Removing <package>."
+        placeholder: "lodash"
+  - name: Run a package without installing
+    id: node-782add24
+    cmd: pnpm dlx <package>
+    desc: "Downloads a package's command if needed and runs it."
+    args:
+      - name: package
+        desc: "Running <package>."
+        placeholder: create-vite@latest
+  - name: Run a script
+    id: node-5ada0695
+    cmd: pnpm run <script>
+    desc: "Runs one of the scripts in package.json."
+    args:
+      - name: script
+        quote: true
+        placeholder: "test"
+  - name: Run tests
+    id: node-89a5311a
+    cmd: pnpm test
+    desc: "Runs the project's test script."
+  - name: Security audit
+    id: node-0f11b772
+    cmd: pnpm audit
+    desc: "Checks your dependencies for known security problems."
+  - name: Top-level dependencies
+    id: node-c2510c94
+    cmd: pnpm list --depth=0
+    desc: "Lists the project's direct dependencies and the versions installed."
+  - name: Update dependencies
+    id: node-a28ac6f4
+    cmd: pnpm update
+    desc: "Updates dependencies to the newest versions package.json allows."
+    risk: warn

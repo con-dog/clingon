@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/schema.json
+name: Software
+description: See your macOS version, check for updates and install them
+commands:
+  - name: Install all updates
+    id: macos-df2f1166
+    cmd: sudo softwareupdate --install --all
+    desc: "Installs every available macOS update. Some need a restart."
+    risk: warn
+  - name: Updates available
+    id: macos-5c678bf1
+    cmd: softwareupdate --list
+    desc: "Lists the macOS updates you can install."
+  - name: Version
+    id: macos-398ade84
+    cmd: sw_vers
+    desc: "Shows which version of macOS this is."
