@@ -42,7 +42,7 @@ func welcome(execShell bool) {
 	rows := recommendations()
 	title := "Worth doing"
 	if len(rows) == 0 {
-		rows, title = []row{allSet()}, "clingon"
+		rows, title = []row{allSet()}, "Clingon"
 	}
 	if !execShell { // in clingon's shell pane, the status bar already says it
 		outln() // a gap below the command that ran it
@@ -57,7 +57,7 @@ func welcome(execShell bool) {
 func recommendations() []row {
 	acts := news()
 	if _, _, err := config.Load(); err != nil {
-		acts = append(acts, row{mark: fail, label: "Fix your packs", detail: "they have mistakes", note: "Clingon › Clingon › Check all packs"})
+		acts = append(acts, row{mark: fail, label: "Fix your packs", detail: "they have mistakes", note: "Clingon › General › Check all packs"})
 	}
 	return acts
 }
@@ -72,24 +72,24 @@ func news() []row {
 		acts = append(acts, r)
 	}
 	if latest := latestRelease(); latest != "" {
-		acts = append(acts, row{mark: todo, glyph: "↑", label: "Update clingon", detail: getVersion() + " → " + latest, note: "Clingon › Clingon › Update clingon"})
+		acts = append(acts, row{mark: todo, glyph: "↑", label: "Update clingon", detail: getVersion() + " → " + latest, note: "Clingon › General › Update clingon"})
 	}
 	if ups, err := config.PackUpdates(); err == nil && len(ups) > 0 {
 		var names []string
 		for _, u := range ups {
 			names = append(names, retiredName(u))
 		}
-		acts = append(acts, row{mark: todo, glyph: "↑", label: "Update " + plural(len(ups), "pack"), detail: strings.Join(names, ", "), note: "Clingon › Packs › Update packs"})
+		acts = append(acts, row{mark: todo, glyph: "↑", label: "Update " + plural(len(ups), "pack"), detail: someNames(names), note: "Clingon › Packs › Update packs"})
 	}
 	suggest, broken := packAdvice()
 	if len(suggest) > 0 {
-		acts = append(acts, row{mark: todo, glyph: packGlyph(), label: "Add " + plural(len(suggest), "pack"), detail: "you have the tools for " + strings.Join(suggest, ", "), note: "Clingon › Packs › Add packs"})
+		acts = append(acts, row{mark: todo, glyph: packGlyph(), label: "Add " + plural(len(suggest), "pack"), detail: "you have the tools for " + someNames(suggest), note: "Clingon › Packs › Add packs"})
 	}
 	if len(broken) > 0 { // nothing in the menu installs tools: no note; its rows say what's missing
-		acts = append(acts, row{mark: todo, glyph: "↓", label: "Install tools", detail: strings.Join(broken, ", "), nudge: true})
+		acts = append(acts, row{mark: todo, glyph: "↓", label: "Install tools", detail: someNames(broken), nudge: true})
 	}
 	if len(config.LocalPacks()) == 0 {
-		acts = append(acts, row{mark: todo, glyph: "⊕", label: "Create a pack", detail: "the commands you keep looking up, in one place", note: "Clingon › Packs › Create a pack", nudge: true})
+		acts = append(acts, row{mark: todo, glyph: createGlyph(), label: "Create a pack", detail: "the commands you keep looking up, in one place", note: "Clingon › Packs › Create a pack", nudge: true})
 	}
 	return acts
 }
@@ -150,6 +150,25 @@ func packGlyph() string {
 		return "⊞"
 	}
 	return config.Logos["box"]
+}
+
+// createGlyph marks the suggestion to make a pack: a hammer in clingon's
+// window, from its font; elsewhere a symbol every font has.
+func createGlyph() string {
+	if os.Getenv("CLINGON") == "" {
+		return "⊕"
+	}
+	return config.Logos["hammer"]
+}
+
+// someNames lists names for a card's row, however long the list, without the
+// row's end cutting one in half.
+func someNames(names []string) string {
+	const shown = 4
+	if len(names) <= shown {
+		return strings.Join(names, ", ")
+	}
+	return strings.Join(names[:shown], ", ") + fmt.Sprintf(" +%d more", len(names)-shown)
 }
 
 // headline is the menu's status bar on the top level: the most useful

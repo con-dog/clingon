@@ -36,7 +36,7 @@ remote/aws/ecs is just its ECS commands.
 
 func packCmd(args []string) error {
 	if len(args) == 0 {
-		sayBoxed("clingon pack", styleUsage(packUsage))
+		sayBoxed("Clingon pack", styleUsage(packUsage))
 		return nil
 	}
 	var rest []string
@@ -62,22 +62,35 @@ func packCmd(args []string) error {
 
 	switch args[0] {
 	case "list", "ls":
-		var list []config.Pack
+		// Two cards, so a pack's name is enough in each: you can have both a
+		// remote/docker and a local/docker.
+		var remote, local []config.Pack
+		var err error
 		if !localOnly {
-			remote, err := config.InstalledPacks()
-			if err != nil {
+			if remote, err = config.InstalledPacks(); err != nil {
 				return err
 			}
-			list = append(list, remote...)
 		}
 		if !remoteOnly {
-			local, err := config.YourPacks()
-			if err != nil {
+			if local, err = config.YourPacks(); err != nil {
 				return err
 			}
-			list = append(list, local...)
 		}
-		printPacks("Your packs", list, namesOnly, "no packs yet: see `clingon pack available`")
+		switch {
+		case remoteOnly:
+			printPacks("Installed packs", remote, namesOnly, "no packs installed: see `clingon pack available`")
+		case localOnly:
+			printPacks("Your packs", local, namesOnly, "no packs of your own yet: `clingon pack create` starts one")
+		case len(remote)+len(local) == 0:
+			printPacks("", nil, namesOnly, "no packs yet: see `clingon pack available`")
+		default:
+			if len(remote) > 0 {
+				printPacks("Installed packs", remote, namesOnly, "")
+			}
+			if len(local) > 0 {
+				printPacks("Your packs", local, namesOnly, "")
+			}
+		}
 		return nil
 
 	case "available":
@@ -129,8 +142,10 @@ func packCmd(args []string) error {
 		if err := config.NewPack(name); err != nil {
 			return err
 		}
-		say(ok, "created %s", config.PackPath(name))
-		return editPack(name)
+		if _, err := exec.LookPath("micro"); err != nil { // it won't open, so say it's made now
+			say(ok, "created %s", config.PackPath(name))
+		}
+		return editPackAs(name, "created")
 
 	case "remove", "rm", "uninstall":
 		if len(rest) == 0 {
@@ -292,20 +307,25 @@ func printPacks(title string, ps []config.Pack, namesOnly bool, empty string) {
 		}
 		var rows []row
 		for _, p := range ps {
-			note := fmt.Sprintf("%*d commands", countW, p.Commands)
+			note := fmt.Sprintf("%*d command", countW, p.Commands)
+			if p.Commands != 1 {
+				note += "s"
+			} else {
+				note += " "
+			}
 			if len(p.Modules) > 0 && p.Where == "remote" && config.IsInstalled(p.Name) {
 				if missing := len(config.MissingModules(p.Name)); missing > 0 {
 					note += fmt.Sprintf(" · %s not installed", plural(missing, "subpack"))
 				}
 			}
-			rows = append(rows, row{mark: info, label: p.Ref(), detail: p.Description, note: note})
+			rows = append(rows, row{mark: info, label: p.Name, detail: p.Description, note: note})
 		}
 		outln(card(title, rows, cardWidth()))
 		return
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, p := range ps {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%d commands\n", p.Ref(), p.Description, p.Commands)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", p.Ref(), p.Description, plural(p.Commands, "command"))
 	}
 	_ = w.Flush()
 }
@@ -346,7 +366,7 @@ Each <placeholder> in COMMAND is asked for when you run it, e.g.
 
 func commandCmd(args []string) error {
 	if len(args) == 0 {
-		sayBoxed("clingon command", styleUsage(commandUsage))
+		sayBoxed("Clingon command", styleUsage(commandUsage))
 		return nil
 	}
 	switch args[0] {
@@ -406,7 +426,7 @@ Clingon › Recipes, and lists it there; each ID is one of its commands.
 
 func recipeCmd(args []string) error {
 	if len(args) == 0 {
-		sayBoxed("clingon recipe", styleUsage(recipeUsage))
+		sayBoxed("Clingon recipe", styleUsage(recipeUsage))
 		return nil
 	}
 	switch args[0] {

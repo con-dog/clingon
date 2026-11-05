@@ -493,7 +493,7 @@ func TestBoxedWrapsWithinItsEdges(t *testing.T) {
 
 func TestCommandTitle(t *testing.T) {
 	for want, args := range map[string][]string{
-		"clingon": nil, "pack add": {"pack", "add", "git"}, "pack": {"pack"}, "recipe save": {"recipe", "save", "x", "y"}, "doctor": {"doctor", "git"},
+		"Clingon": nil, "Pack add": {"pack", "add", "git"}, "Pack": {"pack"}, "Recipe save": {"recipe", "save", "x", "y"}, "Doctor": {"doctor", "git"},
 	} {
 		if got := commandTitle(args); got != want {
 			t.Errorf("%v: %q, want %q", args, got, want)
@@ -546,5 +546,25 @@ func TestRemovePacksIsAChecklist(t *testing.T) {
 	out, err := output(t, func() error { return packCmd([]string{"remove", "remote/git", "local/mine"}) })
 	if err != nil || !strings.Contains(out, "removed remote/git") || !strings.Contains(out, "removed local/mine") {
 		t.Fatalf("%q %v", out, err)
+	}
+}
+
+func TestSomeNamesNeverCutsOneInHalf(t *testing.T) {
+	if got := someNames([]string{"a", "b", "c", "d"}); got != "a, b, c, d" {
+		t.Error(got)
+	}
+	if got := someNames([]string{"a", "b", "c", "d", "e", "f"}); got != "a, b, c, d +2 more" {
+		t.Error(got)
+	}
+}
+
+func TestCreateGlyphIsTheHammerInClingonsWindow(t *testing.T) {
+	t.Setenv("CLINGON", "")
+	if got := createGlyph(); got != "⊕" {
+		t.Errorf("outside clingon's window: %q", got)
+	}
+	t.Setenv("CLINGON", "1")
+	if got := createGlyph(); got != config.Logos["hammer"] {
+		t.Errorf("in clingon's window: %q", got)
 	}
 }

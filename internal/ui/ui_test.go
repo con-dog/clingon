@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -1307,7 +1308,7 @@ func TestFillInNamesTheCommand(t *testing.T) {
 	// A pick list keeps its rows in the height it's given, header and all.
 	m.Update(typed("3"))
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if got := lines(60, 8); got[0] != "❯ / to filter" || got[1] != "" || row(got[2]) != "Step 2 of 2" || got[3] != "" || row(got[4]) != "kind (↑↓ to choose)" || !strings.Contains(got[5], "x") || len(got) > 8 {
+	if got := lines(60, 8); !strings.HasPrefix(got[0], "❯ / to filter") || got[1] != "" || row(got[2]) != "Step 2 of 2" || got[3] != "" || row(got[4]) != "kind (↑↓ to choose)" || !strings.Contains(got[5], "x") || len(got) > 8 {
 		t.Errorf("pick list: %q", got)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
@@ -2006,14 +2007,14 @@ func TestScrolledGroupKeepsItsHeading(t *testing.T) {
 		p.move(1)
 	}
 	got := strings.Split(ansi.Strip(p.render(40, 4)), "\n")
-	if len(got) != 4 || got[0] != "ALPHA" || !strings.Contains(got[3], "Alpha 6") {
-		t.Fatalf("the heading should be pinned on top, the cursor's row last, got %q", got)
+	if len(got) != 4 || got[0] != "ALPHA" || !strings.Contains(got[2], "Alpha 6") || !strings.Contains(got[3], "more") {
+		t.Fatalf("the heading should be pinned on top, the cursor's row under it, then what's left, got %q", got)
 	}
 	for range 6 { // well into Beta: its heading takes over
 		p.move(1)
 	}
 	got = strings.Split(ansi.Strip(p.render(40, 4)), "\n")
-	if len(got) != 4 || got[0] != "BETA" || !strings.Contains(got[3], "Beta 4") || strings.Contains(got[1], "Beta 0") {
+	if len(got) != 4 || got[0] != "BETA" || !strings.Contains(got[2], "Beta 4") || !strings.Contains(got[3], "more") || strings.Contains(got[1], "Beta 0") {
 		t.Fatalf("the next group's heading is pinned instead, got %q", got)
 	}
 	p.cursor, p.offset = 0, 0
@@ -2666,6 +2667,7 @@ func TestEveryListFiltersTheSameWay(t *testing.T) {
 		lines := strings.Split(ansi.Strip(m.view()), "\n")
 		for i, l := range lines {
 			if strings.HasPrefix(l, "❯") {
+				l = regexp.MustCompile(`\s+\d+( of \d+)? \w+$`).ReplaceAllString(l, "") // the list's size isn't the filter
 				return fmt.Sprintf("%d %s", i, strings.TrimSpace(l))
 			}
 		}
@@ -3658,5 +3660,65 @@ func TestBreadcrumbNamesLineUpWhateverTheIcon(t *testing.T) {
 		if at := ansi.StringWidth(got) - ansi.StringWidth("Name"); at != 3 {
 			t.Errorf("icon %q: the name starts at column %d, not 3: %q", icon, at, got)
 		}
+	}
+}
+
+func moreItems(n int) []item {
+	items := []item{{title: "Group", header: true}}
+	for i := 0; i < n; i++ {
+		items = append(items, item{title: fmt.Sprintf("row %d", i), ref: cmdRef{}})
+	}
+	return items
+}
+
+// A list that doesn't fit says so, in the row it keeps for that, and stays
+// the height it was given.
+func TestLongListSaysThereIsMore(t *testing.T) {
+	p := newPicker(moreItems(20), nil, false)
+	lines := strings.Split(ansi.Strip(p.render(40, 10)), "\n")
+	if len(lines) != 10 || strings.TrimSpace(lines[9]) != "↓ 12 more" {
+		t.Fatalf("got %d rows, ending %q", len(lines), lines[len(lines)-1])
+	}
+	for i := 0; i < 30; i++ {
+		p.move(1)
+	}
+	lines = strings.Split(ansi.Strip(p.render(40, 10)), "\n")
+	if len(lines) != 10 || strings.TrimSpace(lines[9]) != "↑ 12 more" || !strings.Contains(lines[8], "row 19") {
+		t.Fatalf("at the bottom: %d rows, ending %q", len(lines), lines[len(lines)-2:])
+	}
+	short := newPicker(moreItems(5), nil, false)
+	if got := ansi.Strip(short.render(40, 10)); strings.Contains(got, "more") {
+		t.Errorf("a list that fits has nothing more to say:\n%s", got)
+	}
+}
+
+func TestFilterRowCountsTheList(t *testing.T) {
+	p := newPicker(moreItems(20), nil, false)
+	p.noun = "command"
+	line := ansi.Strip(filterLine(&p, 40))
+	if !strings.HasSuffix(line, "20 commands") || ansi.StringWidth(line) != 40 {
+		t.Errorf("not at the far end of the row: %q", line)
+	}
+	p.filter.SetValue("row 1")
+	p.refilter()
+	if line := ansi.Strip(filterLine(&p, 60)); !strings.HasSuffix(line, fmt.Sprintf("%d of 20 commands", rowCount(p.view))) {
+		t.Errorf("filtered: %q", line)
+	}
+	p.filtering = true
+	if line := ansi.Strip(filterLine(&p, 60)); !strings.Contains(line, "of 20 commands") || ansi.StringWidth(line) != 60 {
+		t.Errorf("while typing: %q", line)
+	}
+	if line := ansi.Strip(filterLine(&p, 20)); strings.Contains(line, "commands") {
+		t.Errorf("no room for it, the filter comes first: %q", line)
+	}
+}
+
+// With focus elsewhere only the bar greys: the name stays as readable as its neighbours.
+func TestBlurredSelectionKeepsItsNameReadable(t *testing.T) {
+	p := newPicker(moreItems(2), nil, false)
+	p.blurred = true
+	row := p.row(p.items[1], true, 30)
+	if strings.Contains(row, labelStyle.Render("row 0")) && labelStyle.Render("row 0") != "row 0" {
+		t.Errorf("the name is greyed: %q", row)
 	}
 }

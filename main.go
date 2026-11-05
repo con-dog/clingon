@@ -108,9 +108,9 @@ func main() {
 	case "completion":
 		err = completion(os.Args[2:])
 	case "version", "--version", "-v":
-		sayBoxed("clingon", getVersion())
+		sayBoxed("Clingon", getVersion())
 	case "help", "--help", "-h":
-		sayBoxed("clingon", styleUsage(fmt.Sprintf(usage, config.Dir())))
+		sayBoxed("Clingon", styleUsage(fmt.Sprintf(usage, config.Dir())))
 	default:
 		errUsage(styleUsage(fmt.Sprintf(usage, config.Dir())))
 		os.Exit(2)
@@ -358,7 +358,10 @@ func printMode() error {
 
 // editPack opens a pack in micro (your local one, unless ref says
 // remote/NAME), then says whether it still loads.
-func editPack(ref string) error {
+func editPack(ref string) error { return editPackAs(ref, "saved") }
+
+// editPackAs is editPack, saying done (created, saved) of the pack afterwards.
+func editPackAs(ref, done string) error {
 	where, name := config.SplitRef(ref)
 	if _, err := exec.LookPath("micro"); err != nil {
 		return errors.New("clingon edits packs with micro, a simple terminal editor (Ctrl-S saves, Ctrl-Q quits).\n" +
@@ -402,9 +405,9 @@ func editPack(ref string) error {
 		return err
 	}
 	if _, _, err := config.Load(); err != nil {
-		return fmt.Errorf("saved, but it has problems:\n%w", err)
+		return fmt.Errorf("%s, but it has problems:\n%w", done, err)
 	}
-	say(ok, "saved %s", path)
+	say(ok, "%s %s", done, path)
 	return nil
 }
 

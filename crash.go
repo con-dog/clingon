@@ -142,7 +142,7 @@ func crashNews() (row, bool) {
 	if _, err := os.Stat(crashSeenPath()); err == nil {
 		return row{}, false
 	}
-	return row{mark: fail, glyph: "✗", label: "Crash", detail: "clingon crashed " + ago(c.when), note: "Clingon › Clingon › Show last crash"}, true
+	return row{mark: fail, glyph: "✗", label: "Crash", detail: "clingon crashed " + ago(c.when), note: "Clingon › General › Show last crash"}, true
 }
 
 func ago(t time.Time) string {

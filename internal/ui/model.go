@@ -343,6 +343,7 @@ func (m *Model) showRoot(focus string) {
 	}
 	m.section, m.opened = nil, ""
 	m.list = newPicker(items, search, false)
+	m.list.noun = "command"
 	m.list.step = m.itemSteps
 	if m.opt.Headline != nil {
 		h := m.opt.Headline()
@@ -474,6 +475,7 @@ func (m *Model) showSection(s *config.Section) {
 	}
 	m.section = s
 	m.list = newPicker(items, nil, false)
+	m.list.noun = "command"
 	m.list.step = m.itemSteps
 	if s == m.recipesSection() && len(m.recipe) > 0 && m.opened == "" {
 		m.list.cursor = 1 // Run recipe, under its heading
@@ -1576,6 +1578,10 @@ func (m *Model) textStep(a config.Arg, prev string) tea.Cmd {
 func (m *Model) pickStep(items []item, a config.Arg, prev string) {
 	j := m.job
 	j.pick = newPicker(items, nil, a.Multi())
+	j.pick.noun = "option"
+	if a.CountAs != "" {
+		j.pick.noun = a.CountAs
+	}
 	j.usePick = true
 	if a.Multi() {
 		for _, v := range strings.Split(prev, a.Separator()) {
@@ -2891,14 +2897,34 @@ const minForFilterRowOnTrust = 16
 // filterLine is the same at the top of every list: how to filter it, or the
 // filter once / has opened it.
 func filterLine(p *picker, w int) string {
-	if p.filtering {
-		return inputView(&p.filter, w)
+	// The list's size sits at the far end, while there's room for it.
+	tally := p.tally()
+	tallyW := ansi.StringWidth(tally)
+	if w < tallyW+minFilterW {
+		tally, tallyW = "", 0
 	}
-	if p.filtered() { // closed, and still applied: it should be plain that it is
-		return ansi.Truncate(accentStyle.Render("❯ ")+p.query()+faintStyle.Render("  / to edit · esc to clear"), max(w, 1), "…")
+	room := w
+	if tally != "" {
+		room = w - tallyW - 2
 	}
-	return accentStyle.Render("❯ /") + faintStyle.Render(" to filter")
+	var left string
+	switch {
+	case p.filtering:
+		left = inputView(&p.filter, room)
+	case p.filtered(): // closed, and still applied: it should be plain that it is
+		left = ansi.Truncate(accentStyle.Render("❯ ")+p.query()+faintStyle.Render("  / to edit · esc to clear"), max(room, 1), "…")
+	default:
+		left = accentStyle.Render("❯ /") + faintStyle.Render(" to filter")
+	}
+	if tally == "" {
+		return left
+	}
+	return left + strings.Repeat(" ", max(1, w-ansi.StringWidth(left)-tallyW)) + faintStyle.Render(tally)
 }
+
+// minFilterW is the least room the filter's row keeps for the filter, when
+// deciding if the list's size fits beside it.
+const minFilterW = 16
 
 // preview renders the command with filled values, the current arg (showing
 // its tentative value) and the args still to come.

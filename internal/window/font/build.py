@@ -60,7 +60,8 @@ LOGOS = ["apple", "claude", "deno", "docker", "git", "github", "googlecloud", "h
          "box", "cloud", "cpu", "database", "folder", "globe", "play", "server", "shield", "terminal",
          "amazon", "go",
          "postgres", None, "redis", "mongodb", "sqlite", "cloudflare", "vercel", "cplusplus", None,
-         "ansible", "pulumi", "vault", "argo", "nginx", "openai", "gemini", "window", "hash"]
+         "ansible", "pulumi", "vault", "argo", "nginx", "openai", "gemini", "window", "hash",
+         "hammer", "gear", "puzzle", "checklist"]
 FIRST_LOGO = 0xE000
 
 # Symbols that get a centred twin: the ones packs use, and others that make

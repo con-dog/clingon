@@ -84,7 +84,7 @@ func errf(format string, a ...any) { _, _ = fmt.Fprintf(stderr(), format, a...) 
 // said is what say has held for one card, and saidTitle what that's headed.
 var (
 	said      []string
-	saidTitle = "clingon"
+	saidTitle = "Clingon"
 )
 
 // say gives a single result: `✓ installed git`. In a terminal, a command's results
@@ -109,18 +109,19 @@ func flushSaid() {
 	_, _ = fmt.Fprintln(stdout(), boxed(headStyle.Render(saidTitle), lines, cardWidth()))
 }
 
-// commandTitle heads a command's card: `pack add` from `clingon pack add git`.
+// commandTitle heads a command's card: `Pack add` from `clingon pack add git`.
 func commandTitle(args []string) string {
 	if len(args) == 0 {
-		return "clingon"
+		return "Clingon"
 	}
+	title := args[0]
 	switch args[0] {
 	case "pack", "packs", "command", "commands", "cmd", "recipe", "recipes":
 		if len(args) > 1 {
-			return args[0] + " " + args[1]
+			title = args[0] + " " + args[1]
 		}
 	}
-	return args[0]
+	return strings.ToUpper(title[:1]) + title[1:]
 }
 
 // boxed draws lines in a titled box, wrapping any too long for it: unlike a card's

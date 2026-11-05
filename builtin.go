@@ -17,8 +17,8 @@ import (
 	"github.com/con-dog/clingon/internal/ui"
 )
 
-// clingon's own sections share its mark (the C of its banner) in its pink.
-var clingonMark, clingonPink = config.Logos["clingon"], ui.PinkHex
+// clingon's own sections share its pink, under the Clingon heading.
+var clingonPink = ui.PinkHex
 
 // packOptions offers packs to pick from.
 func packOptions(ps []config.Pack) []config.Option {
@@ -86,7 +86,7 @@ func builtinSections() []*config.Section {
 	noLocal := unless(len(local) > 0, "You don't have any local packs yet: create one first.")
 	noneInstalled := unless(len(installed) > 0, "No packs are installed.")
 	sections := []*config.Section{
-		{Name: "Packs", Icon: clingonMark, Color: clingonPink, Category: "Clingon", Groups: []config.Group{
+		{Name: "Packs", Icon: config.Logos["puzzle"], Color: clingonPink, Category: "Clingon", Groups: []config.Group{
 			{Name: "Your packs", Commands: []config.Command{
 				{Name: "Create a pack", Desc: "Makes a pack of your own in packs/local from a working example, and opens it in micro to make it yours: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack create <name>", Args: []config.Arg{
 					{Name: "name", Prompt: "pack name", Desc: "Called <name>.", Placeholder: "letters, digits and dashes, e.g. work-tools"},
@@ -114,7 +114,7 @@ func builtinSections() []*config.Section {
 				{Name: "Update packs", Disabled: unless(len(ups) > 0, "Every installed pack is up to date."), Desc: "Brings your installed packs up to date, replacing their files in packs/remote, and removes any clingon no longer ships: changes you made to those files are lost.", Risk: config.RiskWarn, Cmd: self + " pack update"},
 			}},
 		}},
-		{Name: "Clingon", Icon: clingonMark, Color: clingonPink, Category: "Clingon", Groups: []config.Group{
+		{Name: "General", Icon: config.Logos["gear"], Color: clingonPink, Category: "Clingon", Groups: []config.Group{
 			{Name: "Healthchecks", Commands: []config.Command{
 				{Name: "Run all checks", Desc: "Checks tmux, your packs and the tools every installed pack needs.", Cmd: self + " doctor"},
 				{Name: "Show last crash", Desc: "Shows why clingon last crashed, with the trace to put in a bug report.", Cmd: self + " crash"},
@@ -123,7 +123,7 @@ func builtinSections() []*config.Section {
 				}},
 				{Name: "Check all packs", Desc: "Checks every pack, yours and installed, for mistakes.", Cmd: self + " check"},
 			}},
-			{Name: "clingon", Commands: []config.Command{
+			{Name: "Version", Commands: []config.Command{
 				{Name: "Show version", Desc: "Shows which version of clingon you're running.", Cmd: self + " version"},
 				{Name: "Update clingon", Desc: "Upgrades clingon the same way you installed it.", Cmd: self + " update"},
 			}},
@@ -138,7 +138,7 @@ func builtinSections() []*config.Section {
 				}},
 			}},
 		}},
-		{Name: ui.RecipesSection, Icon: clingonMark, Color: clingonPink, Category: "Clingon", Groups: []config.Group{
+		{Name: ui.RecipesSection, Icon: config.Logos["checklist"], Color: clingonPink, Category: "Clingon", Groups: []config.Group{
 			{Name: "Current recipe"}, // the menu fills it in, with what's numbered
 		}},
 	}
@@ -205,7 +205,7 @@ func doctor(names []string) error {
 			}
 			add(&setup, row{mark: ok, label: "packs", detail: fmt.Sprintf("valid: %d sections, %d commands", len(cfg.Sections), n)})
 		}
-		outln(card("clingon", setup, cardWidth()))
+		outln(card("Clingon", setup, cardWidth()))
 	}
 
 	all, err := config.Packs()

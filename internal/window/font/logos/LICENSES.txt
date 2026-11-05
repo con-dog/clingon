@@ -10,8 +10,8 @@ The brands themselves are their owners' trademarks.
 
 clingon.svg (the C of its banner) and go.svg (a G) are clingon's own.
 
-Icons (amazon, box, cloud, cpu, database, folder, globe, hash, play,
-server, shield, terminal, window) are from Bootstrap Icons 1.11.3 (https://icons.getbootstrap.com),
+Icons (amazon, box, checklist, cloud, cpu, database, folder, gear, globe,
+hammer, hash, play, puzzle, server, shield, terminal, window) are from Bootstrap Icons 1.11.3 (https://icons.getbootstrap.com),
 under the MIT licence:
 
 The MIT License (MIT)

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"slices"
 	"sort"
 	"strconv"
@@ -50,6 +51,7 @@ type picker struct {
 	step    func(item) []int // a command's places in the recipe, ascending, if this list shows them
 	offset  int
 	height  int
+	noun    string // what the list counts, on the filter's row: "" for no count
 	filter  textinput.Model
 	// filtering: / has opened its filter, so keys type into it. / again closes it
 	// with what's been typed still applied (filtered), to use the list as it is.
@@ -504,7 +506,13 @@ func (p *picker) update(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (p *picker) render(width, height int) string {
-	p.height = max(1, height)
+	height = max(1, height)
+	// A list that doesn't fit gives its last row to saying so.
+	overflows := len(p.view) > height && height >= minForMoreRow
+	if overflows {
+		height--
+	}
+	p.height = height
 	if len(p.view) == 0 {
 		return dimStyle.Render("  no matches")
 	}
@@ -534,7 +542,67 @@ func (p *picker) render(width, height int) string {
 	for i := p.offset; i < end; i++ {
 		lines = append(lines, p.row(p.view[i], i == p.cursor, width))
 	}
+	if overflows {
+		lines = append(lines, p.moreRow(end))
+	}
 	return strings.Join(lines, "\n")
+}
+
+// minForMoreRow is the least room a list needs to give a row to saying there's
+// more: any less, and rows of the list come first.
+const minForMoreRow = 3
+
+// moreRow says what's off-screen: what's below, or once there's nothing
+// below, what's above.
+func (p *picker) moreRow(end int) string {
+	if n := rowCount(p.view[end:]); n > 0 {
+		return faintStyle.Render(fmt.Sprintf("  ↓ %d more", n))
+	}
+	if n := rowCount(p.view[:min(p.offset, len(p.view))]); n > 0 {
+		return faintStyle.Render(fmt.Sprintf("  ↑ %d more", n))
+	}
+	return ""
+}
+
+// rowCount is how many rows there are, leaving out headings.
+func rowCount(items []item) int {
+	n := 0
+	for i := range items {
+		if !items[i].header {
+			n++
+		}
+	}
+	return n
+}
+
+// tally is the list's size for the filter's row, in its noun: "34 commands",
+// or "12 of 34 commands" while a filter is applied. Rows that aren't what the
+// noun names, like a recipe's Run recipe, don't count.
+func (p *picker) tally() string {
+	if p.noun == "" {
+		return ""
+	}
+	count := func(items []item) int {
+		n := 0
+		for i := range items {
+			if _, isCmd := items[i].ref.(cmdRef); !items[i].header && (isCmd || p.noun != "command") {
+				n++
+			}
+		}
+		return n
+	}
+	pool := p.items
+	if p.search != nil {
+		pool = p.search
+	}
+	total := count(pool)
+	if total == 0 {
+		return ""
+	}
+	if p.query() != "" {
+		return fmt.Sprintf("%d of %s", count(p.view), plural(total, p.noun))
+	}
+	return plural(total, p.noun)
 }
 
 // sticky is the heading of the group scrolled into, pinned above its
@@ -668,6 +736,7 @@ func (p *picker) row(it item, active bool, width int) string {
 		title = faintStyle.Render(title)
 	case it.risk == config.RiskDanger: // the whole row in red, highlighted or not
 		title = dangerStyle.Render(title)
+	case active && p.blurred: // the bar dims with focus; the name stays readable
 	case active, it.accent:
 		title = cur.Render(title)
 	case badges != "": // ties the name to its badges, across the gap
