@@ -14,13 +14,17 @@ centred on that slot, so icons line up whatever they are:
 Both live in Unicode's Private Use Area at fixed codepoints: LOGOS and
 SYMBOLS only ever grow, so a codepoint never changes meaning.
 
+Separately, each of DRAWN is a character clingon shows that JetBrains Mono
+lacks, drawn one cell wide from symbols/NAME.svg at its real codepoint. Without
+it the system picks a font for the character, which could be an emoji one.
+
 The font's name carries a hash of what went into it, so a changed font is a
 new font to the terminal, never an old one it has cached.
 
 Writes ClingonMono-Regular.otf (embedded in the binary),
 internal/config/logos.go (logo names and symbol twins),
 internal/window/fontname.go (the font's name) and the list of logos in
-schema.json.
+pack.schema.json.
 
 Run after adding or changing a logo, from the repo root:
 
@@ -47,7 +51,7 @@ SRC = os.path.join(HERE, "JetBrainsMono-Regular.otf")
 OUT = os.path.join(HERE, "ClingonMono-Regular.otf")
 GO = os.path.join(ROOT, "internal", "config", "logos.go")
 GO_NAME = os.path.join(ROOT, "internal", "window", "fontname.go")
-SCHEMA = os.path.join(ROOT, "schema.json")
+SCHEMA = os.path.join(ROOT, "pack.schema.json")
 
 # Append only. A logo dropped later is replaced by None, keeping the rest.
 LOGOS = ["apple", "claude", "deno", "docker", "git", "github", "googlecloud", "helm", "java",
@@ -64,6 +68,11 @@ FIRST_LOGO = 0xE000
 SYMBOLS = ("•▶□▲△≡⇔⊠⊞⇓⇒◎◉∷✓↑✶λ⊛≈∇◔◕◫◶⊕⍟φ⌘⌥◆◇◈○●■▪▫▷▼▽◀◁◊◯◧◨◩◪"
            "⊖⊗⊘⊙⊜⊝⊟⊡∞ΣΩ⌂⚡←→↓↔↕⇐⇑⋄∴∑∆πμψθ∅§✕✗")
 FIRST_SYMBOL = 0xE800
+
+# Characters clingon shows that the font lacks, and the symbols/ file drawing
+# each. Those files are in font units, with y running down from the top of the
+# capitals: 600 wide, and the baseline at 730.
+DRAWN = {"☠": "skull", "✎": "pencil"}
 
 # Font units: the cell is 600 wide, capitals 730 tall. Logos are scaled to
 # the same height, or width if they're wide, centred on the capitals.
@@ -91,16 +100,22 @@ def add(font, glyph, codepoint, draw):
             t.cmap[codepoint] = glyph
 
 
-def logo(svg):
-    """A pen-drawing function for svg, scaled and centred on the slot."""
+def outline_of(svg, height=0):
+    """svg as one outline with y running up, height being its y=0."""
     # Fonts fill by winding, where some SVGs say even-odd: redrawn as one
     # outline, without overlaps, holes stay holes either way.
     outline = Path()
-    SVGPath(svg).draw(TransformPen(outline.getPen(), (1, 0, 0, -1, 0, 0)))  # SVG's y runs down, the font's up
+    SVGPath(svg).draw(TransformPen(outline.getPen(), (1, 0, 0, -1, 0, height)))  # SVG's y runs down, the font's up
     with open(svg) as f:
         if 'fill-rule="evenodd"' in f.read():
             outline.fillType = FillType.EVEN_ODD
     outline.simplify(fix_winding=True, keep_starting_points=False)
+    return outline
+
+
+def logo(svg):
+    """A pen-drawing function for svg, scaled and centred on the slot."""
+    outline = outline_of(svg)
     x0, y0, x1, y1 = outline.bounds
     k = min(HEIGHT / (y1 - y0), WIDTH / (x1 - x0))
     dx = (SLOT - (x1 - x0) * k) / 2 - x0 * k
@@ -121,6 +136,7 @@ def check(logos, twins):
     cmap = font.getBestCmap()
     want = {cp: "logo." + n for n, cp in logos.items()}
     want.update({cp: "centred.%04X" % ord(sym) for sym, cp in twins.items()})
+    want.update({ord(sym): "drawn." + name for sym, name in DRAWN.items()})
     glyphs = font.getGlyphSet()
     for cp, glyph in want.items():
         if cmap.get(cp) != glyph:
@@ -137,7 +153,8 @@ def main():
         sys.exit("logos/ and LOGOS differ: add new logos to the end of LOGOS")
 
     digest = hashlib.sha256()
-    for path in [__file__, SRC] + [os.path.join(HERE, "logos", n + ".svg") for n in files]:
+    for path in ([__file__, SRC] + [os.path.join(HERE, "logos", n + ".svg") for n in files]
+                 + [os.path.join(HERE, "symbols", n + ".svg") for n in DRAWN.values()]):
         with open(path, "rb") as f:
             digest.update(f.read())
     tag = digest.hexdigest()[:8]
@@ -158,6 +175,10 @@ def main():
             add(font, "centred.%04X" % ord(sym), FIRST_SYMBOL + i,
                 lambda pen, src=src: src.draw(TransformPen(pen, (1, 0, 0, 1, CELL / 2, 0))))
             twins[sym] = FIRST_SYMBOL + i
+    for sym, name in DRAWN.items():
+        if ord(sym) in cmap:
+            sys.exit("the font has %s already: take it out of DRAWN" % sym)
+        add(font, "drawn." + name, ord(sym), outline_of(os.path.join(HERE, "symbols", name + ".svg"), 730).draw)
     font.setGlyphOrder(list(font["CFF "].cff.topDictIndex[0].charset))
     font["maxp"].numGlyphs = len(font.getGlyphOrder())
 
@@ -205,13 +226,13 @@ def main():
 
     with open(SCHEMA) as f:
         schema = f.read()
-    enum = '"logo": { "enum": [%s],' % ", ".join('"%s"' % n for n in sorted(logos))
-    schema, n = re.subn(r'"logo": \{ "enum": \[[^\]]*\],', enum, schema)
+    enum = '"logo": {\n      "enum": [\n%s\n      ],' % ",\n".join('        "%s"' % n for n in sorted(logos))
+    schema, n = re.subn(r'"logo":\s*\{\s*"enum":\s*\[[^\]]*\],', enum, schema)
     if n != 1:
-        sys.exit("schema.json: couldn't find the logo enum")
+        sys.exit("pack.schema.json: couldn't find the logo enum")
     with open(SCHEMA, "w") as f:
         f.write(schema)
-    print("%s: %d logos, %d centred symbols" % (family, len(logos), len(twins)))
+    print("%s: %d logos, %d centred symbols, %d drawn" % (family, len(logos), len(twins), len(DRAWN)))
 
 
 if __name__ == "__main__":

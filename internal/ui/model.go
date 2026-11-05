@@ -1590,7 +1590,7 @@ func (m *Model) pickStep(items []item, a config.Arg, prev string) {
 	}
 }
 
-func oneLine(s string) string { return strings.ReplaceAll(s, "\n", " ↵ ") }
+func oneLine(s string) string { return strings.ReplaceAll(s, "\n", " ⏎ ") }
 
 // accept records v for the arg being asked and moves on: to the next arg,
 // or to running the command.
@@ -2084,6 +2084,13 @@ func (m *Model) View() tea.View {
 	return v
 }
 
+// crumbSection is a section as the breadcrumb names it: its icon, then its
+// name three cells along.
+func crumbSection(s *config.Section) string {
+	icon := slotIcon(s.Icon)
+	return iconStyle(s.Color).Render(icon) + strings.Repeat(" ", 3-ansi.StringWidth(icon)) + s.Name
+}
+
 func (m *Model) view() string {
 	if m.w == 0 {
 		return ""
@@ -2099,7 +2106,7 @@ func (m *Model) view() string {
 		if s == nil {
 			return []string{name}
 		}
-		return []string{s.Category, iconStyle(s.Color).Render(slotIcon(s.Icon)) + strings.Repeat(" ", 3-ansi.StringWidth(s.Icon)) + s.Name}
+		return []string{s.Category, crumbSection(s)}
 	}
 	switch {
 	case m.mode != modeBrowse && m.pending != nil:

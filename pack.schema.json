@@ -26,7 +26,7 @@
     },
     "icon": {
       "type": "string",
-      "description": "One glyph shown before the name: a symbol like ★ ◆ ⚙, or an emoji."
+      "description": "One glyph shown before the name: a symbol like ✶ ◆ ⌘."
     },
     "logo": {
       "enum": [

@@ -2,6 +2,12 @@ package window
 
 import (
 	"encoding/binary"
+	"go/scanner"
+	"go/token"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -53,6 +59,88 @@ func TestEveryLogoAndSymbolIsInTheFont(t *testing.T) {
 	}
 	for sym, s := range config.Centred {
 		check("centred", sym, s)
+	}
+}
+
+// A character missing from the font is drawn from whatever font the system
+// picks, which for some is an emoji one. This reads what clingon shows: the
+// strings in its Go code (not its tests or comments), its packs, and the
+// schemas that suggest icons for people's own packs.
+func TestEverythingClingonShowsIsInTheFont(t *testing.T) {
+	cmap := fontCmap(t, fontFile)
+	root := filepath.Join("..", "..")
+	seen := map[rune]string{}
+	note := func(text, where string) {
+		for _, r := range text {
+			if r == '\u200d' { // never shown: config strips it from icons when checking them
+				continue
+			}
+			if _, dup := seen[r]; r > 127 && !dup {
+				seen[r] = where
+			}
+		}
+	}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		name := d.Name()
+		switch {
+		case strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go"):
+			src, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for _, lit := range goStrings(t, path, src) {
+				note(lit, path)
+			}
+		case strings.HasSuffix(name, ".yaml"), name == "schema.json", name == "pack.schema.json":
+			src, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			note(string(src), path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) == 0 || seen['☠'] == "" {
+		t.Fatalf("the scan found nothing to check: %d characters", len(seen))
+	}
+	for r, where := range seen {
+		if cmap[r] == 0 {
+			t.Errorf("%c (U+%04X), used in %s, isn't in the embedded font: use one that is, or add it to DRAWN in build.py", r, r, where)
+		}
+	}
+}
+
+// goStrings is the string and character literals in Go source.
+func goStrings(t *testing.T, path string, src []byte) []string {
+	t.Helper()
+	var s scanner.Scanner
+	fset := token.NewFileSet()
+	s.Init(fset.AddFile(path, fset.Base(), len(src)), src, nil, 0)
+	var out []string
+	for {
+		_, tok, lit := s.Scan()
+		switch tok {
+		case token.EOF:
+			return out
+		case token.STRING, token.CHAR:
+			text, err := strconv.Unquote(lit)
+			if err != nil {
+				t.Fatalf("%s: %s: %v", path, lit, err)
+			}
+			out = append(out, text)
+		}
 	}
 }
 

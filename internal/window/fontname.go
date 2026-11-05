@@ -5,7 +5,7 @@ package window
 // The font's name changes with its contents, so a terminal never uses
 // an older one it has cached.
 const (
-	fontFamily   = "Clingon Mono a192d328"
-	fontPS       = "ClingonMono-a192d328" // the PostScript name, which Terminal and iTerm match on
-	fontFileName = "ClingonMono-a192d328.otf"
+	fontFamily   = "Clingon Mono 1a2efb1b"
+	fontPS       = "ClingonMono-1a2efb1b" // the PostScript name, which Terminal and iTerm match on
+	fontFileName = "ClingonMono-1a2efb1b.otf"
 )
