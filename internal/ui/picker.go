@@ -32,6 +32,7 @@ type item struct {
 	indent   bool   // sits under the row above it
 	note     bool   // with header: a faint line of text, not a heading
 	stepAt   int    // the one recipe position this row is, in the recipe's own list
+	typed    bool   // the last row of a pick-one list: use what's been typed instead
 	ref      any
 	idx      int
 }
@@ -57,6 +58,10 @@ type picker struct {
 	// filtering: / has opened its filter, so keys type into it. / again closes it
 	// with what's been typed still applied (filtered), to use the list as it is.
 	filtering bool
+	// freeform: a pick-one blank's choices are suggestions. What's typed in its
+	// filter (/ opens it, as in every list), unless it's a choice exactly, is a
+	// row of its own at the end, to use instead.
+	freeform bool
 }
 
 func newPicker(items, search []item, multi bool) picker {
@@ -162,6 +167,9 @@ func (p *picker) refilter() {
 		for _, h := range hits {
 			p.view = append(p.view, h.it)
 		}
+	}
+	if typed := p.query(); p.freeform && typed != "" && !slices.ContainsFunc(p.items, func(it item) bool { return it.value == typed }) {
+		p.view = append(p.view, item{title: "use “" + typed + "”", desc: "what you typed", value: typed, typed: true, idx: -1})
 	}
 	p.cursor, p.offset = -1, 0
 	p.move(1)
@@ -700,11 +708,11 @@ func (p *picker) row(it item, active bool, width int) string {
 	}
 	cur := cursorStyle
 	if p.blurred {
-		cur = labelStyle
+		cur = blurredStyle
 	}
 	prefix := "  "
 	if active {
-		prefix = cur.Render("▌ ")
+		prefix = cursorBar(cur) + " "
 	}
 	if it.indent {
 		prefix += "  "

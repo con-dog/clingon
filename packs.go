@@ -20,13 +20,14 @@ import (
 const packUsage = `Usage:
   clingon pack list              your packs, added and your own (--remote, --mine: just those)
   clingon pack available         packs you can add
-  clingon pack add NAME...       add curated packs, or parts of them, like aws/ecs
-  clingon pack remove NAME...    remove packs or parts of them (curated or your own)
+  clingon pack add NAME...       add curated packs, or single modules, like aws/ecs
+  clingon pack remove NAME...    remove packs or single modules (curated or your own)
   clingon pack update [NAME...]  bring added packs up to date
-  clingon pack create NAME       start a pack of your own (from an example) in micro
-  clingon pack edit NAME         edit your pack in micro
+  clingon pack create [NAME]     start your own pack, as a form (or NAME LOGO COLOUR)
+  clingon pack edit NAME         edit your pack, as a form (--files: its Markdown, in micro)
   clingon pack sections NAME     list the sections in your pack
   clingon pack describe NAME     print a pack's files, whether you have it or not
+  clingon pack guide             how to write a pack: the folders and the format
 
 A pack comes from clingon (in packs/remote once added) or is your own (in
 packs/mine). If you have one of each with the same name, say remote/NAME or
@@ -41,7 +42,7 @@ func packCmd(args []string) error {
 	}
 	var rest []string
 	var names func(config.Pack) string // how to print a list as names, not as a card
-	remoteOnly, localOnly := false, false
+	remoteOnly, localOnly, files, menu := false, false, false, false
 	for _, a := range args[1:] {
 		switch a {
 		case "--names":
@@ -52,6 +53,10 @@ func packCmd(args []string) error {
 			remoteOnly = true
 		case "--mine":
 			localOnly = true
+		case "--files": // edit the pack's Markdown in micro, not with the form
+			files = true
+		case "--menu": // the form was opened from the menu, which asks whether to save
+			menu = true
 		default:
 			rest = append(rest, a)
 		}
@@ -83,7 +88,7 @@ func packCmd(args []string) error {
 		case remoteOnly:
 			printPacks("Added packs", remote, names, "no packs added: see `clingon pack available`")
 		case localOnly:
-			printPacks("Your packs", local, names, "no packs of your own yet: `clingon pack create` starts one")
+			printPacks("My packs", local, names, "no packs of your own yet: `clingon pack create` starts one")
 		case len(remote)+len(local) == 0:
 			printPacks("", nil, names, "no packs yet: see `clingon pack available`")
 		default:
@@ -91,7 +96,7 @@ func packCmd(args []string) error {
 				printPacks("Added packs", remote, names, "")
 			}
 			if len(local) > 0 {
-				printPacks("Your packs", local, names, "")
+				printPacks("My packs", local, names, "")
 			}
 		}
 		return nil
@@ -106,7 +111,7 @@ func packCmd(args []string) error {
 			if !config.IsInstalled(p.Name) {
 				list = append(list, p)
 			} else if missing := config.MissingModules(p.Name); len(missing) > 0 {
-				p.Description = "you have part of this; also: " + moduleSlugs(missing)
+				p.Description = "you have some of its modules; also: " + moduleSlugs(missing)
 				p.Modules = missing
 				list = append(list, p)
 			}
@@ -137,18 +142,28 @@ func packCmd(args []string) error {
 		return nil
 
 	case "create", "new":
+		if len(rest) == 0 { // a new pack, made in the form
+			return newPackForm(menu)
+		}
+		logo, color := "", ""
+		if len(rest) == 3 { // a pack, its logo and the logo's colour
+			color, rest = rest[2], rest[:2]
+		}
+		if len(rest) == 2 {
+			logo, rest = rest[1], rest[:1]
+		}
 		ref, err := one("create")
 		if err != nil {
 			return err
 		}
 		_, name := config.SplitRef(ref)
-		if err := config.NewPack(name); err != nil {
+		if err := config.NewPackWithLogo(name, logo, color); err != nil {
 			return err
 		}
 		if _, err := exec.LookPath("micro"); err != nil { // it won't open, so say it's made now
 			say(ok, "created %s", config.PackPath(name))
 		}
-		return editPackAs(name, "created")
+		return formEdit(name, "created", menu)
 
 	case "remove", "rm":
 		if len(rest) == 0 {
@@ -230,7 +245,13 @@ func packCmd(args []string) error {
 		if err != nil {
 			return err
 		}
-		return editPack(ref)
+		if files {
+			return editPack(ref)
+		}
+		return formEdit(ref, "saved", menu)
+
+	case "guide":
+		return guide()
 
 	case "describe", "cat":
 		ref, err := one("describe")
@@ -242,7 +263,7 @@ func packCmd(args []string) error {
 			return err
 		}
 		if isTerm() { // in micro's colours, in a box; to a file or a pipe it's the file as it is
-			sayBoxed(ref, micro.YAML(string(data)))
+			sayBoxed(ref, micro.Markdown(string(data)))
 			return nil
 		}
 		_, err = os.Stdout.Write(data)
@@ -425,7 +446,8 @@ const recipeUsage = `Usage:
   clingon recipe describe NAME
 
 A recipe runs commands in order. The menu adds one for you when you run it, from
-Clingon › Recipes, and lists it there; each ID is one of its commands.
+Clingon › Recipes, and lists it there; each ID is one of its commands. Each is
+a Markdown file in recipes/, next to packs/, that you can edit too.
 `
 
 func recipeCmd(args []string) error {
@@ -438,7 +460,13 @@ func recipeCmd(args []string) error {
 		if len(args) < 3 {
 			return errors.New("usage: clingon recipe add NAME ID...")
 		}
-		if err := config.SaveRecipe(args[1], args[2:]); err != nil {
+		var labels []string // each link says its command's name, where that's known
+		if found, err := commandsByID(); err == nil {
+			for _, id := range args[2:] {
+				labels = append(labels, found[id].name())
+			}
+		}
+		if err := config.SaveRecipe(args[1], args[2:], labels); err != nil {
 			return err
 		}
 		say(ok, "added recipe %q", args[1])
@@ -548,6 +576,14 @@ func describeRecipe(name string) error {
 type foundCommand struct {
 	section string
 	cmd     *config.Command
+}
+
+// name is the command's name, or "" if there's no such command.
+func (f foundCommand) name() string {
+	if f.cmd == nil {
+		return ""
+	}
+	return f.cmd.Name
 }
 
 // commandsByID is what the menu offers from this folder, by the ID recipes use.

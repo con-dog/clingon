@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -13,8 +12,6 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
-
-	"go.yaml.in/yaml/v3"
 )
 
 // Your packs are folders in packs/mine, in the same format as the built-in
@@ -50,10 +47,10 @@ func checkRef(name string) error {
 // LocalPacks lists your pack folders, which Load reads after the installed packs.
 func LocalPacks() []string { return packDirs(localDir()) }
 
-// LoosePackFiles lists YAML files sitting directly in packs/mine or packs/remote,
+// LoosePackFiles lists Markdown files sitting directly in packs/mine or packs/remote,
 // which aren't read: a pack is a folder.
 func LoosePackFiles() []string {
-	return append(yamlFiles(localDir()), yamlFiles(remoteDir())...)
+	return append(mdFiles(localDir()), mdFiles(remoteDir())...)
 }
 
 // skippedName is a file or folder clingon leaves alone among packs: its own,
@@ -62,26 +59,23 @@ func skippedName(name string) bool {
 	return strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".")
 }
 
-// packDirs lists the pack folders in root. Your own may be links, say to your
-// dotfiles.
-func packDirs(root string) []string {
-	entries, _ := os.ReadDir(root)
+func isYAML(name string) bool {
+	return strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")
+}
+
+func isMarkdown(name string) bool { return strings.HasSuffix(name, ".md") }
+
+// mdFiles lists dir's .md files, sorted: a pack's files.
+func mdFiles(dir string) []string {
+	entries, _ := os.ReadDir(dir)
 	var out []string
 	for _, e := range entries {
-		if skippedName(e.Name()) {
-			continue
-		}
-		path := filepath.Join(root, e.Name())
-		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
-			out = append(out, path)
+		if n := e.Name(); !e.IsDir() && isMarkdown(n) {
+			out = append(out, filepath.Join(dir, n))
 		}
 	}
 	sort.Strings(out)
 	return out
-}
-
-func isYAML(name string) bool {
-	return strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")
 }
 
 // yamlFiles lists dir's .yaml and .yml files, sorted. (Not a glob: a
@@ -99,16 +93,16 @@ func yamlFiles(dir string) []string {
 }
 
 // isPackFile says whether a file in a pack's folder is part of the pack:
-// _pack.yaml or a submenu.
+// _pack.md or a module.
 func isPackFile(path string) bool {
 	base := filepath.Base(path)
 	return base == PackInfoFile || !skippedName(base)
 }
 
-// moduleFiles lists the submenu files in a pack's folder.
+// moduleFiles lists the module files in a pack's folder.
 func moduleFiles(dir string) []string {
 	var out []string
-	for _, f := range yamlFiles(dir) {
+	for _, f := range mdFiles(dir) {
 		if !skippedName(filepath.Base(f)) {
 			out = append(out, f)
 		}
@@ -116,17 +110,17 @@ func moduleFiles(dir string) []string {
 	return out
 }
 
-// ModuleFiles lists the submenu files in a pack's folder.
+// ModuleFiles lists the module files in a pack's folder.
 func ModuleFiles(dir string) []string { return moduleFiles(dir) }
 
 func moduleSlug(file string) string {
-	return strings.TrimSuffix(strings.TrimSuffix(filepath.Base(file), ".yaml"), ".yml")
+	return strings.TrimSuffix(filepath.Base(file), ".md")
 }
 
 // readPackDir reads the files of a pack's folder.
 func readPackDir(dir string) ([]parsedFile, error) {
 	var parts []parsedFile
-	for _, f := range yamlFiles(dir) {
+	for _, f := range mdFiles(dir) {
 		if !isPackFile(f) {
 			continue
 		}
@@ -151,7 +145,7 @@ func readPackDir(dir string) ([]parsedFile, error) {
 // YourPacks describes each of your packs.
 func YourPacks() ([]Pack, error) { return describePacks(LocalPacks(), "mine") }
 
-// describePacks describes each pack folder, leaving out any with no submenus.
+// describePacks describes each pack folder, leaving out any with no modules.
 func describePacks(dirs []string, where string) ([]Pack, error) {
 	var out []Pack
 	for _, dir := range dirs {
@@ -180,7 +174,7 @@ type described struct {
 func describePack(dir string) Pack {
 	p := Pack{Name: filepath.Base(dir)}
 	name, broken := sectionTitle(p.Name), false
-	for _, f := range yamlFiles(dir) {
+	for _, f := range mdFiles(dir) {
 		if !isPackFile(f) {
 			continue
 		}
@@ -193,7 +187,7 @@ func describePack(dir string) Pack {
 			continue
 		}
 		if part.info != nil {
-			p.Description, p.Requires, p.Default = part.info.Description, part.info.Requires, part.info.Default
+			p.Description, p.Requires, p.Default = part.info.Description, part.info.Requires, defaultPacks[p.Name]
 			if part.info.Name != "" {
 				name = part.info.Name
 			}
@@ -241,11 +235,26 @@ func remember(fi os.FileInfo, f string, part parsedFile) {
 }
 
 // NewPack creates a pack of your own from the starter: a working example
-// submenu, and a _pack.yaml called after the pack, with a guide to the format in
-// comments.
-func NewPack(name string) error {
+// module, and a _pack.md called after the pack, with the default logo.
+func NewPack(name string) error { return NewPackWithLogo(name, "", "") }
+
+// NewPackWithLogo is NewPack with one of clingon's logos ("" for the default)
+// in one of PackColors ("" for the logo's own).
+func NewPackWithLogo(name, logo, color string) error {
+	if logo == "" {
+		logo = DefaultPackLogo
+	}
+	if _, ok := Logos[logo]; !ok {
+		return fmt.Errorf("there's no logo called %s: try one of %s", logo, strings.Join(PackLogos, ", "))
+	}
+	if color != "" && colorHex(color) == "" {
+		return fmt.Errorf("there's no colour called %s: try one of %s", color, colorNames())
+	}
 	if err := checkPackName(name); err != nil {
 		return err
+	}
+	if _, ok := sectionSlugs[name]; ok {
+		return fmt.Errorf("%s is the name of a section folder: call your pack something else, or make it inside packs/mine/%s/", name, name)
 	}
 	dir := PackPath(name)
 	if _, err := os.Stat(dir); err == nil {
@@ -254,15 +263,16 @@ func NewPack(name string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	title := sectionTitle(name)
-	if pad := len("My commands") - len(title); pad > 0 {
-		title += strings.Repeat(" ", pad) // keep the comments lined up
+	info := strings.Replace(string(StarterInfo), "# My commands", "# "+sectionTitle(name), 1)
+	logoLine := "logo: " + logo
+	if color != "" {
+		logoLine += "\ncolour: " + color
 	}
-	info := strings.Replace(string(StarterInfo), "name: My commands ", "name: "+title+" ", 1)
+	info = strings.Replace(info, "logo: "+DefaultPackLogo, logoLine, 1)
 	if err := os.WriteFile(filepath.Join(dir, PackInfoFile), []byte(info), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "examples.yaml"), Starter, 0o644)
+	return os.WriteFile(filepath.Join(dir, "examples.md"), Starter, 0o644)
 }
 
 // sectionTitle turns a pack or file name into a menu name: work-tools → Work tools.
@@ -286,7 +296,7 @@ func DeletePack(name string) error {
 	return removeRef(localDir(), name)
 }
 
-// SectionNames lists the submenus in your pack called name.
+// SectionNames lists the modules in your pack called name.
 func SectionNames(name string) []string {
 	if checkPackName(name) != nil {
 		return nil
@@ -322,172 +332,64 @@ func YourCommands() ([]YourCommand, error) {
 
 var placeholderRe = regexp.MustCompile(`<([A-Za-z_][A-Za-z0-9_-]*)>`)
 
-// AddCommand adds a command to a submenu of your pack, creating either if
-// needed. Each <placeholder> in cmd becomes a typed-in arg. Comments and
-// layout in the file are kept.
+// AddCommand adds a command to a module of your pack, creating either if
+// needed. Each <placeholder> in cmd becomes a typed-in blank. What's in the
+// file already is kept as it is: the command goes on the end.
 func AddCommand(pack, section, name, cmd, desc string) error {
 	if err := checkPackName(pack); err != nil {
 		return err
+	}
+	if name == "" || cmd == "" {
+		return errors.New("a command needs a name and the command to run")
 	}
 	slug := strings.Trim(notSlug.ReplaceAllString(strings.ToLower(section), "-"), "-")
 	if slug == "" {
 		return fmt.Errorf("a section's name needs a letter or digit in it (not %q)", section)
 	}
-	dir, path := PackPath(pack), filepath.Join(PackPath(pack), slug+".yaml")
-	packIsNew, fileIsNew := false, false
-	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
-		packIsNew = true
+	dir, path := PackPath(pack), filepath.Join(PackPath(pack), slug+".md")
+	have, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		have = []byte("# " + section + "\n")
+	case err != nil:
+		return err
 	}
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		fileIsNew = true
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-		guide, _, ok := strings.Cut(string(Starter), "\nname:")
-		if !ok {
-			return errors.New("the starter pack has no name: line")
-		}
-		doc := guide + "\nname: " + yamlString(section) + "\ncommands: []\n"
-		if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
-			return err
-		}
-	}
-	err := func() error {
-		doc, err := readDoc(path)
-		if err != nil {
-			return err
-		}
-		if err := addCommand(doc.Content[0], pack, section, name, cmd, desc); err != nil {
-			return err
-		}
-		return writeDoc(path, doc)
-	}()
-	if err != nil {
-		// Don't leave an empty pack, or an empty submenu, behind.
-		if packIsNew {
-			_ = os.RemoveAll(dir)
-		} else if fileIsNew {
-			_ = os.Remove(path)
-		}
-	}
-	return err
-}
-
-// yamlString is s as a YAML value.
-func yamlString(s string) string {
-	b, err := yaml.Marshal(s)
-	if err != nil {
-		return `""`
-	}
-	return strings.TrimSpace(string(b))
-}
-
-// addCommand appends a command to section node sec. Each <placeholder> in
-// cmd becomes a typed-in arg.
-func addCommand(sec *yaml.Node, pack, section, name, cmd, desc string) error {
-	if name == "" || cmd == "" {
-		return errors.New("a command needs a name and the command to run")
-	}
-	cmds := seqFor(sec, "commands")
-	for _, c := range cmds.Content {
-		if v := mapGet(c, "name"); v != nil && v.Value == name {
-			return fmt.Errorf("mine/%s › %s already has a command called %q", pack, section, name)
-		}
-	}
-	c := &yaml.Node{Kind: yaml.MappingNode}
-	mapSet(c, "name", str(name))
-	mapSet(c, "id", str(newCommandID(section, "", name)))
-	mapSet(c, "cmd", str(cmd))
+	var b strings.Builder
+	b.WriteString(strings.TrimRight(string(have), "\n") + "\n\n## " + name + "\n")
 	if desc != "" {
-		mapSet(c, "desc", str(desc))
+		b.WriteString(desc + "\n")
 	}
-	var args []*yaml.Node
+	b.WriteString("\n```sh\n" + cmd + "\n```\n")
 	seen := map[string]bool{}
+	var blanks []string
 	for _, m := range placeholderRe.FindAllStringSubmatch(cmd, -1) {
 		if !seen[m[1]] {
 			seen[m[1]] = true
-			a := &yaml.Node{Kind: yaml.MappingNode}
-			mapSet(a, "name", str(m[1]))
-			args = append(args, a)
+			blanks = append(blanks, "- `<"+m[1]+">` "+sectionTitle(m[1]))
 		}
 	}
-	if len(args) > 0 {
-		mapSet(c, "args", &yaml.Node{Kind: yaml.SequenceNode, Content: args})
+	if len(blanks) > 0 {
+		b.WriteString("\n" + strings.Join(blanks, "\n") + "\n")
 	}
-	cmds.Style, cmds.Content = 0, append(cmds.Content, c)
-	return nil
-}
-
-// ---- yaml.Node helpers: editing in place keeps the user's comments ----
-
-func readDoc(path string) (*yaml.Node, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	if doc.Kind == 0 || len(doc.Content) == 0 {
-		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
-	}
-	if doc.Content[0].Kind != yaml.MappingNode {
-		return nil, fmt.Errorf("%s: expected a mapping at the top", path)
-	}
-	return &doc, nil
-}
-
-// writeDoc saves doc, but only if the result still loads and validates.
-func writeDoc(path string, doc *yaml.Node) error {
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(doc); err != nil {
-		return err
-	}
-	part, err := parsePackFile(path, buf.Bytes())
+	doc := []byte(b.String())
+	part, err := parsePackFile(path, doc)
 	if err != nil {
 		return err
 	}
-	c := assemble(filepath.Base(filepath.Dir(path)), []parsedFile{part})
-	if errs := c.Validate(); len(errs) > 0 {
+	n := 0
+	for _, c := range part.group.Commands {
+		if c.Name == name {
+			n++
+		}
+	}
+	if n > 1 {
+		return fmt.Errorf("mine/%s › %s already has a command called %q", pack, part.group.Name, name)
+	}
+	if errs := assemble(pack, []parsedFile{part}).Validate(); len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
-}
-
-func mapGet(m *yaml.Node, key string) *yaml.Node {
-	if m == nil || m.Kind != yaml.MappingNode {
-		return nil
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
 	}
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key {
-			return m.Content[i+1]
-		}
-	}
-	return nil
+	return os.WriteFile(path, doc, 0o644)
 }
-
-// seqFor is the list under key in mapping m, made (or put in place of an
-// empty `key:`) if there isn't one.
-func seqFor(m *yaml.Node, key string) *yaml.Node {
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key {
-			if v := m.Content[i+1]; v.Kind == yaml.SequenceNode {
-				return v
-			}
-			m.Content[i+1] = &yaml.Node{Kind: yaml.SequenceNode} // `key:` with nothing after it
-			return m.Content[i+1]
-		}
-	}
-	seq := &yaml.Node{Kind: yaml.SequenceNode}
-	mapSet(m, key, seq)
-	return seq
-}
-
-func mapSet(m *yaml.Node, key string, v *yaml.Node) {
-	m.Content = append(m.Content, str(key), v)
-}
-
-func str(v string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v} }

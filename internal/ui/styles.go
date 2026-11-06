@@ -22,7 +22,7 @@ var (
 	soft   = lipgloss.Color("#afafff") // 147 periwinkle: headings and keys in the shell's output, far enough from the prompt's purple; flags
 	grey   = lipgloss.Color("#8787af") // 103 lavender: secondary text, the prompt's branch
 	faint  = lipgloss.Color("#5f5f87") // 60: chrome: rules, frames, placeholders
-	raised = lipgloss.Color("#262626") // 235: the cursor's row, the command block, bars
+	raised = lipgloss.Color("0")       // ANSI black, which clingon's window makes a step lighter than its background, in its violet (internal/window): the cursor's row, the command block, bars
 	text   = lipgloss.Color("#e4e4e4") // 254: text on coloured bands
 	orange = lipgloss.Color("#ffaf5f") // 215: cautions
 	red    = lipgloss.Color("#ff5f87") // 204: errors, danger; the prompt after a failure
@@ -40,7 +40,8 @@ var (
 	logoStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
 	crumbStyle   = lipgloss.NewStyle().Foreground(text).Bold(true)
 	headerStyle  = lipgloss.NewStyle().Foreground(purple).Bold(true)
-	labelStyle   = lipgloss.NewStyle().Foreground(grey).Bold(true) // COMMAND, DESCRIPTION
+	labelStyle   = headerStyle                                     // COMMAND, DESCRIPTION: headings, as the list's are
+	blurredStyle = lipgloss.NewStyle().Foreground(grey).Bold(true) // the cursor while focus is elsewhere
 	cursorStyle  = lipgloss.NewStyle().Foreground(accent).Bold(true)
 	accentStyle  = lipgloss.NewStyle().Foreground(accent)
 	dimStyle     = lipgloss.NewStyle().Foreground(grey)
@@ -117,6 +118,18 @@ func banner(width, reveal int, side ...string) string {
 
 // onBg puts a whole line, already coloured, on background bg and pads it to
 // w cells. (A style's background alone stops at the first reset inside.)
+// cursorBar is the bar at the start of the cursor's row: a cell filled with
+// st's colour. A filled cell, not a ▌, because some terminals smear a block
+// character a pixel into the row below and never repaint it when the cursor
+// moves up. Without colour (a plain terminal, tests) it's a ▌.
+func cursorBar(st lipgloss.Style) string {
+	cell := lipgloss.NewStyle().Background(st.GetForeground()).Render(" ")
+	if cell == " " {
+		return st.Render("▌")
+	}
+	return cell
+}
+
 func onBg(line string, bg color.Color, w int) string {
 	start, end, ok := strings.Cut(lipgloss.NewStyle().Background(bg).Render("\x00"), "\x00")
 	if pad := w - ansi.StringWidth(line); pad > 0 {
@@ -125,7 +138,7 @@ func onBg(line string, bg color.Color, w int) string {
 	if !ok || start == "" { // no colour here (tests, a plain terminal)
 		return line
 	}
-	// Styles end with a reset, long or short form: the background goes back
-	// on after each.
-	return start + strings.NewReplacer("\x1b[0m", "\x1b[0m"+start, "\x1b[m", "\x1b[m"+start).Replace(line) + end
+	// Styles end with a reset, long or short form, and a band in this one
+	// with a background reset: the background goes back on after each.
+	return start + strings.NewReplacer("\x1b[0m", "\x1b[0m"+start, "\x1b[m", "\x1b[m"+start, "\x1b[49m", "\x1b[49m"+start).Replace(line) + end
 }

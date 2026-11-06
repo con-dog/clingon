@@ -1,6 +1,6 @@
 {
   "colorscheme": "clingon",
-  "keymenu": true,
+  "keymenu": false,
   "statusformatl": "$(filename) $(modified)",
   "statusformatr": "Ctrl-S save · Ctrl-Q quit",
   "diffgutter": false,

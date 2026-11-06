@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
-name: MacOs
-description: MacOs power, network, Finder, clipboard and software updates
-requires: [sw_vers]
-logo: apple
-color: "#eeeeee"
-category: System

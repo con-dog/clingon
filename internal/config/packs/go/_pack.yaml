@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
-name: Go
-description: Go modules, building, testing and tools
-requires: [go]
-logo: go
-color: "#00afd7"
-category: Code

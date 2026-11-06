@@ -22,8 +22,39 @@ _clingon_prompt() {
   (( ok == 0 )) || mark='%F{204}'
   local aws=''
   [[ -z $AWS_PROFILE ]] || aws=" %F{208}aws:\${AWS_PROFILE//\%/%%}%f"
-  PROMPT="%B%F{99}%~%f%b%F{103}\${vcs_info_msg_0_//\%/%%}%f${aws}"$'\n'"${mark}❯%f "
+  # The path: folders above periwinkle, slashes grey, and the folder you're in
+  # bold purple. A
+  # name is text: its %s are doubled, and the prompt only reads it, never runs it.
+  local p=${(%):-%~}
+  p=${p//\%/%%}
+  local here=${p##*/} up=''
+  [[ $p == */* ]] && up=${p%/*}/
+  [[ $p == / ]] && here=/ up=''
+  _clingon_path="%F{147}${up//\//%F{243\}/%F{147\}}%F{99}%B${here}%b%f"
+  # In a repository, git's logo (clingon's font has it) before the branch.
+  local git=''
+  [[ -n $vcs_info_msg_0_ ]] && git=" %F{203}"$'\uE004'"%f"
+  PROMPT="\${_clingon_path}${git}%F{103}\${vcs_info_msg_0_//\%/%%}%f${aws}"$'\n'"${mark}❯%f "
   RPROMPT=''
+}
+# Typed commands in clingon's colours, if a highlighting plugin is loaded: the
+# same as a command in the menu, in micro and in `clingon pack guide` (programs
+# green, flags periwinkle, strings tan, operators grey). Only in clingon's shell.
+() {
+  local -A want=(
+    command fg=79 builtin fg=79 alias fg=79 function fg=79 precommand fg=79
+    subcommand none path none path-to-dir none
+    single-hyphen-option fg=147 double-hyphen-option fg=147
+    single-quoted-argument fg=180 double-quoted-argument fg=180 dollar-quoted-argument fg=180
+    commandseparator fg=103 redirection fg=103
+  )
+  local k
+  if (( ${+FAST_HIGHLIGHT_STYLES} )); then # fast-syntax-highlighting
+    for k in ${(k)want}; FAST_HIGHLIGHT_STYLES[${FAST_THEME_NAME}$k]=$want[$k]
+  fi
+  if (( ${+ZSH_HIGHLIGHT_STYLES} )); then # zsh-syntax-highlighting
+    for k in ${(k)want}; ZSH_HIGHLIGHT_STYLES[$k]=$want[$k]
+  fi
 }
 # Other prompts' hooks would only redraw theirs; clingon's runs last, so it
 # has the final word.

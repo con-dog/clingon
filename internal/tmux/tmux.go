@@ -625,6 +625,20 @@ func (c *Client) findBar() string {
 // Focus moves focus to pane.
 func (c *Client) Focus(pane string) { _, _ = c.run("select-pane", "-t", pane) }
 
+// FocusMenu moves focus from clingon's shell to its menu, beside it on the
+// left: for a program running in the shell (the pack form). It does nothing
+// outside clingon's tmux.
+func FocusMenu() {
+	socket, _, _ := strings.Cut(os.Getenv("TMUX"), ",")
+	pane := os.Getenv("TMUX_PANE")
+	if socket == "" || pane == "" {
+		return
+	}
+	if c, err := New(socket); err == nil {
+		_, _ = c.run("select-pane", "-t", pane, "-L")
+	}
+}
+
 // FocusIfActive moves focus to pane to, but only if pane from still has it,
 // so it never pulls the user away from somewhere they chose to go.
 func (c *Client) FocusIfActive(from, to string) {

@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
-name: Python
-description: Virtualenvs, pip, pytest and uv
-requires: [python3]
-logo: python
-color: "#5f87af"
-category: Code

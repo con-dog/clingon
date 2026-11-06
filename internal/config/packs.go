@@ -19,8 +19,8 @@ import (
 //go:embed all:packs
 var packFS embed.FS
 
-// Pack is a folder of submenus: one menu item, whose _pack.yaml says how it
-// looks and whose other files are a submenu each.
+// Pack is a folder of modules: one menu item, whose _pack.md says how it
+// looks and whose other files are a module each.
 type Pack struct {
 	Name        string
 	Where       string // "remote" (from clingon, installed or not) or "mine" (yours)
@@ -33,7 +33,7 @@ type Pack struct {
 	Modules     []Module
 }
 
-// Module is a submenu's file in a pack: aws/ecs is the module ecs of aws.
+// Module is a module's file in a pack: aws/ecs is the module ecs of aws.
 type Module struct {
 	Slug        string // its file's name, as it's installed by
 	Name        string // what the menu calls it
@@ -89,9 +89,12 @@ func SplitModule(name string) (pack, module string) {
 	return pack, module
 }
 
-// builtinFiles lists a built-in pack's files, _pack.yaml first.
+// builtinFiles lists a built-in pack's files, _pack.md first.
 func builtinFiles(pack string) []string {
-	entries, err := packFS.ReadDir("packs/" + pack)
+	if builtinSection(pack) == "" {
+		return nil
+	}
+	entries, err := packFS.ReadDir(builtinDir(pack))
 	if err != nil {
 		return nil
 	}
@@ -106,7 +109,7 @@ func builtinFiles(pack string) []string {
 
 // builtinFile is a file of a built-in pack, as clingon ships it.
 func builtinFile(pack, file string) ([]byte, error) {
-	return packFS.ReadFile("packs/" + pack + "/" + file)
+	return packFS.ReadFile(builtinDir(pack) + "/" + file)
 }
 
 func loadPack(name string) (*Config, error) {
@@ -126,21 +129,29 @@ func loadPack(name string) (*Config, error) {
 		}
 		parts = append(parts, part)
 	}
-	return assemble(name, parts), nil
+	c := assemble(name, parts)
+	for i := range c.Sections {
+		c.Sections[i].Category = sectionSlugs[builtinSection(name)]
+	}
+	return c, nil
 }
 
 // The clingon folder holds:
 //
 //	packs/_available.yaml  every pack you can install (written by clingon)
-//	packs/remote/          installed packs, a folder each: installing copies
-//	                       one in, removing deletes it (rather like node_modules)
-//	packs/mine/           your own packs, a folder each
+//	packs/remote/          installed packs, in section folders like
+//	                       remote/infrastructure/docker: adding copies one in,
+//	                       removing deletes it (rather like node_modules)
+//	packs/mine/            your own packs, in section folders or straight in it
 //	recipes.yaml           your saved recipes
 //	config/                what clingon keeps for itself
 //
-// Files starting with "_" are clingon's own and never submenus; pack names
+// Files starting with "_" are clingon's own and never modules; pack names
 // can't start with "_".
-func packsDir() string  { return filepath.Join(Dir(), "packs") }
+func packsDir() string { return filepath.Join(Dir(), "packs") }
+
+// PacksDir is the folder packs are in: remote/ and mine/.
+func PacksDir() string  { return packsDir() }
 func remoteDir() string { return filepath.Join(packsDir(), "remote") }
 func localDir() string  { return filepath.Join(packsDir(), "mine") }
 
@@ -150,10 +161,11 @@ func remotePath(name string) string { return refPath(remoteDir(), name) }
 
 func refPath(root, name string) string {
 	pack, module := SplitModule(name)
+	dir := packDirIn(root, pack)
 	if module == "" {
-		return filepath.Join(root, pack)
+		return dir
 	}
-	return filepath.Join(root, pack, module+".yaml")
+	return filepath.Join(dir, module+".md")
 }
 
 // availableFile lists the packs that can be installed.
@@ -223,7 +235,7 @@ func writeWhole(path string, data []byte) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-const remoteHeader = "# Added by clingon. `clingon pack update` overwrites this file: put\n# your own commands in packs/mine/ instead.\n"
+const remoteHeader = "<!-- Added by clingon. `clingon pack update` overwrites this file: put your own commands in packs/mine/ instead. -->\n"
 
 // Install copies a pack from the catalog into remote/: all of it, or with
 // aws/ecs, that module and the file saying how the pack looks. Anything of
@@ -238,7 +250,7 @@ func Install(name string) error {
 	pack, module := SplitModule(name)
 	files := builtinFiles(pack)
 	if module != "" {
-		files = []string{PackInfoFile, module + ".yaml"}
+		files = []string{PackInfoFile, module + ".md"}
 	}
 	for _, f := range files {
 		if err := installFile(pack, f); err != nil {
@@ -253,7 +265,7 @@ func installFile(pack, file string) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(remoteDir(), pack)
+	dir := filepath.Join(remoteDir(), builtinSection(pack), pack)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -280,11 +292,11 @@ func removeRef(root, name string) error {
 		if err := os.Remove(refPath(root, name)); err != nil {
 			return err
 		}
-		if len(moduleFiles(filepath.Join(root, pack))) > 0 {
+		if len(moduleFiles(packDirIn(root, pack))) > 0 {
 			return nil
 		}
 	}
-	return os.RemoveAll(filepath.Join(root, pack))
+	return os.RemoveAll(packDirIn(root, pack))
 }
 
 // EnsureDefaults installs the default packs the first time clingon runs,
@@ -344,7 +356,7 @@ func refExists(root, name string) bool {
 	}
 	pack, module := SplitModule(name)
 	if module == "" {
-		return len(moduleFiles(filepath.Join(root, pack))) > 0
+		return len(moduleFiles(packDirIn(root, pack))) > 0
 	}
 	_, err := os.Stat(refPath(root, name))
 	return err == nil
@@ -360,7 +372,7 @@ func InCatalog(name string) bool {
 	if module == "" {
 		return builtinFiles(pack) != nil
 	}
-	_, err := builtinFile(pack, module+".yaml")
+	_, err := builtinFile(pack, module+".md")
 	return err == nil
 }
 
@@ -398,7 +410,7 @@ func PackSource(ref string) ([]byte, error) {
 	case where != "mine" && InCatalog(name):
 		pack, module := SplitModule(name)
 		if module != "" {
-			return builtinFile(pack, module+".yaml")
+			return builtinFile(pack, module+".md")
 		}
 		var parts [][2]string
 		for _, f := range builtinFiles(pack) {
@@ -419,7 +431,7 @@ func diskSource(root, name string) ([]byte, error) {
 		return os.ReadFile(refPath(root, name))
 	}
 	var parts [][2]string
-	for _, f := range yamlFiles(filepath.Join(root, pack)) {
+	for _, f := range mdFiles(packDirIn(root, pack)) {
 		if isPackFile(f) {
 			data, err := os.ReadFile(f)
 			if err != nil {
@@ -500,8 +512,11 @@ func PackUpdates() ([]PackUpdate, error) {
 			ups = append(ups, PackUpdate{Name: pack, Retired: true})
 			continue
 		}
-		files := yamlFiles(dir)
+		files := mdFiles(dir)
 		stale := !slices.Contains(files, filepath.Join(dir, PackInfoFile))
+		if filepath.Base(filepath.Dir(dir)) != builtinSection(pack) {
+			stale = true // clingon has moved it to another section
+		}
 		for _, f := range files {
 			if isPackFile(f) && !matchesBuiltin(pack, f) {
 				stale = true
@@ -520,7 +535,8 @@ func UpdatePack(pack string) error {
 	if err := checkPackName(pack); err != nil {
 		return err
 	}
-	dir := filepath.Join(remoteDir(), pack)
+	dir := packDirIn(remoteDir(), pack)
+	moved := filepath.Join(remoteDir(), builtinSection(pack), pack)
 	for _, f := range moduleFiles(dir) {
 		name := filepath.Base(f)
 		if _, err := builtinFile(pack, name); err != nil {
@@ -532,6 +548,12 @@ func UpdatePack(pack string) error {
 		if err := installFile(pack, name); err != nil {
 			return err
 		}
+	}
+	if dir != moved { // installed again in its new section: the old folder goes
+		if err := os.RemoveAll(dir); err != nil {
+			return err
+		}
+		dir = moved
 	}
 	if len(moduleFiles(dir)) == 0 {
 		return os.RemoveAll(dir) // everything it had is gone
@@ -546,7 +568,7 @@ func Fingerprint() string {
 	m := yamlFiles(packsDir())
 	for _, root := range []string{remoteDir(), localDir()} {
 		for _, dir := range packDirs(root) {
-			m = append(m, yamlFiles(dir)...)
+			m = append(m, mdFiles(dir)...)
 		}
 	}
 	for _, f := range m {

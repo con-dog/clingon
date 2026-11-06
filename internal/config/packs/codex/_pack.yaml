@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
-name: Codex
-description: Start, resume and script OpenAI Codex sessions, pick the model and sandbox, sign in and set up MCP servers
-requires: [codex]
-logo: openai
-color: "#eeeeee"
-category: AI

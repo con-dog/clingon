@@ -56,7 +56,7 @@ func TestPacksAndStarterAreValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	module, err := parsePackFile("examples.yaml", Starter)
+	module, err := parsePackFile("examples.md", Starter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,12 +142,21 @@ sections:
 	}
 }
 
-func TestUnknownFieldIsAnError(t *testing.T) {
-	if _, err := parsePackFile("s.yaml", []byte("name: S\ncomands: []\n")); err == nil {
-		t.Fatal("typo'd field should fail")
+// md is a module file: a title, and a command for each name: cmd pair.
+func md(title string, cmds ...string) string {
+	out := "# " + title + "\n"
+	for i := 0; i+1 < len(cmds); i += 2 {
+		out += "\n## " + cmds[i] + "\n\n```sh\n" + cmds[i+1] + "\n```\n"
 	}
-	if _, err := parsePackFile(PackInfoFile, []byte("name: S\nversion: 1.0.0\n")); err == nil {
-		t.Fatal("a typo'd field in _pack.yaml should fail too")
+	return out
+}
+
+func TestUnknownSettingIsAnError(t *testing.T) {
+	if _, err := parsePackFile("s.md", []byte("---\nneed: git\n---\n"+md("S", "a", "ls"))); err == nil {
+		t.Fatal("a typo'd setting should fail")
+	}
+	if _, err := parsePackFile(PackInfoFile, []byte("---\nversion: 1.0.0\n---\n# S\n")); err == nil {
+		t.Fatal("a typo'd setting in _pack.md should fail too")
 	}
 }
 
@@ -162,11 +171,11 @@ func TestLoadMergesFiles(t *testing.T) {
 		}
 	}
 	// Two packs called the same thing in the menu, and one that's not.
-	write("a", "_pack.yaml", "name: Git\n")
-	write("a", "g.yaml", "name: G\ncommands:\n  - {name: one, cmd: git status}\n")
-	write("b", "_pack.yaml", "name: Git\n")
-	write("b", "g.yml", "name: G\ncommands:\n  - {name: two, cmd: git log}\n")
-	write("other", "h.yaml", "commands:\n  - {name: three, cmd: ls}\n")
+	write("a", "_pack.md", "# Git\n")
+	write("a", "g.md", md("G", "one", "git status"))
+	write("b", "_pack.md", "# Git\n")
+	write("b", "g.md", md("G", "two", "git log"))
+	write("other", "h.md", md("H", "three", "ls"))
 	cfg, files, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -175,17 +184,17 @@ func TestLoadMergesFiles(t *testing.T) {
 		t.Fatalf("bad merge: files=%v sections=%+v", files, cfg.Sections)
 	}
 	if o := cfg.Sections[1]; o.Name != "Other" || o.Groups[0].Name != "H" {
-		t.Fatalf("with no _pack.yaml or name, the folder and file name them: %+v", o)
+		t.Fatalf("with no _pack.md, the folder names the pack: %+v", o)
 	}
 }
 
 func TestLoadSortsAlphabetically(t *testing.T) {
 	dir := userDir(t)
 	for f, src := range map[string]string{
-		"zed/later.yaml": "name: Later\ncommands: [{name: b, cmd: ls}, {name: A, cmd: ls}]\n",
-		"zed/early.yaml": "name: early\ncommands: [{name: x, cmd: ls}]\n",
-		"alpha/one.yaml": "commands: [{name: c, cmd: ls}]\n",
-		"zed/_pack.yaml": "name: zed\n",
+		"zed/later.md": md("Later", "b", "ls", "A", "ls"),
+		"zed/early.md": md("early", "x", "ls"),
+		"alpha/one.md": md("One", "c", "ls"),
+		"zed/_pack.md": "# zed\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
 			t.Fatal(err)
@@ -207,9 +216,9 @@ func TestLoadSortsAlphabetically(t *testing.T) {
 func TestGroupsNeedTheirTools(t *testing.T) {
 	dir := userDir(t)
 	for f, src := range map[string]string{
-		"a/here.yaml": "name: here\nrequires: [sh]\ncommands: [{name: a, cmd: ls}]\n",
-		"a/gone.yaml": "name: gone\nrequires: [no-such-tool-xyz]\ncommands: [{name: b, cmd: ls}]\n",
-		"b/gone.yaml": "name: gone\nrequires: [no-such-tool-xyz]\ncommands: [{name: c, cmd: ls}]\n",
+		"a/here.md": "---\nneeds: sh\n---\n" + md("here", "a", "ls"),
+		"a/gone.md": "---\nneeds: no-such-tool-xyz\n---\n" + md("gone", "b", "ls"),
+		"b/gone.md": "---\nneeds: no-such-tool-xyz\n---\n" + md("gone", "c", "ls"),
 	} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
 			t.Fatal(err)

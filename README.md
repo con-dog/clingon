@@ -51,7 +51,17 @@ A recipe runs several commands in order, and stops if one fails or clingon can't
 2. Press `2` on the next, from the same section or any other.
 3. Press `r` to see the recipe, then `enter` on **Run recipe**.
 
-clingon offers to add the recipe before it runs, unless you've already added those commands. Your recipes are listed under **All recipes**, at **Clingon › Recipes**, where you can run, describe or remove them.
+clingon offers to add the recipe before it runs, unless you've already added those commands. Your recipes are listed under **Saved recipes**, at **Clingon › Recipes**, where you can run, describe or remove them.
+
+Each saved recipe is a Markdown file in `~/.clingon/recipes/`, next to your packs: a name, an optional description, and a numbered list of links to each command's heading in its pack's file. You can edit one by hand, or add a description:
+
+```md
+# Deploy check
+Pull, then see what changed.
+
+1. [Status](../packs/remote/code/git/everyday.md#status)
+2. [Pull](../packs/remote/code/git/everyday.md#pull)
+```
 
 **Positions work like this:**
 
@@ -91,70 +101,93 @@ clingon pack update
 clingon pack describe docker                # print a pack's files
 ```
 
-A pack is a folder, with a file for each submenu. `aws` is all of AWS and `aws/ecs` is just its ECS commands. `clingon pack update` only updates what you have: it never adds a part you didn't choose, and tells you what else there is.
+A pack is a folder, with a file for each module. `aws` is all of AWS and `aws/ecs` is just its ECS commands. `clingon pack update` only updates what you have: it never adds a module you didn't choose, and tells you what else there is.
 
 All of this is also in the menu, under **Clingon › Packs**.
 
 ## Your own commands
 
 ```sh
-clingon pack create work-tools   # opens a commented example in micro
+clingon pack guide               # how packs work, with an example to copy
+clingon pack create              # starts one from a working example, as a form
 clingon pack edit work-tools
 clingon check                    # find mistakes
 ```
 
-Your packs are folders in `~/.clingon/packs/mine/`. All a pack needs is a file for each submenu:
+A pack is a folder of Markdown files, one for each module. They read as documentation on GitHub, and clingon runs them. Your packs go in `~/.clingon/packs/mine/`, in a section folder or straight in it:
 
 ```
-~/.clingon/packs/mine/work-tools/
-  _pack.yaml        # optional: how it looks in the menu
-  kubernetes.yaml   # a submenu
+~/.clingon/packs/mine/
+  infrastructure/       # shown under Infrastructure
+    k8s/
+      _pack.md          # optional: the pack's name, logo and what it needs
+      pods.md           # a module
+  work/                 # straight in mine/: shown under Other
+    deploy.md
 ```
 
-A `<blank>` in a command gets asked for each time it runs:
+The sections are `ai`, `code`, `command-line`, `databases`, `infrastructure` and `system`. Folder and file names are lowercase, with no spaces.
 
-```yaml
-# kubernetes.yaml
-name: Kubernetes
-commands:
-  - name: Tail logs
-    cmd: kubectl logs -f deploy/<app>
-    desc: Streams an app's logs.
-    args:
-      - name: app          # type a value
-        quote: true
+Each file starts with a `# Name`, and each `##` heading is a command:
 
-  - name: Restart app
-    cmd: kubectl rollout restart deploy/<app> -n <namespace>
-    risk: warn             # asks first; danger makes you type a code too
-    when: [k8s]            # greyed out unless this is here or in a folder above
-    args:
-      - name: app
-        quote: true
-      - name: namespace    # pick one
-        options: [staging, prod]
+````md
+---
+when: k8s
+---
+# Pods
+Logs and restarts.
+
+## Tail logs
+Streams an app's logs.
+
+```sh
+kubectl logs -f deploy/<app>
 ```
 
-Without a `_pack.yaml`, a pack is called after its folder and a submenu after its file. Add one to change that:
+- `<app>` Which app
 
-```yaml
-# _pack.yaml
-name: Work tools
-description: What we run at work
-category: Infrastructure   # AI, Code, Command Line, Databases, Infrastructure, System or Other
-icon: ✶
+## Restart app
+> [!WARNING]
+> Restarts every pod of an app, one at a time.
+
+```sh needs=kubectl
+kubectl rollout restart deploy/<app> -n <namespace>
 ```
 
-Args can also be `type: flags` (tick any) or `type: secret` (typed hidden, and kept out of your shell history). [schema.json](schema.json) and [pack.schema.json](pack.schema.json) have every option, and editors with the YAML language server use them to autocomplete and check your packs.
+- `<app>` Which app
+- `<namespace>` Which namespace
+  - (x) `staging`
+  - ( ) `prod`
+````
 
-Give a command a `risk`:
+- **A command** is a `##` heading, a description, and a code block with what's typed into your shell. End a line with `\` to carry a long command on to the next.
+- **Risk:** a `> [!WARNING]` callout under the heading makes clingon ask No/Yes first; `> [!CAUTION]` makes you type a short code, then answer No/Yes. The callout's text, with any description next to it, is the command's description.
+- **Blanks:** each `<name>` in the command is listed after it, with the question to ask. Under a blank, `( )` choices are picked from or typed over (`(x)` is picked to begin with, so a single `(x)` is a default), and `[ ]` choices are ticked (`[x]` starts ticked). Backticks hold what each choice types; a label after them is optional.
+- **What you type** goes into your shell exactly as written. Where a value should stay one word, put quotes in the command: `git commit -m "<message>"`. A blank whose name has `secret`, `token` or `password` in it is typed hidden and kept out of your history.
+- **When a command fits:** front matter at the top of a file sets `needs:` (programs on your PATH) and `when:` (a file here or in a folder above, like `.git`; `./Dockerfile` means this folder only) for every command in it. After a code block's language, `needs=` and `when=` do the same for one command. Commas in `when` mean any of them will do; every program in `needs` has to be there.
+- **Notes:** `<!-- comments -->` are for whoever edits the file.
 
-- `risk: warn` (⚠, asks No/Yes) if it changes or stops things but can be put right: merges, rebases, pushes, stopping or restarting, uninstalling, overwriting files you can make again, changing shared state, installing things, dumping a database (it only reads, but the file holds all the data).
-- `risk: danger` (☠ in red; you type a random code, then No/Yes) if it destroys data or shared state for good, or can take down something live: stopping or redeploying a cloud service, deleting files or uncommitted work, hard resets, deleting remote branches, removing containers or volumes, overwriting a bucket, dropping or restoring databases.
+Names use letters, digits, spaces and `( )`. Packs use only this much Markdown: `-` bullets, no bold or italics, and code blocks in `sh`, `bash`, `shell`, `zsh` or no language. `clingon check` names the line and the fix for anything else.
+
+A `_pack.md` names the pack and can pick one of clingon's logos:
+
+```md
+---
+logo: terminal
+needs: kubectl
+---
+# Kubernetes
+Pods, logs and rollouts.
+```
+
+Give a command a callout:
+
+- `[!WARNING]` (⚠, asks No/Yes) if it changes or stops things but can be put right: merges, rebases, pushes, stopping or restarting, uninstalling, overwriting files you can make again, changing shared state, installing things, dumping a database (it only reads, but the file holds all the data).
+- `[!CAUTION]` (☠ in red; you type a random code, then No/Yes) if it destroys data or shared state for good, or can take down something live: stopping or redeploying a cloud service, deleting files or uncommitted work, hard resets, deleting remote branches, removing containers or volumes, overwriting a bucket, dropping or restoring databases.
 
 Every built-in pack follows those rules, and a test keeps it that way.
 
-**Project packs:** put packs in `.clingon/packs/` in a repository, like `.clingon/packs/deploy/prod.yaml`, and their commands appear under **This project** whenever your shell is in that repository. clingon shows you every command and asks before using them, and asks again if any file changes.
+**Project packs:** put packs in `.clingon/packs/` in a repository, like `.clingon/packs/deploy/prod.md`, and their commands appear under **This project** whenever your shell is in that repository. clingon shows you every command and asks before using them, and asks again if any file changes.
 
 ## Good to know
 

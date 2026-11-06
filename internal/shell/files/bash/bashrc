@@ -16,9 +16,19 @@ _clingon_prompt() {
   b=${b//\\/\\\\}; b=${b//\$/\\\$}; b=${b//\`/\\\`} # a branch name is text, never run
   a=${a//\\/\\\\}; a=${a//\$/\\\$}; a=${a//\`/\\\`} # so is a profile name
   [ "${_clingon_ok:-0}" -eq 0 ] || mark='\[\e[38;5;204m\]'
-  # The mark (❯) is in octal: macOS's bash 3.2 garbles it, typed as it is,
-  # after coloured parts of a prompt in a UTF-8 locale.
-  PS1="\[\e[1;38;5;99m\]\w\[\e[0m\]${b:+\[\e[38;5;103m\] $b\[\e[0m\]}${a:+\[\e[38;5;208m\] aws:$a\[\e[0m\]}\n$mark\342\235\257\[\e[0m\] "
+  # The mark (❯) and git's logo before the branch are in octal: macOS's bash
+  # 3.2 garbles them, typed as they are, after coloured parts of a prompt in a
+  # UTF-8 locale.
+  # The path: folders above periwinkle, slashes grey, and the folder you're in
+  # bold purple. A
+  # name is text, never run, so \ $ and ` are escaped as in a branch name.
+  local p=${PWD/#$HOME/\~} up='' here
+  p=${p//\\/\\\\}; p=${p//\$/\\\$}; p=${p//\`/\\\`}
+  here=${p##*/}
+  [[ $p == */* ]] && up=${p%/*}/
+  [[ $p == / ]] && here=/ up=''
+  up=${up//\//\\[\\e[38;5;243m\\]/\\[\\e[0;38;5;147m\\]}
+  PS1="\[\e[38;5;147m\]$up\[\e[1;38;5;99m\]$here\[\e[0m\]${b:+\[\e[38;5;203m\] \356\200\204\[\e[38;5;103m\] $b\[\e[0m\]}${a:+\[\e[38;5;208m\] aws:$a\[\e[0m\]}\n$mark\342\235\257\[\e[0m\] "
 }
 # Other prompts' hooks (starship's) would only redraw theirs: clingon's
 # notes the exit status first and draws last.

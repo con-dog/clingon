@@ -23,8 +23,7 @@ new font to the terminal, never an old one it has cached.
 
 Writes ClingonMono-Regular.otf (embedded in the binary),
 internal/config/logos.go (logo names and symbol twins),
-internal/window/fontname.go (the font's name) and the list of logos in
-pack.schema.json.
+and internal/window/fontname.go (the font's name).
 
 Run after adding or changing a logo, from the repo root:
 
@@ -35,7 +34,6 @@ Run after adding or changing a logo, from the repo root:
 
 import hashlib
 import os
-import re
 import sys
 
 from fontTools.pens.boundsPen import BoundsPen
@@ -51,7 +49,6 @@ SRC = os.path.join(HERE, "JetBrainsMono-Regular.otf")
 OUT = os.path.join(HERE, "ClingonMono-Regular.otf")
 GO = os.path.join(ROOT, "internal", "config", "logos.go")
 GO_NAME = os.path.join(ROOT, "internal", "window", "fontname.go")
-SCHEMA = os.path.join(ROOT, "pack.schema.json")
 
 # Append only. A logo dropped later is replaced by None, keeping the rest.
 LOGOS = ["apple", "claude", "deno", "docker", "git", "github", "googlecloud", "helm", "java",
@@ -61,7 +58,9 @@ LOGOS = ["apple", "claude", "deno", "docker", "git", "github", "googlecloud", "h
          "amazon", "go",
          "postgres", None, "redis", "mongodb", "sqlite", "cloudflare", "vercel", "cplusplus", None,
          "ansible", "pulumi", "vault", "argo", "nginx", "openai", "gemini", "window", "hash",
-         "hammer", "gear", "puzzle", "checklist"]
+         "hammer", "gear", "puzzle", "checklist",
+         "rocket", "wrench", "key", "lock", "book", "bug", "lightning", "chart",
+         "mail", "house", "briefcase", "code", "star", "flag"]
 FIRST_LOGO = 0xE000
 
 # Symbols that get a centred twin: the ones packs use, and others that make
@@ -225,14 +224,6 @@ def main():
         f.write('\tfontFileName = "%s.otf"\n' % ps)
         f.write(")\n")
 
-    with open(SCHEMA) as f:
-        schema = f.read()
-    enum = '"logo": {\n      "enum": [\n%s\n      ],' % ",\n".join('        "%s"' % n for n in sorted(logos))
-    schema, n = re.subn(r'"logo":\s*\{\s*"enum":\s*\[[^\]]*\],', enum, schema)
-    if n != 1:
-        sys.exit("pack.schema.json: couldn't find the logo enum")
-    with open(SCHEMA, "w") as f:
-        f.write(schema)
     print("%s: %d logos, %d centred symbols, %d drawn" % (family, len(logos), len(twins), len(DRAWN)))
 
 

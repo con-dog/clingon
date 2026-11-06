@@ -81,7 +81,7 @@ func readProject(path string) (map[string][]parsedFile, string, error) {
 			return nil, "", fmt.Errorf("%s isn't a plain file or folder", filepath.Join(path, e.Name()))
 		case !e.IsDir() && strings.HasPrefix(e.Name(), "."):
 			continue
-		case !e.IsDir() && isYAML(e.Name()):
+		case !e.IsDir() && isMarkdown(e.Name()):
 			return nil, "", fmt.Errorf("%s: a pack is a folder, so this belongs in one, like %s", filepath.Join(path, e.Name()), filepath.Join(path, "deploy", e.Name()))
 		case !e.IsDir() || skippedName(e.Name()):
 			continue
@@ -95,14 +95,14 @@ func readProject(path string) (map[string][]parsedFile, string, error) {
 			if f.Type()&os.ModeSymlink != 0 || !f.IsDir() && !f.Type().IsRegular() {
 				return nil, "", fmt.Errorf("%s isn't a plain file or folder", full)
 			}
-			if f.IsDir() || !isYAML(f.Name()) || !isPackFile(full) {
+			if f.IsDir() || !isMarkdown(f.Name()) || !isPackFile(full) {
 				continue
 			}
 			data, err := os.ReadFile(full)
 			if err != nil {
 				return nil, "", err
 			}
-			// The names count: a file's name can be its submenu's.
+			// The names count: a file's name can be its module's.
 			fmt.Fprintf(h, "%s/%s\x00%d\x00", e.Name(), f.Name(), len(data))
 			h.Write(data)
 			part, err := parsePackFile(full, data)

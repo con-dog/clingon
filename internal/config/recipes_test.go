@@ -2,14 +2,16 @@ package config
 
 import (
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
 
 // A recipe keeps working, for anyone with the pack, only if its commands are
-// called the same thing everywhere and for good: so every built-in command
-// says what it's called, and no two say the same.
-func TestPackCommandsHaveTheirOwnIDs(t *testing.T) {
+// called the same thing everywhere: a built-in command's ID comes from its
+// section, module and name, so no two may share all three.
+func TestPackCommandIDsAreUnique(t *testing.T) {
 	pks, err := Packs()
 	if err != nil {
 		t.Fatal(err)
@@ -24,13 +26,14 @@ func TestPackCommandsHaveTheirOwnIDs(t *testing.T) {
 			s := &c.Sections[i]
 			for _, cmd := range s.All() {
 				where := p.Name + " › " + s.Name + " › " + cmd.Name
-				if !commandIDRe.MatchString(cmd.ID) {
-					t.Errorf("%s: id %q: give it id: %s", where, cmd.ID, s.CommandID(&Command{Name: cmd.Name}))
+				id := s.CommandID(cmd)
+				if !commandIDRe.MatchString(id) {
+					t.Errorf("%s: id %q doesn't look like an ID", where, id)
 				}
-				if had, ok := seen[cmd.ID]; ok {
-					t.Errorf("%s has the same id as %s: %s", where, had, cmd.ID)
+				if had, ok := seen[id]; ok {
+					t.Errorf("%s has the same id as %s: %s", where, had, id)
 				}
-				seen[cmd.ID] = where
+				seen[id] = where
 			}
 		}
 	}
@@ -63,19 +66,18 @@ func TestAddedCommandsGetAnID(t *testing.T) {
 	if err := AddCommand("mine", "Deploy", "Tail logs", "kubectl logs", ""); err != nil {
 		t.Fatal(err)
 	}
-	var id string
-	cs, _ := YourCommands()
-	if len(cs) != 1 {
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &cfg.Sections[0]
+	if cs := s.All(); len(cs) != 1 {
 		t.Fatalf("got %d commands", len(cs))
 	}
-	data, _ := readDocText(t)
-	for _, l := range strings.Split(data, "\n") {
-		if v, ok := strings.CutPrefix(strings.TrimSpace(l), "id: "); ok {
-			id = v
-		}
-	}
-	if !commandIDRe.MatchString(id) || !strings.HasPrefix(id, "deploy-") {
-		t.Errorf("id %q in:\n%s", id, data)
+	// A command from a file is called after its file and heading, as a
+	// recipe's link to it is.
+	if id := s.CommandID(s.All()[0]); id != "mine/mine/deploy.md#tail-logs" {
+		t.Errorf("id %q", id)
 	}
 }
 
@@ -84,16 +86,16 @@ func TestSavedRecipes(t *testing.T) {
 	if rs, err := Recipes(); err != nil || len(rs) != 0 {
 		t.Fatalf("none yet: %v %v", rs, err)
 	}
-	if err := SaveRecipe("Zed", []string{"a-00000000"}); err != nil {
+	if err := SaveRecipe("Zed", []string{"a-00000000"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveRecipe("alpha", []string{"a-00000000", "b-11111111"}); err != nil {
+	if err := SaveRecipe("alpha", []string{"a-00000000", "b-11111111"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveRecipe("ZED", []string{"b-11111111"}); err == nil {
+	if err := SaveRecipe("ZED", []string{"b-11111111"}, nil); err == nil {
 		t.Error("a second recipe of the same name should be refused")
 	}
-	if err := SaveRecipe("none", nil); err == nil {
+	if err := SaveRecipe("none", nil, nil); err == nil {
 		t.Error("a recipe with no steps should be refused")
 	}
 	rs, err := Recipes()
@@ -111,8 +113,55 @@ func TestSavedRecipes(t *testing.T) {
 	}
 }
 
-func readDocText(t *testing.T) (string, error) {
-	t.Helper()
-	b, err := os.ReadFile(PackPath("mine/deploy"))
-	return string(b), err
+// A recipe is a Markdown file of links to commands' headings: it reads back
+// to the same steps, and its links work from recipes/ like any relative link.
+func TestRecipeFiles(t *testing.T) {
+	dir := userDir(t)
+	writePack(t, "work/deploy", "# Deploy\n\n## Ship it\n\n```sh\n./ship.sh\n```\n\n## Up (detached)\n\n```sh\nup\n```\n")
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &cfg.Sections[0]
+	var ids []string
+	for _, c := range s.All() {
+		ids = append(ids, s.CommandID(c))
+	}
+	ids = append(ids, "freeform-00000000") // one of clingon's own: no file
+	if err := SaveRecipe("Deploy check", ids, []string{"Ship it", "Up (detached)", "Type a command"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(RecipesDir(), "deploy-check.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# Deploy check\n\n1. [Ship it](../packs/mine/work/deploy.md#ship-it)\n2. [Up (detached)](../packs/mine/work/deploy.md#up-detached)\n3. [Type a command](clingon:freeform-00000000)\n"
+	if string(data) != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", data, want)
+	}
+	// Each link reaches the file it names, from where the recipe is.
+	if _, err := os.Stat(filepath.Join(RecipesDir(), "../packs/mine/work/deploy.md")); err != nil {
+		t.Errorf("the link's file: %v", err)
+	}
+	// A description added by hand is kept; the steps read back as they were.
+	if err := os.WriteFile(filepath.Join(RecipesDir(), "deploy-check.md"), []byte(strings.Replace(string(data), "\n\n", "\nShips, then starts it.\n\n", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := Recipes()
+	if err != nil || len(rs) != 1 {
+		t.Fatalf("got %+v %v", rs, err)
+	}
+	if r := rs[0]; r.Name != "Deploy check" || r.Description != "Ships, then starts it." || !slices.Equal(r.Steps, ids) {
+		t.Errorf("got %+v, want steps %v", r, ids)
+	}
+	if err := SaveRecipe("Bad: name", ids, nil); err == nil {
+		t.Error("recipe names follow the naming rule")
+	}
+	if err := os.WriteFile(filepath.Join(RecipesDir(), "broken.md"), []byte("# Broken\n\n- not numbered\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Recipes(); err == nil || !strings.Contains(err.Error(), "numbered list of links") {
+		t.Errorf("a broken recipe says why: %v", err)
+	}
+	_ = dir
 }

@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
-name: GitHub
-description: Sign-in, repos, pull requests, issues and CI runs with the GitHub CLI
-requires: [gh]
-logo: github
-color: "#eeeeee"
-category: Code

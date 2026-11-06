@@ -30,7 +30,7 @@ func packOptions(ps []config.Pack) []config.Option {
 }
 
 // moduleOptions offers packs and, for those of more than one, each of their
-// submenus: they sort right under their pack.
+// modules: they sort right under their pack.
 func moduleOptions(ps []config.Pack) []config.Option {
 	var out []config.Option
 	for _, p := range ps {
@@ -87,17 +87,24 @@ func builtinSections() []*config.Section {
 	noneInstalled := unless(len(installed) > 0, "You haven't added any packs.")
 	sections := []*config.Section{
 		{Name: "Packs", Icon: config.Logos["puzzle"], Color: clingonPink, Category: "Clingon", Groups: []config.Group{
-			{Name: "Your packs", Commands: []config.Command{
-				{Name: "Create a pack", Desc: "Makes a pack of your own in packs/mine from a working example, and opens it in micro to make it yours: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack create <name>", Args: []config.Arg{
-					{Name: "name", Prompt: "pack name", Desc: "Called <name>.", Placeholder: "letters, digits and dashes, e.g. work-tools"},
+			{Name: "My packs", Commands: []config.Command{
+				{Editor: true, Name: "Add a pack", Desc: "Opens a new pack of your own as a form, starting from a working example: fill it in, then esc when you're done, and the menu asks whether to add it.", Cmd: self + " pack create --menu"},
+				{Name: "Describe a pack", Disabled: noLocal, Desc: "Prints every command in <pack> and exactly what each one runs.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
+					{Name: "pack", Options: moduleOptions(local)},
 				}},
-				{Name: "Edit a pack", Disabled: noLocal, Desc: "Opens <pack> in micro: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack edit <pack>", Args: []config.Arg{
+				{Editor: true, Name: "Edit a pack", Disabled: noLocal, Desc: "Opens <pack> as a form, every part of it on one page: change it, then esc when you're done, and the menu asks whether to save the changes.", Cmd: self + " pack edit <pack> --menu", Args: []config.Arg{
+					{Name: "pack", Options: moduleOptions(local)},
+				}},
+				{Editor: true, Name: "Edit a pack's files", Disabled: noLocal, Desc: "Opens <pack>'s Markdown files in micro, to edit by hand: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack edit <pack> --files", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(local)},
 				}},
 				{Name: "List your packs", Disabled: noLocal, Desc: "Lists your own packs.", Cmd: self + " pack list --mine"},
 				{Name: "Remove packs", Disabled: noLocal, Desc: "Deletes <pack> and every command in it, for good.", Risk: config.RiskDanger, Cmd: self + " pack remove <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(local)},
 				}},
+			}},
+			{Name: "Understand packs", Commands: []config.Command{
+				{Name: "How packs work", Desc: "Prints how to write a pack of your own: the folders, the file format and an example to copy.", Cmd: self + " pack guide"},
 			}},
 			{Name: "Curated packs", Commands: []config.Command{
 				{Name: "Add packs", Disabled: unless(len(available) > 0, "Every pack is added already."), Desc: "Adds ready-made commands for <pack>.", Cmd: self + " pack add <pack>", Args: []config.Arg{
@@ -131,10 +138,10 @@ func builtinSections() []*config.Section {
 				{Name: "Worth doing", Desc: "Shows the welcome card: updates, packs for tools you have, and anything else worth doing.", Cmd: self + " welcome"},
 			}},
 		}},
-		{Name: ui.CommandLineSection, Icon: config.Logos["terminal"], Color: clingonPink, Category: config.CommandLine, Groups: []config.Group{
+		{Name: ui.CommandLineSection, Icon: config.Logos["terminal"], Category: config.CommandLine, Groups: []config.Group{
 			{Name: "Custom", Commands: []config.Command{
 				{ID: ui.CommandLineID, Name: "Type a command", Desc: "Runs one line of your own in the shell. In a recipe, it asks for the line each time the recipe gets here.", Cmd: "<command>", Args: []config.Arg{
-					{Name: "command", Placeholder: "echo hello world"},
+					{Name: "command"},
 				}},
 			}},
 		}},

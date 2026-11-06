@@ -64,8 +64,8 @@ func TestEveryLogoAndSymbolIsInTheFont(t *testing.T) {
 
 // A character missing from the font is drawn from whatever font the system
 // picks, which for some is an emoji one. This reads what clingon shows: the
-// strings in its Go code (not its tests or comments), its packs, and the
-// schemas that suggest icons for people's own packs.
+// strings in its Go code (not its tests or comments), and its packs and the
+// starter pack, which are Markdown files in internal/config.
 func TestEverythingClingonShowsIsInTheFont(t *testing.T) {
 	cmap := fontCmap(t, fontFile)
 	root := filepath.Join("..", "..")
@@ -100,7 +100,7 @@ func TestEverythingClingonShowsIsInTheFont(t *testing.T) {
 			for _, lit := range goStrings(t, path, src) {
 				note(lit, path)
 			}
-		case strings.HasSuffix(name, ".yaml"), name == "schema.json", name == "pack.schema.json":
+		case strings.HasSuffix(name, ".md") && strings.Contains(filepath.ToSlash(path), "internal/config/"):
 			src, err := os.ReadFile(path)
 			if err != nil {
 				return err

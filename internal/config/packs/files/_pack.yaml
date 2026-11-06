@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
-name: Files
-description: Get around, look at, find, archive, copy and clean up files
-requires: [find, grep, tar, rsync, less, diff]
-default: true
-logo: folder
-category: System

@@ -95,6 +95,8 @@ func main() {
 		err = check()
 	case "welcome":
 		welcome(len(os.Args) > 2 && os.Args[2] == "--then-shell")
+	case "_check-file": // micro's clingon plugin: PATH and a file of its unsaved text
+		err = checkFile(os.Args[2:])
 	case "_check-release":
 		checkRelease()
 	case "_shell": // the shell inside clingon, started again (System › Reload shell)
@@ -356,6 +358,48 @@ func printMode() error {
 	return nil
 }
 
+// formEdit opens your pack in clingon's pack form, then says it's done. One
+// that isn't yours (remote/NAME, or one you've only added) opens in micro.
+func formEdit(ref, done string, menu bool) error {
+	where, name := config.SplitRef(ref)
+	if where == "remote" || where == "" && !config.IsLocal(name) {
+		return editPackAs(ref, done)
+	}
+	form, err := ui.NewPackForm(name, menu)
+	if err != nil {
+		return err
+	}
+	return runForm(form, done)
+}
+
+// newPackForm opens the pack form on a new pack.
+func newPackForm(menu bool) error {
+	form, err := ui.NewPackFormForNew(menu)
+	if err != nil {
+		return err
+	}
+	return runForm(form, "created")
+}
+
+// runForm runs the pack form, then says what came of it. Left with a draft,
+// the menu says: it asks whether to save it.
+func runForm(form *ui.PackForm, done string) error {
+	flushSaid() // the form takes over the terminal
+	form.FocusMenu = tmux.FocusMenu
+	if _, err := tea.NewProgram(form).Run(); err != nil {
+		return err
+	}
+	if form.Left != "saved" {
+		return nil
+	}
+	path := config.PackPath(form.Pack().Folder)
+	if _, _, err := config.Load(); err != nil {
+		return fmt.Errorf("%s %s, but it has problems:\n%w", done, path, err)
+	}
+	say(ok, "%s %s", done, path)
+	return nil
+}
+
 // editPack opens a pack in micro (your local one, unless ref says
 // remote/NAME), then says whether it still loads.
 func editPack(ref string) error { return editPackAs(ref, "saved") }
@@ -389,18 +433,28 @@ func editPackAs(ref, done string) error {
 	if err != nil {
 		return err
 	}
-	// A whole pack opens with a tab for each submenu, at its commands.
+	// A whole pack opens with a tab for each module, at its commands.
 	args := []string{"-config-dir", dir}
 	targets := []string{path}
-	if !strings.HasSuffix(path, ".yaml") {
+	if !strings.HasSuffix(path, ".md") {
 		targets = config.ModuleFiles(path)
 	}
+	// Opened from the packs folder, so micro's status bar names a file by where it
+	// is in there (mine/work/deploy.md), not by its whole path.
+	base := config.PacksDir()
 	for _, f := range targets {
-		args = append(args, f, "+/^commands:")
+		if rel, err := filepath.Rel(base, f); err == nil && !strings.HasPrefix(rel, "..") {
+			f = rel
+		}
+		args = append(args, f, "+/^## ")
 	}
 	flushSaid() // micro takes over the terminal
 	cmd := exec.Command("micro", args...)
+	cmd.Dir = base
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if self, err := os.Executable(); err == nil { // its plugin checks the file as you type, with this clingon
+		cmd.Env = append(os.Environ(), "CLINGON_CHECK="+self)
+	}
 	if err := cmd.Run(); err != nil {
 		return err
 	}
@@ -469,4 +523,22 @@ func reloader() func() (*config.Config, error) {
 		cfg, _, err := config.Load()
 		return cfg, err
 	}
+}
+
+// checkFile prints each problem in a pack's file, one a line as LINE<tab>MESSAGE,
+// for the editor to show as you type: args are the file's path and, if the
+// text being checked isn't saved yet, a file holding it.
+func checkFile(args []string) error {
+	if len(args) < 1 || len(args) > 2 {
+		return errors.New("usage: clingon _check-file PATH [TEXT-FILE]")
+	}
+	from := args[len(args)-1]
+	data, err := os.ReadFile(from)
+	if err != nil {
+		return err
+	}
+	for _, p := range config.CheckFile(args[0], data) {
+		fmt.Printf("%d\t%s\n", p.Line, strings.ReplaceAll(p.Message, "\n", " "))
+	}
+	return nil
 }

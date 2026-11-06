@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
-name: Playwright
-description: Run, debug and record Playwright tests, view reports and traces, and install browsers
-requires: [npx]
-logo: window
-color: "#5fd787"
-category: Code

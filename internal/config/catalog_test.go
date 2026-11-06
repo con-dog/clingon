@@ -34,13 +34,8 @@ func TestCatalogIsCurrent(t *testing.T) {
 
 // readPacks works out the catalog from the packs themselves.
 func readPacks() ([]Pack, error) {
-	entries, err := packFS.ReadDir("packs")
-	if err != nil {
-		return nil, err
-	}
 	var out []Pack
-	for _, e := range entries {
-		name := e.Name()
+	for _, name := range builtinPackNames() {
 		p := Pack{Name: name}
 		var info packInfo
 		var groups []Group
@@ -61,7 +56,7 @@ func readPacks() ([]Pack, error) {
 			p.Modules = append(p.Modules, Module{moduleSlug(f), part.group.Name, part.group.Description, len(part.group.Commands)})
 			p.Commands += len(part.group.Commands)
 		}
-		p.Description, p.Requires, p.Default = info.Description, info.Requires, info.Default
+		p.Description, p.Requires, p.Default = info.Description, info.Requires, defaultPacks[name]
 		p.Sections = []string{info.Name}
 		// Only for a pack with no tools of its own (package-managers: brew):
 		// in one that has them, a group's tool is optional.

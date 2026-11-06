@@ -6,11 +6,13 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// Minimal shell highlighting for the Command area: program names bold,
-// flags purple, quoted strings tan, operators grey. Placeholders and filled
+// Minimal shell highlighting for the Command area, in the colours used for a
+// command everywhere (micro, `clingon pack guide`, the shell's highlighting
+// plugin): program names green, flags periwinkle, quoted strings tan,
+// operators grey. Placeholders and filled
 // values keep their own styles (see preview).
 var (
-	hlProgram  = lipgloss.NewStyle().Bold(true)
+	hlProgram  = lipgloss.NewStyle().Foreground(green)
 	hlFlag     = lipgloss.NewStyle().Foreground(soft)
 	hlString   = lipgloss.NewStyle().Foreground(lipgloss.Color("#d7af87"))
 	hlOperator = lipgloss.NewStyle().Foreground(grey)

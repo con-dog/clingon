@@ -1,0 +1,549 @@
+package ui
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/con-dog/clingon/internal/config"
+)
+
+func newTestForm(t *testing.T) *PackForm {
+	t.Helper()
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if err := config.NewPackWithLogo("demo", "rocket", "orange"); err != nil {
+		t.Fatal(err)
+	}
+	f, err := NewPackForm("demo", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
+	return f
+}
+
+func press(f *PackForm, keys ...tea.KeyPressMsg) {
+	for _, k := range keys {
+		f.Update(k)
+	}
+}
+
+var (
+	kDown  = tea.KeyPressMsg{Code: tea.KeyDown}
+	kUp    = tea.KeyPressMsg{Code: tea.KeyUp}
+	kEnter = tea.KeyPressMsg{Code: tea.KeyEnter}
+	kLeft  = tea.KeyPressMsg{Code: tea.KeyLeft}
+	kEsc   = tea.KeyPressMsg{Code: tea.KeyEscape}
+)
+
+func (f *PackForm) screen() string { return ansi.Strip(f.view()) }
+
+// page is the whole page, not just what's scrolled into view.
+func (f *PackForm) page() string {
+	lines, _, _, _ := f.cards(f.w)
+	return ansi.Strip(strings.Join(lines, "\n"))
+}
+
+// onRow moves the cursor to the row keyed key, opening the part it's in.
+func (f *PackForm) onRow(t *testing.T, key string) {
+	t.Helper()
+	f.refresh(key)
+	for i, r := range f.rows {
+		if r.key == key && !r.header {
+			f.sel = i
+			return
+		}
+	}
+	t.Fatalf("no row %q in:\n%s", key, f.screen())
+}
+
+func TestPackFormMoves(t *testing.T) {
+	f := newTestForm(t)
+	for i := 0; i < 12; i++ {
+		press(f, kDown)
+		_ = f.screen()
+	}
+	for i := 0; i < 12; i++ {
+		press(f, kUp)
+		_ = f.screen()
+	}
+}
+
+// typeIn opens the highlighted field, replaces what's in it, and confirms.
+func typeIn(f *PackForm, text string) {
+	press(f, kEnter)
+	f.input.SetValue(text)
+	press(f, kEnter)
+}
+
+// pick opens the highlighted field's list and picks the option titled title.
+func (f *PackForm) pick(t *testing.T, title string) {
+	t.Helper()
+	press(f, kEnter)
+	for i, o := range f.options {
+		if o.Value == title {
+			f.opt = i
+			press(f, kEnter)
+			return
+		}
+	}
+	t.Fatalf("no option %q", title)
+}
+
+func TestPackFormEditsThePack(t *testing.T) {
+	f := newTestForm(t)
+	// A field: typed in, and only kept in the form until it's left.
+	f.onRow(t, "desc")
+	typeIn(f, "Deploying our services")
+	if p, _ := config.LoadEditable("demo"); !strings.Contains(f.screen(), "Deploying our services") || p.Description == "Deploying our services" {
+		t.Fatalf("shown, and not saved yet:\n%s", f.screen())
+	}
+	// A section, picked from the list dropped down under it.
+	f.onRow(t, "section")
+	press(f, kEnter)
+	if !strings.Contains(f.screen(), "Infrastructure") {
+		t.Fatalf("the list should be under the row:\n%s", f.screen())
+	}
+	press(f, kLeft)
+	f.pick(t, "infrastructure")
+
+	// A new module, on the same page, the cursor on its title.
+	f.onRow(t, "add-module")
+	press(f, kEnter)
+	if r := f.selectedRow(); r == nil || r.key != "1/name" {
+		t.Fatalf("on %+v", r)
+	}
+	typeIn(f, "Deploy")
+	f.onRow(t, "1/0/name")
+	typeIn(f, "Ship it")
+	f.onRow(t, "1/0/risk")
+	f.pick(t, config.RiskWarn)
+	f.onRow(t, "1/0/cmd")
+	typeIn(f, "./ship.sh <env>")
+	// The blank came with the command, as rows of its card: made a pick-one.
+	f.onRow(t, "1/0/0/kind")
+	f.pick(t, "choose")
+	f.onRow(t, "1/0/0/add")
+	press(f, kEnter)
+	if r := f.selectedRow(); r == nil || r.key != "1/0/0/2" {
+		t.Fatalf("Add a choice should go to the new choice, on %+v", r)
+	}
+	// The choice's label, typed on its row; and made the default.
+	f.pick(t, "label")
+	f.input.SetValue("Production")
+	press(f, kEnter)
+	f.onRow(t, "1/0/0/2")
+	f.pick(t, "first")
+	if page := f.page(); !strings.Contains(page, "MODULE") || !strings.Contains(page, "COMMAND") {
+		t.Fatalf("cards should be titled with what they are:\n%s", page)
+	}
+
+	// A bad name: refused, said why.
+	f.onRow(t, "1/0/name")
+	typeIn(f, "Ship it!")
+	if !strings.Contains(f.screen(), "ISSUE:") || f.input == nil {
+		t.Fatalf("a bad name should be an issue, still being typed:\n%s", f.screen())
+	}
+	press(f, kLeft) // gives up on it
+	if f.pack.Files[1].Group.Commands[0].Name != "Ship it" {
+		t.Error("the bad name shouldn't have been kept")
+	}
+
+	// Removing asks first: No is first and does nothing.
+	f.onRow(t, "1/0/remove")
+	press(f, kEnter)
+	if !strings.Contains(f.screen(), "No, keep it") {
+		t.Fatalf("should ask:\n%s", f.screen())
+	}
+	press(f, kEnter) // No
+	if len(f.pack.Files[1].Group.Commands) != 1 {
+		t.Fatal("No should keep it")
+	}
+
+	// ← leaves, with the changes kept as a draft for the menu; saving the
+	// draft saves them all, and it loads.
+	press(f, kEsc)
+	if f.Left != "draft" {
+		t.Fatalf("left %q", f.Left)
+	}
+	if p, _ := config.LoadEditable("demo"); p.Description == "Deploying our services" {
+		t.Fatal("leaving shouldn't save: the menu asks first")
+	}
+	if _, err := config.SaveDraft(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := cfg.Sections[0]
+	if s.Category != "Infrastructure" || len(s.Groups) != 2 {
+		t.Fatalf("got %+v", s)
+	}
+	var ship *config.Command
+	for _, c := range s.All() {
+		if c.Name == "Ship it" {
+			ship = c
+		}
+	}
+	if ship == nil || ship.Risk != config.RiskWarn || ship.Cmd != "./ship.sh <env>" || ship.Args[0].Kind() != "choose" || len(ship.Args[0].Options) != 3 {
+		t.Fatalf("Ship it: %+v", ship)
+	}
+	if a := ship.Args[0]; !slices.Contains(a.Options, config.Option{Value: "choice", Label: "Production"}) || a.Default != "choice" {
+		t.Fatalf("the new choice: %+v", a)
+	}
+}
+
+// Yes to a remove takes it out, and the cursor stays on a row.
+func TestPackFormRemoves(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "0/add")
+	press(f, kEnter)
+	f.onRow(t, "0/0/remove")
+	press(f, kEnter, kDown, kEnter) // Yes
+	if len(f.pack.Files[0].Group.Commands) != 1 || f.pack.Files[0].Group.Commands[0].Name != "New command" {
+		t.Fatal("Yes should remove it")
+	}
+	if f.selectedRow() == nil || f.selectedRow().header {
+		t.Error("the cursor should be on a row once it's gone")
+	}
+}
+
+// Left with nothing changed, there's nothing to ask about. Opened again, the
+// form carries on from a draft of the pack; and opened outside the menu, ←
+// saves.
+func TestPackFormDrafts(t *testing.T) {
+	f := newTestForm(t)
+	press(f, kEsc)
+	if f.Left != "" {
+		t.Fatalf("nothing changed, but left %q", f.Left)
+	}
+	if d, _ := config.ReadDraft(); d != nil {
+		t.Fatal("no draft without changes")
+	}
+	f, _ = NewPackForm("demo", true)
+	f.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
+	f.onRow(t, "desc")
+	typeIn(f, "Half done")
+	press(f, kEsc)
+	again, err := NewPackForm("demo", true)
+	if err != nil || again.pack.Description != "Half done" {
+		t.Fatalf("should carry on from the draft: %v %+v", err, again.pack)
+	}
+	outside, _ := NewPackForm("demo", false)
+	outside.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
+	outside.onRow(t, "desc")
+	typeIn(outside, "Done")
+	press(outside, kEsc)
+	if p, _ := config.LoadEditable("demo"); outside.Left != "saved" || p.Description != "Done" {
+		t.Fatalf("outside the menu, leaving saves: %q %q", outside.Left, p.Description)
+	}
+}
+
+// A new pack starts from the example, named so it's not taken, and is only
+// made once saved.
+func TestPackFormNewPack(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	f, err := NewPackFormForNew(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
+	if f.pack.Title != "New pack" || !f.pack.IsNew() {
+		t.Fatalf("got %+v", f.pack)
+	}
+	f.onRow(t, "name")
+	typeIn(f, "Deploy tools")
+	press(f, kEsc)
+	if f.Left != "draft" {
+		t.Fatalf("a new pack always asks: left %q", f.Left)
+	}
+	if name, err := config.SaveDraft(); err != nil || name != "Deploy tools" {
+		t.Fatalf("%q %v", name, err)
+	}
+	p, err := config.LoadEditable("deploy-tools")
+	if err != nil || p.Title != "Deploy tools" {
+		t.Fatalf("%v %+v", err, p)
+	}
+	if d, _ := config.ReadDraft(); d != nil {
+		t.Error("the draft should go once saved")
+	}
+}
+
+// The form opens on its first row, the pack's name, with no path above it.
+func TestPackFormOpensOnTheFirstRow(t *testing.T) {
+	f := newTestForm(t)
+	if r := f.selectedRow(); r == nil || r.key != "name" {
+		t.Errorf("on %+v", r)
+	}
+	if first := strings.TrimSpace(strings.Split(f.screen(), "\n")[6]); first != "PACK" {
+		t.Errorf("the page should start with the pack's card, not %q", first)
+	}
+}
+
+// / opens the filter, which takes all text and leaves the rows with it in,
+// under their headings; esc clears it. Its row is level with the menu's.
+func TestPackFormFilters(t *testing.T) {
+	f := newTestForm(t)
+	lines := strings.Split(f.screen(), "\n")
+	if !strings.HasPrefix(strings.TrimSpace(lines[2]), "My packs › ") || !strings.HasPrefix(strings.TrimSpace(lines[4]), "❯ / to filter") {
+		t.Fatalf("the path and the filter should be on the menu's rows:\n%s", f.screen())
+	}
+	press(f, tea.KeyPressMsg{Code: '/', Text: "/"})
+	for _, r := range "greet" {
+		press(f, tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	var keys []string
+	for _, r := range f.rows {
+		if !r.header {
+			keys = append(keys, r.key)
+		}
+	}
+	if strings.Join(keys, " ") != "0/0/desc 0/0/0/q" {
+		t.Fatalf("greet should leave the description and <who>, got %v:\n%s", keys, f.screen())
+	}
+	if p := f.page(); !strings.Contains(p, "MODULE") || !strings.Contains(p, "COMMAND") {
+		t.Fatalf("a row keeps its headings:\n%s", p)
+	}
+	press(f, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if f.filtering || f.filter.Value() != "" || len(f.rows) < 20 {
+		t.Fatalf("esc should clear it:\n%s", f.screen())
+	}
+}
+
+// The form's path, filter and first heading are level with the menu's, in the
+// pane beside it.
+func TestPackFormLinesUpWithTheMenu(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "a", Cmd: "x"}}}}}})
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	menu := strings.Split(ansi.Strip(m.view()), "\n")
+	rowOf := func(lines []string, from int, ok func(string) bool) int {
+		for i := from; i < len(lines); i++ {
+			if ok(strings.TrimSpace(strings.TrimPrefix(lines[i], "▌"))) {
+				return i
+			}
+		}
+		return -1
+	}
+	f := newTestForm(t)
+	form := strings.Split(f.screen(), "\n")
+	filter := func(l string) bool { return strings.HasPrefix(l, "❯ / to filter") }
+	crumb := func(l string) bool { return strings.Contains(l, "›") }
+	if a, b := rowOf(menu, 0, crumb), rowOf(form, 0, crumb); a != b || a < 0 {
+		t.Errorf("path: the menu's on row %d, the form's on %d", a, b)
+	}
+	mf, ff := rowOf(menu, 0, filter), rowOf(form, 0, filter)
+	if mf != ff || mf < 0 {
+		t.Errorf("filter: the menu's on row %d, the form's on %d", mf, ff)
+	}
+	nonBlank := func(l string) bool { return l != "" }
+	if a, b := rowOf(menu, mf+1, nonBlank), rowOf(form, ff+1, nonBlank); a != b {
+		t.Errorf("first heading: the menu's on row %d, the form's on %d\n%s", a, b, strings.Join(menu[:10], "\n"))
+	}
+}
+
+// Back from the pack form with a draft, the menu asks: No throws the changes
+// away, Yes saves them, ← opens the form again to carry on.
+func TestMenuAsksToSaveTheForm(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if err := config.NewPackWithLogo("demo", "rocket", ""); err != nil {
+		t.Fatal(err)
+	}
+	var sent []string
+	m := New(Options{Config: &config.Config{}, Send: func(c string) error { sent = append(sent, c); return nil },
+		Shell: func() ShellState { return ShellState{} }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	draft := func(desc string) {
+		p, _ := config.LoadEditable("demo")
+		p.Description = desc
+		if err := p.WriteDraft(); err != nil {
+			t.Fatal(err)
+		}
+		m.form = &pending{editor: true, name: "Edit a pack", cmd: "clingon pack edit demo --menu"}
+		m.Update(idleMsg{seq: m.runSeq, ok: true})
+		if m.mode != modeSavePack || !strings.Contains(ansi.Strip(m.view()), "Save the changes to Demo?") {
+			t.Fatalf("should ask:\n%s", ansi.Strip(m.view()))
+		}
+	}
+	draft("Thrown away")
+	m.Update(kEnter) // No, first
+	if p, _ := config.LoadEditable("demo"); p.Description == "Thrown away" {
+		t.Fatal("No shouldn't save")
+	}
+	if d, _ := config.ReadDraft(); d != nil {
+		t.Fatal("No throws the draft away")
+	}
+	draft("Kept")
+	m.Update(kLeft)
+	if len(sent) != 1 || sent[0] != "clingon pack edit demo --menu" {
+		t.Fatalf("← should open the form again: %q", sent)
+	}
+	draft("Kept")
+	m.Update(kDown)
+	m.Update(kEnter) // Yes
+	if p, _ := config.LoadEditable("demo"); p.Description != "Kept" {
+		t.Fatalf("Yes should save: %q", p.Description)
+	}
+}
+
+// Scrolling down a long list keeps the row it's for, pinned at the top.
+func TestPackFormListKeepsItsQuestion(t *testing.T) {
+	f := newTestForm(t)
+	f.Update(tea.WindowSizeMsg{Width: 70, Height: 20})
+	f.onRow(t, "logo")
+	press(f, kEnter)
+	for range 25 {
+		press(f, kDown)
+	}
+	lines := strings.Split(f.screen(), "\n")
+	if first := strings.TrimSpace(lines[8]); !strings.Contains(lines[6], "PACK") || !strings.Contains(lines[7], "Name") || !strings.Contains(first, "Logo") {
+		t.Fatalf("the question should stay at the top, not %q:\n%s", first, f.screen())
+	}
+	if !strings.Contains(f.screen(), "› ") {
+		t.Fatalf("and the list's cursor in view:\n%s", f.screen())
+	}
+}
+
+// Far down the form, the headings of where you are stay at the top: the
+// pack's, the module's and the command's.
+func TestPackFormHeadingsStick(t *testing.T) {
+	f := newTestForm(t)
+	f.Update(tea.WindowSizeMsg{Width: 70, Height: 18})
+	f.onRow(t, "0/0/0/start")
+	lines := strings.Split(f.screen(), "\n")
+	for i, want := range []string{"PACK", "Name  ", "MODULE", "Name  ", "COMMAND", "Name  "} {
+		if !strings.Contains(lines[6+i], want) {
+			t.Fatalf("line %d should be %s:\n%s", 6+i, want, f.screen())
+		}
+	}
+	if !strings.Contains(f.screen(), "Default") {
+		t.Fatalf("and the cursor's row in view:\n%s", f.screen())
+	}
+}
+
+// From the menu, esc with changes goes to the menu with the form left open,
+// and the menu asks about them; once it's answered the form closes. ← at the
+// form's top does nothing. ← in the menu's question goes back to the form.
+func TestPackFormStaysOpenWhileTheMenuAsks(t *testing.T) {
+	f := newTestForm(t)
+	focused := 0
+	f.FocusMenu = func() { focused++ }
+	if _, cmd := f.Update(kLeft); cmd != nil || focused != 0 || f.asking {
+		t.Fatal("← at the top does nothing: only esc leaves")
+	}
+	f.onRow(t, "desc")
+	typeIn(f, "Asked about")
+	_, cmd := f.Update(kEsc)
+	if focused != 1 || !f.asking || !config.Asking() || cmd == nil {
+		t.Fatal("changes: to the menu, which asks")
+	}
+
+	m := New(Options{Config: &config.Config{}, Send: func(string) error { return nil }, Shell: func() ShellState { return ShellState{Busy: "clingon"} }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.busy = "Edit a pack"
+	backToForm := 0
+	m.opt.FocusShell = func() { backToForm++ }
+	m.Update(tea.FocusMsg{})
+	if m.mode != modeSavePack {
+		t.Fatalf("the menu should ask:\n%s", ansi.Strip(m.view()))
+	}
+	m.Update(kLeft) // back to the form, still open
+	if backToForm != 1 || config.Asking() || m.mode == modeSavePack {
+		t.Fatal("← should go back to the form")
+	}
+	if f.answered(); f.asking {
+		t.Fatal("the form should carry on")
+	}
+
+	f.Update(kEsc) // and to the menu again
+	m.Update(tea.FocusMsg{})
+	m.Update(kDown)
+	m.Update(kEnter) // Yes
+	if p, _ := config.LoadEditable("demo"); p.Description != "Asked about" {
+		t.Fatalf("Yes should save: %q", p.Description)
+	}
+	if cmd := f.answered(); cmd == nil || f.Left != "answered" {
+		t.Fatal("answered, the form closes")
+	}
+}
+
+// The menu's keys: [ ] jump between headings, ? shows the keys, ctrl-c
+// cancels what's open.
+func TestPackFormHasTheMenusKeys(t *testing.T) {
+	f := newTestForm(t)
+	press(f, tea.KeyPressMsg{Code: ']', Text: "]"})
+	if r := f.selectedRow(); r == nil || r.key != "0/name" {
+		t.Fatalf("] should go to the module, on %+v", r)
+	}
+	press(f, tea.KeyPressMsg{Code: '[', Text: "["})
+	if r := f.selectedRow(); r == nil || r.key != "name" {
+		t.Fatalf("[ should go back to the pack, on %+v", r)
+	}
+	press(f, tea.KeyPressMsg{Code: '?', Text: "?"})
+	if !strings.Contains(f.screen(), "KEYS") {
+		t.Fatalf("? should show the keys:\n%s", f.screen())
+	}
+	press(f, kDown) // any key closes it, and does nothing else
+	if r := f.selectedRow(); f.help || r.key != "name" {
+		t.Fatal("a key should just close the keys")
+	}
+	f.onRow(t, "section")
+	press(f, kEnter, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if f.choosing != nil || f.Left != "" {
+		t.Fatal("ctrl-c should cancel the list, not leave")
+	}
+}
+
+// Only the part the cursor's in is shown whole: the others fold to their
+// heading and name, a module saying how many commands it has.
+func TestPackFormFoldsTheOtherParts(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "name")
+	if p := f.page(); !strings.Contains(p, "Section") || strings.Contains(p, "Say hello") || !strings.Contains(p, "· 1 command") {
+		t.Errorf("in the pack, its module folded:\n%s", p)
+	}
+	press(f, kDown, kDown, kDown, kDown, kDown, kDown) // past Needs, into the module
+	if r := f.selectedRow(); r == nil || r.key != "0/name" {
+		t.Fatalf("down from the pack's last row: %+v", r)
+	}
+	if p := f.page(); strings.Contains(p, "Section") || !strings.Contains(p, "Say hello") || strings.Contains(p, "Prints a greeting.") {
+		t.Errorf("in the module, the pack and its command folded:\n%s", p)
+	}
+	press(f, kUp)
+	if r := f.selectedRow(); r == nil || r.key != "name" || !strings.Contains(f.page(), "Section") {
+		t.Errorf("back up, onto the pack's name, opens it: %+v\n%s", r, f.page())
+	}
+}
+
+// A hint is only shown where the cursor is: elsewhere an empty field is a dash.
+func TestPackFormHintsWhereYouAre(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "name")
+	if p := f.page(); strings.Contains(p, "programs, separated by commas") {
+		t.Errorf("a hint away from the cursor:\n%s", p)
+	}
+	f.onRow(t, "needs")
+	if p := f.page(); !strings.Contains(p, "programs, separated by commas") {
+		t.Errorf("no hint on the cursor's row:\n%s", p)
+	}
+}
+
+// The preview is the file the cursor's row is in: the pack's _pack.md, or
+// for a module's rows and its commands', the module's own file.
+func TestPackFormPreviewsItsFile(t *testing.T) {
+	f := newTestForm(t)
+	preview := func() string { return ansi.Strip(strings.Join(f.preview(60, 40), "\n")) }
+	f.onRow(t, "name")
+	if p := preview(); !strings.HasPrefix(p, "_PACK.MD") || !strings.Contains(p, "# Demo") {
+		t.Errorf("the pack's rows:\n%s", p)
+	}
+	for _, key := range []string{"0/name", "0/0/cmd"} {
+		f.onRow(t, key)
+		if p := preview(); !strings.HasPrefix(p, "EXAMPLES.MD") || !strings.Contains(p, "## Say hello") || strings.Contains(p, "IN THE MENU") {
+			t.Errorf("%s: the module's file, and only that:\n%s", key, p)
+		}
+	}
+}

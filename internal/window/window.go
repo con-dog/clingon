@@ -32,7 +32,7 @@ const (
 
 	// The window's own colours, in clingon's palette (internal/ui/styles.go):
 	// its ink, text, cursor and selection.
-	bg, fg, bold, cursor, selection = "#121018", "#e8e6f0", "#ffffff", "#ff87d7", "#3d3555"
+	bg, fg, bold, cursor, selection = "#1a1724", "#e8e6f0", "#ffffff", "#ff87d7", "#3d3555"
 
 	cols, rows = 170, 48
 )
@@ -42,8 +42,13 @@ const (
 // palette instead of the terminal's, so the whole window is one piece. Blue
 // stays clear of the prompt's purple, which is 99 and not one of these.
 // Black, red, green, yellow, blue, magenta, cyan, white, then bright ones.
+//
+// Black is a step lighter than the window's own background, in its violet:
+// what's raised on it, as a page laid on top (the form's preview, the
+// command's block, the cursor's row). Terminal.app has no 24-bit colour, and
+// none of the other 256 is a dark violet, so this is the one way to draw one.
 var ansi = [16]string{
-	"#2a2638", "#ff5f87", "#5fd7af", "#ffd787", "#87afff", "#ff87d7", "#5fd7ff", "#c6c2d6",
+	"#262236", "#ff5f87", "#5fd7af", "#ffd787", "#87afff", "#ff87d7", "#5fd7ff", "#c6c2d6",
 	"#5f5f87", "#ff87af", "#87ffd7", "#ffffaf", "#afafff", "#ffafff", "#afffff", "#ffffff",
 }
 
@@ -470,6 +475,8 @@ function writeProfile(argv) {
 	set("ProfileCurrentVersion", $.NSNumber.numberWithDouble(2.07));
 	if (!font.isNil()) set("Font", archive(font));
 	set("FontAntialias", yes);
+	set("CursorType", $.NSNumber.numberWithInt(0)); // a block, blinking, like the menu's
+	set("CursorBlink", yes);
 	set("columnCount", $.NSNumber.numberWithInt(170));
 	set("rowCount", $.NSNumber.numberWithInt(48));
 	set("CommandString", command); // the window importing it runs clingon

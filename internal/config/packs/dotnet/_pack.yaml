@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/con-dog/clingon/main/pack.schema.json
-name: .NET
-description: Create, build, test and publish .NET projects, and manage NuGet packages, EF Core migrations, user secrets, SDKs and tools
-requires: [dotnet]
-logo: hash
-color: "#875fd7"
-category: Code

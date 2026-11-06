@@ -18,9 +18,9 @@ func writePack(t *testing.T, name, body string) {
 	}
 }
 
-func TestAddingToASubmenuWithNoCommandsYet(t *testing.T) {
+func TestAddingToAModuleWithNoCommandsYet(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
-	writePack(t, "p/deploy", "name: Deploy\ncommands:\n")
+	writePack(t, "p/deploy", "# Deploy\n")
 	if err := AddCommand("p", "Deploy", "Ship", "./ship.sh", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -44,14 +44,14 @@ func TestMergedGroupsKeepEachFilesWhen(t *testing.T) {
 	if err := os.MkdirAll(remotePath("a"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(remotePath("a/g"), []byte("name: G\nwhen: [.git]\ncommands:\n  - name: one\n    cmd: ls\n"), 0o644); err != nil {
+	if err := os.WriteFile(remotePath("a/g"), []byte("---\nwhen: .git\n---\n# G\n\n## one\n\n```sh\nls\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(remotePath("a/_pack"), []byte("name: S\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(remotePath("a"), PackInfoFile), []byte("# S\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writePack(t, "b/g", "name: G\nwhen: [go.mod]\ncommands:\n  - name: two\n    cmd: ls\n")
-	if err := os.WriteFile(filepath.Join(PackPath("b"), PackInfoFile), []byte("name: S\n"), 0o644); err != nil {
+	writePack(t, "b/g", "---\nwhen: go.mod\n---\n# G\n\n## two\n\n```sh\nls\n```\n")
+	if err := os.WriteFile(filepath.Join(PackPath("b"), PackInfoFile), []byte("# S\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _, err := Load()

@@ -22,11 +22,11 @@ import (
 )
 
 // Starter and StarterInfo are the example pack `clingon pack create` writes: a
-// submenu, and the pack's _pack.yaml.
+// module, and the pack's _pack.md.
 var (
-	//go:embed starter.yaml
+	//go:embed starter.md
 	Starter []byte
-	//go:embed starter_pack.yaml
+	//go:embed starter_pack.md
 	StarterInfo []byte
 )
 
@@ -36,9 +36,9 @@ type Config struct {
 }
 
 // PackInfoFile says how a pack looks. It's optional for your own packs.
-const PackInfoFile = "_pack.yaml"
+const PackInfoFile = "_pack.md"
 
-// packInfo is what's in a _pack.yaml.
+// packInfo is what's in a _pack.md (and for built-in packs, what clingon says of them).
 type packInfo struct {
 	Name        string   `yaml:"name"`        // what the menu calls the pack; from its folder if unset
 	Description string   `yaml:"description"` // shown by `clingon pack`
@@ -100,6 +100,9 @@ type Command struct {
 	When     []string `yaml:"when"`     // greyed out unless one of these files is here or in a folder above (./x: here only)
 	Args     []Arg    `yaml:"args"`
 	Disabled string   `yaml:"-"` // why it can't be used right now: shown greyed out
+	Editor   bool     `yaml:"-"` // opens an editor in the shell: focus goes there while it's open
+	Source   string   `yaml:"-"` // the pack file it's from: with its heading, what a recipe links to
+	Line     int      `yaml:"-"` // its heading's line in that file, from 1
 }
 
 // Arg fills one <name> placeholder in a command.
@@ -117,13 +120,17 @@ type Arg struct {
 	Join        *string  `yaml:"join"`    // separator for flags, default " "
 	Quote       bool     `yaml:"quote"`   // shell-quote the value, for free text that may hold quotes or spaces
 	Pattern     string   `yaml:"pattern"` // a regexp typed values must match
+	IconFrom    string   `yaml:"-"`       // its choices show the logo named by this earlier blank's answer
 }
 
-// Option is a choice; in YAML either a plain string or {value, label}.
+// Option is a choice: in a pack, a ( ) or [ ] line; in a test's YAML, a plain
+// string or {value, label}.
 type Option struct {
 	Value  string `yaml:"value"`
 	Label  string `yaml:"label"`
 	Indent bool   `yaml:"-"` // drawn under the option above it, as part of it
+	Icon   string `yaml:"-"` // a glyph shown before it, like a logo
+	Color  string `yaml:"-"` // its icon's colour, #rrggbb
 }
 
 func (o *Option) UnmarshalYAML(n *yaml.Node) error {
@@ -231,7 +238,11 @@ func Load() (*Config, []string, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		cfg.merge(assemble(filepath.Base(dir), parts))
+		c := assemble(filepath.Base(dir), parts)
+		for i := range c.Sections {
+			c.Sections[i].Category = categoryOf(dir)
+		}
+		cfg.merge(c)
 	}
 	if errs := cfg.Validate(); len(errs) > 0 {
 		return nil, nil, errors.Join(errs...)
@@ -241,13 +252,14 @@ func Load() (*Config, []string, error) {
 	return cfg, local, nil
 }
 
-// parsedFile is one file of a pack: its _pack.yaml, or a submenu.
+// parsedFile is one file of a pack: its _pack.md, or a module.
 type parsedFile struct {
 	info  *packInfo
 	group *Group
 }
 
-// decodeStrict reads YAML into v, refusing fields it doesn't know.
+// decodeStrict reads YAML into v, refusing fields it doesn't know. (Tests
+// write whole configs down this way.)
 func decodeStrict(name string, data []byte, v any) error {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
@@ -257,26 +269,8 @@ func decodeStrict(name string, data []byte, v any) error {
 	return nil
 }
 
-// parsePackFile reads one file of a pack, going by its name.
-func parsePackFile(path string, data []byte) (parsedFile, error) {
-	base := filepath.Base(path)
-	if base == PackInfoFile {
-		var in packInfo
-		err := decodeStrict(path, data, &in)
-		return parsedFile{info: &in}, err
-	}
-	var g Group
-	if err := decodeStrict(path, data, &g); err != nil {
-		return parsedFile{}, err
-	}
-	if g.Name == "" {
-		g.Name = sectionTitle(moduleSlug(base))
-	}
-	return parsedFile{group: &g}, nil
-}
-
 // assemble puts a pack's files together as the one menu item they make, called
-// after its folder unless its _pack.yaml says otherwise. A pack with no submenus
+// after its folder unless its _pack.md says otherwise. A pack with no modules
 // isn't in the menu at all.
 func assemble(folder string, parts []parsedFile) *Config {
 	s := Section{Name: sectionTitle(folder)}
@@ -287,6 +281,9 @@ func assemble(folder string, parts []parsedFile) *Config {
 				s.Name = p.info.Name
 			}
 			s.Icon, s.Logo, s.Color, s.Category = p.info.Icon, p.info.Logo, p.info.Color, p.info.Category
+			if s.Color == "" {
+				s.Color = logoColors[s.Logo]
+			}
 			s.Needs = p.info.Requires
 		case p.group != nil:
 			s.Groups = append(s.Groups, *p.group)

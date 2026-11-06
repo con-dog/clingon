@@ -95,18 +95,18 @@ func TestCheckIncludesTheProjectPack(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	repo := t.TempDir()
 	t.Chdir(repo)
-	module := filepath.Join(repo, config.ProjectDir, "deploy", "prod.yaml")
+	module := filepath.Join(repo, config.ProjectDir, "deploy", "prod.md")
 	if err := os.MkdirAll(filepath.Dir(module), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(module, []byte("name: Prod\ncommands:\n  - name: Ship\n    cmd: ./ship.sh\n"), 0o644); err != nil {
+	if err := os.WriteFile(module, []byte("# Prod\n\n## Ship\n\n```sh\n./ship.sh\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, err := output(t, check)
 	if err != nil || !strings.Contains(out, "project pack") || !strings.Contains(out, "asks before using it") {
 		t.Fatalf("got %q %v", out, err)
 	}
-	if err := os.WriteFile(module, []byte("name: Prod\ncommands:\n  - name: Ship\n"), 0o644); err != nil {
+	if err := os.WriteFile(module, []byte("# Prod\n\n## Ship\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := output(t, check); err == nil || !strings.Contains(err.Error(), "project pack has problems") {
@@ -172,9 +172,9 @@ func TestHeadlinePicksTheMostUsefulNews(t *testing.T) {
 	if err := config.Install("git"); err != nil {
 		t.Fatal(err)
 	}
-	remote := filepath.Join(config.Dir(), "packs", "remote", "git", "everyday.yaml")
+	remote := config.RemotePath("git/everyday")
 	data, _ := os.ReadFile(remote)
-	if err := os.WriteFile(remote, append(data, []byte("# old\n")...), 0o644); err != nil {
+	if err := os.WriteFile(remote, append(data, []byte("<!-- old -->\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if h := headline(); !strings.Contains(h.Text, "Update 1 pack: git · Clingon › Packs › Update packs") {
@@ -229,7 +229,7 @@ func TestDoctorCarriesOnPastAPackItDoesntKnow(t *testing.T) {
 	if err := os.MkdirAll(config.RemotePath("homemade"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(config.RemotePath("homemade"), "h.yaml"), []byte("commands:\n  - name: x\n    cmd: ls\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(config.RemotePath("homemade"), "h.md"), []byte("# H\n\n## x\n\n```sh\nls\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, _ := output(t, func() error { return doctor(nil) })
@@ -240,17 +240,17 @@ func TestDoctorCarriesOnPastAPackItDoesntKnow(t *testing.T) {
 
 func TestPackUpdateRemovesRetiredPacks(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
-	if err := os.MkdirAll(config.RemotePath("databases"), 0o755); err != nil {
+	if err := os.MkdirAll(config.RemotePath("old-db"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(config.RemotePath("databases"), "g.yaml"), []byte("commands: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(config.RemotePath("old-db"), "g.md"), []byte("# G\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, err := output(t, func() error { return packCmd([]string{"update"}) })
-	if err != nil || !strings.Contains(out, "removed databases") {
+	if err != nil || !strings.Contains(out, "removed old-db") {
 		t.Fatalf("update should remove a retired pack, got %q, %v", out, err)
 	}
-	if config.IsInstalled("databases") {
+	if config.IsInstalled("old-db") {
 		t.Error("the retired pack is still installed")
 	}
 }
@@ -354,13 +354,13 @@ func TestPackInspect(t *testing.T) {
 		return output(t, func() error { return packCmd([]string{"describe", ref}) })
 	}
 	// One you don't have yet: exactly what installing it would add.
-	if out, err := run("docker"); err != nil || !strings.Contains(out, "name: Docker") {
+	if out, err := run("docker"); err != nil || !strings.Contains(out, "# Docker") {
 		t.Fatalf("not installed: %.100q %v", out, err)
 	}
 	if err := config.Install("docker"); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := run("remote/docker"); err != nil || !strings.Contains(out, "# Added by clingon.") {
+	if out, err := run("remote/docker"); err != nil || !strings.Contains(out, "<!-- Added by clingon.") {
 		t.Errorf("installed: %.100q %v", out, err)
 	}
 	if err := config.AddCommand("docker", "Mine", "Hi", "echo hi", ""); err != nil {
@@ -373,7 +373,7 @@ func TestPackInspect(t *testing.T) {
 		t.Errorf("both: should ask which, got %v", err)
 	}
 	// Not installed, and asked for as the menu does.
-	if out, err := run("remote/git"); err != nil || !strings.Contains(out, "name: Git") {
+	if out, err := run("remote/git"); err != nil || !strings.Contains(out, "# Git") {
 		t.Errorf("remote, not installed: %.100q %v", out, err)
 	}
 	for _, bad := range []string{"nope", "../recipes", "mine/nope", "mine/git", "remote/nope"} {
@@ -393,11 +393,20 @@ func TestEveryPackPickerSaysWhereItsFrom(t *testing.T) {
 	}
 	var inspect *config.Command
 	pickers := 0
+	var mineInspect *config.Command
 	for _, s := range builtinSections() {
-		for _, c := range s.All() {
-			if c.Name == "Describe a pack" {
-				inspect = c
+		for g := range s.Groups {
+			for i := range s.Groups[g].Commands {
+				if c := &s.Groups[g].Commands[i]; c.Name == "Describe a pack" {
+					if s.Groups[g].Name == "My packs" {
+						mineInspect = c
+					} else {
+						inspect = c
+					}
+				}
 			}
+		}
+		for _, c := range s.All() {
 			for _, a := range c.Args {
 				if a.Name != "pack" {
 					continue
@@ -426,6 +435,10 @@ func TestEveryPackPickerSaysWhereItsFrom(t *testing.T) {
 			t.Errorf("%s should be listed once: %v", want, seen)
 		}
 	}
+	// My packs' own Describe lists only yours.
+	if mineInspect == nil || len(mineInspect.Args[0].Options) != 1 {
+		t.Fatalf("My packs › Describe a pack should list just your pack: %+v", mineInspect)
+	}
 }
 
 func TestRecipeCommands(t *testing.T) {
@@ -446,7 +459,11 @@ func TestRecipeCommands(t *testing.T) {
 	if err := config.AddCommand("mine", "Deploy", "Ship", "ship <where>", "Ships it."); err != nil {
 		t.Fatal(err)
 	}
-	id := (&config.Section{Name: "Deploy"}).CommandID(&config.Command{Name: "Ship"})
+	cfg, _, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := cfg.Sections[0].CommandID(cfg.Sections[0].All()[0])
 	if _, err := run("add", "Ship it", id, "gone-00000000"); err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +471,7 @@ func TestRecipeCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Ship it", "2 commands", " 1  Ship · Mine", "ship <where>", "Ships it.", "Asks for: where", " 2  Not available here", "gone-00000000"} {
+	for _, want := range []string{"Ship it", "2 commands", " 1  Ship · Mine", "ship <where>", "Ships it.", "Asks for: Where", " 2  Not available here", "gone-00000000"} {
 		if !strings.Contains(ansi.Strip(out), want) {
 			t.Errorf("describe should say %q:\n%s", want, out)
 		}
@@ -512,7 +529,7 @@ func TestPipedOutputHasNoBoxes(t *testing.T) {
 		t.Errorf("nothing should be held: %q", said)
 	}
 	out, err = output(t, func() error { return packCmd([]string{"describe", "remote/git/stash"}) })
-	if err != nil || strings.Contains(out, "╭") || !strings.Contains(out, "commands:") {
+	if err != nil || strings.Contains(out, "╭") || !strings.Contains(out, "\n## ") {
 		t.Fatalf("inspect: %.200q %v", out, err)
 	}
 }
@@ -644,4 +661,51 @@ func TestShortNamesForCompletion(t *testing.T) {
 	if out := list(); !strings.Contains(out, "remote/git\t") || !strings.Contains(out, "mine/git\t") || !strings.Contains(out, "\npoop\t") {
 		t.Errorf("one of each keeps its prefix: %q", out)
 	}
+}
+
+// The guide's example is a real pack: it loads, and it's harmless.
+func TestPackGuide(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	out, err := output(t, func() error { return packCmd([]string{"guide"}) })
+	if err != nil || !strings.Contains(out, "## Say hello") || !strings.Contains(out, "front matter") {
+		t.Fatalf("got %q %v", out, err)
+	}
+	dir := filepath.Join(config.Dir(), "packs", "mine", "work")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "deploy.md"), []byte(guideExample), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := config.Load()
+	if err != nil {
+		t.Fatalf("the guide's example should load: %v", err)
+	}
+	for _, c := range cfg.Sections[0].All() {
+		if c.Risk != "" || strings.Contains(c.Cmd, "rm ") {
+			t.Errorf("the guide's example should be harmless: %s", c.Cmd)
+		}
+	}
+	for _, l := range strings.Split(guideTop+guideRest, "\n") {
+		if n := len([]rune(l)); n > 78 {
+			t.Errorf("a line of the guide is %d wide, too wide for its box: %q", n, l)
+		}
+	}
+}
+
+// Add a pack goes straight to the form, which asks for everything: the
+// menu asks nothing first, and the form leaves its draft for the menu.
+func TestAddAPackOpensTheForm(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	for _, s := range builtinSections() {
+		for _, c := range s.All() {
+			if c.Name == "Add a pack" {
+				if !c.Editor || len(c.Args) != 0 || !strings.HasSuffix(c.Cmd, " pack create --menu") {
+					t.Fatalf("got %s %+v", c.Cmd, c.Args)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("no Add a pack")
 }
