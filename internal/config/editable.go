@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -91,6 +92,33 @@ func SyncBlanks(c *Command) {
 		args = append(args, a)
 	}
 	c.Args = args
+}
+
+// blankNameRe is what a blank can be called, between its < >.
+var blankNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
+
+// RenameBlank renames the command's blank old to name: in the command, as
+// <name>, and as its own, so what it asks and offers stays with it.
+func RenameBlank(c *Command, old, name string) error {
+	name = strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(name), "<"), ">")
+	switch {
+	case name == old:
+		return nil
+	case !blankNameRe.MatchString(name):
+		return fmt.Errorf("a blank's name starts with a letter or _, then letters, digits, _ and - (not %q)", name)
+	case slices.ContainsFunc(c.Args, func(a Arg) bool { return a.Name == name }):
+		return fmt.Errorf("the command already has a blank called <%s>", name)
+	}
+	c.Cmd = strings.ReplaceAll(c.Cmd, "<"+old+">", "<"+name+">")
+	for i := range c.Args {
+		if c.Args[i].Name == old {
+			c.Args[i].Name = name
+		}
+		if c.Args[i].IconFrom == old {
+			c.Args[i].IconFrom = name
+		}
+	}
+	return nil
 }
 
 // NewSlug is a file name for a new module called title, not already taken.

@@ -68,7 +68,8 @@ type formRow struct {
 	label, value, hint, help string
 	note                     string // faint, after the value: what a folded part has in it
 	header                   bool
-	sub                      bool // one of a blank's rows, under it
+	sub                      int  // how many levels it's set in under its command: a blank 1, a blank's own rows 2
+	title                    bool // a label with nothing of its own, over what's set in under it: the cursor passes it
 	depth                    int  // 0 the pack's, 1 a module's, 2 a command's: how far in its tree guides go
 	branch                   bool // an add that ends its level, drawn on the tree's └─
 	icon, color              string
@@ -263,7 +264,7 @@ func (f *PackForm) refresh(focus string) {
 		return
 	}
 	for i, r := range f.rows {
-		if focus != "" && r.key == focus && !r.header {
+		if focus != "" && r.key == focus && !r.still() {
 			f.sel = i
 		}
 	}
@@ -271,10 +272,10 @@ func (f *PackForm) refresh(focus string) {
 		return
 	}
 	f.sel = min(max(was, 0), len(f.rows)-1)
-	if f.rows[f.sel].header {
+	if f.rows[f.sel].still() {
 		f.move(1)
 	}
-	if f.rows[f.sel].header {
+	if f.rows[f.sel].still() {
 		f.move(-1)
 	}
 }
@@ -367,9 +368,12 @@ func (f *PackForm) matching(rows []formRow) []formRow {
 
 // move puts the cursor on the next row (or, with -1, the one before) that
 // isn't a card's title.
+// still says whether the cursor passes a row by: a heading, or a title.
+func (r formRow) still() bool { return r.header || r.title }
+
 func (f *PackForm) move(d int) {
 	for i := f.sel + d; i >= 0 && i < len(f.rows); i += d {
-		if !f.rows[i].header {
+		if !f.rows[i].still() {
 			f.sel = i
 			return
 		}
@@ -564,6 +568,9 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 			return nil
 		}},
 	}
+	if len(c.Args) > 0 { // the blanks, set in under a title
+		rows = append(rows, formRow{key: k("args"), label: "Args", title: true})
+	}
 	for b := range c.Args {
 		rows = append(rows, f.blankRows(i, j, b)...)
 	}
@@ -590,12 +597,15 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 	kinds := []config.Option{{Value: "text", Label: "text"}, {Value: "choose", Label: "select one"}, {Value: "flags", Label: "select many"}}
 	kind := map[string]string{"text": "text", "secret": "text, hidden", "choose": "select one", "flags": "select many"}[a.Kind()]
 	rows := []formRow{
-		{key: k("q"), label: name, value: a.Prompt, hint: "the question asked", help: "What's asked for " + name + " when the command runs.", text: func(v string) error { f.blank(i, j, b).Prompt = v; return nil }},
+		{key: k("name"), sub: 1, label: "What", value: name, look: mdLook("- `", "`"), help: "The blank: where it is in the command. Renaming it renames it there too.", text: func(v string) error {
+			return config.RenameBlank(f.command(i, j), f.blank(i, j, b).Name, v)
+		}},
+		{key: k("q"), sub: 2, label: "Desc", value: a.Prompt, hint: "the question asked", help: "What's asked for " + name + " when the command runs.", text: func(v string) error { f.blank(i, j, b).Prompt = v; return nil }},
 	}
 	if a.Kind() == "secret" {
-		rows = append(rows, formRow{key: k("kind"), sub: true, label: "Type", value: kind, help: "Its name says it's a secret, token or password: typed hidden, and kept out of your history."})
+		rows = append(rows, formRow{key: k("kind"), sub: 2, label: "Type", value: kind, help: "Its name says it's a secret, token or password: typed hidden, and kept out of your history."})
 	} else {
-		rows = append(rows, formRow{key: k("kind"), sub: true, label: "Type", value: kind, help: "How " + name + " is answered: text is typed in; select one picks one of its choices, or you type your own; select many picks any of them.", options: kinds, pick: func(v string) error {
+		rows = append(rows, formRow{key: k("kind"), sub: 2, label: "Type", value: kind, help: "How " + name + " is answered: text is typed in; select one picks one of its choices, or you type your own; select many picks any of them.", options: kinds, pick: func(v string) error {
 			a := f.blank(i, j, b)
 			switch v {
 			case "text":
@@ -610,12 +620,12 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 		}})
 	}
 	if kd := a.Kind(); kd == "text" || kd == "secret" {
-		return append(rows, formRow{key: k("start"), sub: true, label: "Base", value: a.Default, look: mdLook("  - (x) `", "`"), hint: "none", help: "What's filled in for " + name + " until you change it.", text: func(v string) error { f.blank(i, j, b).Default = v; return nil }})
+		return append(rows, formRow{key: k("start"), sub: 2, label: "Base", value: a.Default, look: mdLook("  - (x) `", "`"), hint: "none", help: "What's filled in for " + name + " until you change it.", text: func(v string) error { f.blank(i, j, b).Default = v; return nil }})
 	}
 	for o := range a.Options {
 		rows = append(rows, f.choiceRow(i, j, b, o))
 	}
-	return append(rows, formRow{key: k("add"), sub: true, label: "Add a choice", help: "Another answer to offer for " + name + ".", do: func() error {
+	return append(rows, formRow{key: k("add"), sub: 2, label: "Add a choice", help: "Another answer to offer for " + name + ".", do: func() error {
 		a := f.blank(i, j, b)
 		a.Options = append(a.Options, config.Option{Value: uniqueName("choice", func(n string) bool { return a.HasOption(n) })})
 		return nil
@@ -654,7 +664,7 @@ func (f *PackForm) choiceRow(i, j, b, o int) formRow {
 		}
 		return s
 	}
-	return formRow{key: fmt.Sprintf("%d/%d/%d/%d", i, j, b, o), sub: true, label: "Args", value: v, look: look,
+	return formRow{key: fmt.Sprintf("%d/%d/%d/%d", i, j, b, o), sub: 2, label: "Opts", value: v, look: look,
 		help:    "One of the answers offered: what it types, then its label.",
 		options: []config.Option{{Value: "types", Label: "Change what it types"}, {Value: "label", Label: "Change its label"}, {Value: "first", Label: first}, {Value: "remove", Label: "Remove it"}},
 		pick: func(what string) error {
@@ -1245,10 +1255,7 @@ func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
 // cell and a space, and set in under its blank for a blank's own rows.
 func (f *PackForm) labelAt(r *formRow) int {
 	n := ansi.StringWidth(guide(r)) + 2
-	if r.sub {
-		n += 2
-	}
-	return n
+	return n + 2*r.sub
 }
 
 // rowLine is a row as the menu draws one, the cursor's row a bar across the
@@ -1265,11 +1272,7 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 	case r.branch:
 		slot = "─"
 	}
-	indent := ""
-	if r.sub {
-		indent = "  "
-	}
-	rest := " " + indent
+	rest := " " + strings.Repeat("  ", r.sub)
 	room := max(w-f.labelAt(r), 1)
 	switch {
 	case r.confirm != "": // a remove
@@ -1556,7 +1559,7 @@ func marked(key string, lines []string) map[int]bool {
 		switch _, err := fmt.Sscanf(field, "%d", &o); {
 		case err == nil: // a choice
 			mark(item+1+o, item+1+o)
-		case field == "q":
+		case field == "q" || field == "name":
 			mark(item, item)
 		case field == "kind":
 			mark(item, subEnd)

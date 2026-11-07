@@ -661,6 +661,47 @@ func TestPackFormColoursAsTheMarkdown(t *testing.T) {
 	}
 }
 
+// A command's blanks are under an Args title the cursor passes by, each set in
+// under it as What <name>, and a blank's own rows set in under that.
+func TestPackFormArgs(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "0/0/0/kind")
+	f.pick(t, "choose")
+	f.onRow(t, "0/0/cmd")
+	press(f, kDown)
+	if r := f.selectedRow(); r == nil || r.key != "0/0/0/name" {
+		t.Fatalf("down from Runs, past Args, onto the blank: %+v", r)
+	}
+	page := f.page()
+	args := strings.Index(page, "  Args") + 2
+	who := args + strings.Index(page[args:], "What  ")
+	opts := who + strings.Index(page[who:], "Desc")
+	if args < 2 || who < args || opts < who || !strings.Contains(page[who:opts], "<who>") {
+		t.Fatalf("Args, then What <who>, then its Desc:\n%s", page)
+	}
+	line := func(at int) string { return page[strings.LastIndex(page[:at], "\n")+1 : at] }
+	if a, w, o := ansi.StringWidth(line(args)), ansi.StringWidth(line(who)), ansi.StringWidth(line(opts)); w != a+2 || o != w+2 {
+		t.Errorf("each set in two under the last: Args %d, What %d, Desc %d", a, w, o)
+	}
+}
+
+// Renaming a blank renames it in the command too; a name a blank can't have,
+// or another blank's, is refused.
+func TestPackFormRenamesABlank(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "0/0/0/name")
+	typeIn(f, "<name>")
+	c := f.pack.Files[0].Group.Commands[0]
+	if c.Cmd != `echo "Hello, <name>."` || c.Args[0].Name != "name" || c.Args[0].Prompt != "Who to greet" {
+		t.Fatalf("renamed: %q %+v", c.Cmd, c.Args[0])
+	}
+	f.onRow(t, "0/0/0/name")
+	typeIn(f, "two words")
+	if f.issue == "" || f.pack.Files[0].Group.Commands[0].Args[0].Name != "name" {
+		t.Errorf("refused: %q", f.issue)
+	}
+}
+
 func TestPackFormMarksItsLines(t *testing.T) {
 	pack := strings.Split("---\nsection: code\nlogo: rocket\ncolour: orange\n---\n# Demo\nTools.\n", "\n")
 	module := strings.Split("---\nwhen: Dockerfile\n---\n# Deploy\nShip things.\n\n"+
