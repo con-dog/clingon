@@ -68,11 +68,11 @@ func TestMarkdownCommand(t *testing.T) {
 }
 
 func TestMarkdownPackFile(t *testing.T) {
-	part, err := parsePackFile(PackInfoFile, []byte("---\nlogo: docker\nneeds: docker, git\n---\n# Docker\nContainers and images.\n"))
+	part, err := parsePackFile(PackInfoFile, []byte("---\nsection: infrastructure\nlogo: docker\nneeds: docker, git\n---\n# Docker\nContainers and images.\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if i := part.info; i.Name != "Docker" || i.Logo != "docker" || i.Description != "Containers and images." || len(i.Requires) != 2 {
+	if i := part.info; i.Name != "Docker" || i.Logo != "docker" || i.Description != "Containers and images." || len(i.Requires) != 2 || i.Category != "Infrastructure" {
 		t.Errorf("got %+v", i)
 	}
 	c := assemble("docker", []parsedFile{part, {group: &Group{Name: "G", Commands: []Command{{Name: "ps", Cmd: "docker ps"}}}}})
@@ -113,21 +113,71 @@ func TestMarkdownMistakes(t *testing.T) {
 			t.Errorf("%s: want %q, got %v", c.name, c.want, err)
 		}
 	}
-	if _, err := parsePackFile(PackInfoFile, []byte("# P\nAbout.\n\n## A command\n")); err == nil || !strings.Contains(err.Error(), "go in a module file") {
+	if _, err := parsePackFile(PackInfoFile, []byte("---\nsection: other\n---\n# P\nAbout.\n\n## A command\n")); err == nil || !strings.Contains(err.Error(), "go in a module file") {
 		t.Errorf("_pack.md with a command: %v", err)
 	}
 }
 
 func TestPackColour(t *testing.T) {
-	part, err := parsePackFile(PackInfoFile, []byte("---\nlogo: rocket\ncolour: orange\n---\n# Launch\n"))
+	part, err := parsePackFile(PackInfoFile, []byte("---\nsection: other\nlogo: rocket\ncolour: orange\n---\n# Launch\n"))
 	if err != nil || part.info.Color != "#ff8700" {
 		t.Fatalf("got %+v %v", part.info, err)
 	}
-	if _, err := parsePackFile(PackInfoFile, []byte("---\ncolour: mauve\n---\n# X\n")); err == nil || !strings.Contains(err.Error(), "no colour called mauve") {
+	if _, err := parsePackFile(PackInfoFile, []byte("---\nsection: other\ncolour: mauve\n---\n# X\n")); err == nil || !strings.Contains(err.Error(), "no colour called mauve") {
 		t.Errorf("an unknown colour: %v", err)
 	}
 	if _, err := parsePackFile("s.md", []byte("---\ncolour: orange\n---\n# S\n")); err == nil {
 		t.Error("a module has no colour of its own")
+	}
+}
+
+// _pack.md says which section of the menu the pack is in: there's no default.
+// It's one clingon suggests or one of your own, lowercase.
+func TestPackSection(t *testing.T) {
+	g := parsedFile{group: &Group{Name: "G", Commands: []Command{{Name: "ps", Cmd: "ps"}}}}
+	if _, err := parsePackFile(PackInfoFile, []byte("# Plain\n")); err == nil || !strings.Contains(err.Error(), ":1: _pack.md says which section") {
+		t.Errorf("no section: %v", err)
+	}
+	if _, err := parsePackFile(PackInfoFile, []byte("---\nsection:\n---\n# Plain\n")); err == nil || !strings.Contains(err.Error(), "says which section") {
+		t.Errorf("an empty section: %v", err)
+	}
+	part, err := parsePackFile(PackInfoFile, []byte("---\nsection: other\n---\n# Plain\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := assemble("plain", []parsedFile{part, g}); c.Sections[0].Category != Other {
+		t.Errorf("other: %q", c.Sections[0].Category)
+	}
+	part, err = parsePackFile(PackInfoFile, []byte("---\nsection: work-tools\n---\n# Mine\n"))
+	if err != nil || part.info.Section != "work-tools" || part.info.Category != "Work tools" {
+		t.Errorf("a section of your own: %v %+v", err, part.info)
+	}
+	for src, want := range map[string]string{
+		"---\nlogo: rocket\nsection: Work Tools\n---\n# X\n": ":3: a section's name is lowercase letters, digits and -, like work-tools",
+		"---\nsection: clingon\n---\n# X\n":                   "Clingon is clingon's own heading",
+	} {
+		if _, err := parsePackFile(PackInfoFile, []byte(src)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: want %q, got %v", src, want, err)
+		}
+	}
+	if s, err := SectionSlug("  Work Tools "); s != "work-tools" || err != nil {
+		t.Errorf("typed: %q %v", s, err)
+	}
+	cats := MenuCategories([]Section{{Category: "Work tools"}, {Category: Other}, {Category: "Code"}})
+	if strings.Join(cats, ",") != "AI,Code,Command Line,Databases,Infrastructure,System,Work tools,Other" {
+		t.Errorf("headings: %v", cats)
+	}
+	if _, err := parsePackFile("s.md", []byte("---\nsection: code\n---\n# S\n")); err == nil {
+		t.Error("a module has no section of its own")
+	}
+	for _, slug := range builtinPackNames() {
+		c, err := loadPack(slug)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Sections[0].Category == Other {
+			t.Errorf("built-in pack %s has no section", slug)
+		}
 	}
 }
 
@@ -146,7 +196,7 @@ func TestCheckFile(t *testing.T) {
 	if len(ps) != 1 || ps[0].Line != 9 || !strings.Contains(ps[0].Message, "never used") {
 		t.Errorf("a check of the whole command, at its heading: %+v", ps)
 	}
-	if ps := CheckFile("/tmp/mine/work/_pack.md", []byte("---\nlogo: rocket\ncolour: mauve\n---\n# W\n")); len(ps) != 1 || ps[0].Line != 3 {
+	if ps := CheckFile("/tmp/mine/work/_pack.md", []byte("---\nsection: other\nlogo: rocket\ncolour: mauve\n---\n# W\n")); len(ps) != 1 || ps[0].Line != 4 {
 		t.Errorf("_pack.md: %+v", ps)
 	}
 }

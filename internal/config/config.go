@@ -35,7 +35,8 @@ type Config struct {
 	Sections []Section `yaml:"sections"`
 }
 
-// PackInfoFile says how a pack looks. It's optional for your own packs.
+// PackInfoFile says what a pack is called, where the menu shows it and how it
+// looks. Every pack has one.
 const PackInfoFile = "_pack.md"
 
 // packInfo is what's in a _pack.md (and for built-in packs, what clingon says of them).
@@ -48,10 +49,12 @@ type packInfo struct {
 	Logo        string   `yaml:"logo"`
 	Color       string   `yaml:"color"`
 	Category    string   `yaml:"category"`
+	Section     string   `yaml:"-"` // as section: names it: work-tools, for Work tools
 }
 
-// Categories are the fixed top-level headings of the main menu, in order
-// (alphabetical, Other last). Sections without a category land under Other.
+// Categories are the main menu's headings clingon suggests, in order
+// (alphabetical, Other last); a pack can have one of its own, and those sit
+// among them alphabetically (see MenuCategories).
 var Categories = []string{"AI", "Code", CommandLine, "Databases", "Infrastructure", "System", Other}
 
 const (
@@ -238,11 +241,10 @@ func Load() (*Config, []string, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		c := assemble(filepath.Base(dir), parts)
-		for i := range c.Sections {
-			c.Sections[i].Category = categoryOf(dir)
+		if err := needsInfo(dir, parts); err != nil {
+			return nil, nil, err
 		}
-		cfg.merge(c)
+		cfg.merge(assemble(filepath.Base(dir), parts))
 	}
 	if errs := cfg.Validate(); len(errs) > 0 {
 		return nil, nil, errors.Join(errs...)
@@ -250,6 +252,20 @@ func Load() (*Config, []string, error) {
 	cfg.keepAvailable()
 	cfg.sort()
 	return cfg, local, nil
+}
+
+// needsInfo says what's wrong with a pack folder that has modules but no
+// _pack.md: every pack has exactly one.
+func needsInfo(dir string, parts []parsedFile) error {
+	if len(parts) == 0 || slices.ContainsFunc(parts, func(p parsedFile) bool { return p.info != nil }) {
+		return nil
+	}
+	return fmt.Errorf("%s has no %s: every pack has one, with its # Name and section: (one of %s, or one of your own)", dir, PackInfoFile, strings.Join(SectionSlugs(), ", "))
+}
+
+// newPackInfo is the _pack.md a pack gets when clingon starts it.
+func newPackInfo(title string) []byte {
+	return []byte("---\nsection: other\nlogo: " + DefaultPackLogo + "\n---\n# " + title + "\n")
 }
 
 // parsedFile is one file of a pack: its _pack.md, or a module.
@@ -273,7 +289,7 @@ func decodeStrict(name string, data []byte, v any) error {
 // after its folder unless its _pack.md says otherwise. A pack with no modules
 // isn't in the menu at all.
 func assemble(folder string, parts []parsedFile) *Config {
-	s := Section{Name: sectionTitle(folder)}
+	s := Section{Name: sectionTitle(folder), Category: Other}
 	for _, p := range parts {
 		switch {
 		case p.info != nil:
@@ -501,11 +517,7 @@ func (c *Config) Validate() []error {
 		if s.Icon == "" {
 			s.Icon = DefaultIcon
 		}
-		if cat, ok := canonical(s.Category); ok {
-			s.Category = cat
-		} else {
-			bad(s.Name, "unknown category %q (use one of: %s)", s.Category, strings.Join(Categories, ", "))
-		}
+		s.Category = canonical(s.Category)
 		if len(s.All()) == 0 {
 			bad(s.Name, "section has no commands")
 		}
@@ -615,17 +627,38 @@ func historyBang(cmd string) string {
 	return ""
 }
 
-// canonical maps a category name, in any case, to its fixed spelling.
-func canonical(name string) (string, bool) {
-	if strings.TrimSpace(name) == "" {
-		return Other, true
+// canonical maps a category name to its spelling: one clingon suggests, in
+// any case, is spelt its way, and none at all is Other.
+func canonical(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Other
 	}
 	for _, c := range Categories {
-		if strings.EqualFold(strings.TrimSpace(name), c) {
-			return c, true
+		if strings.EqualFold(name, c) {
+			return c
 		}
 	}
-	return "", false
+	return name
+}
+
+// MenuCategories are the main menu's headings for sections, in order: the
+// ones clingon suggests and any of your own, alphabetically, Other last.
+func MenuCategories(sections []Section) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, c := range Categories {
+		if c != Other {
+			seen[c], out = true, append(out, c)
+		}
+	}
+	for _, s := range sections {
+		if c := s.Category; c != Other && !seen[c] {
+			seen[c], out = true, append(out, c)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
+	return append(out, Other)
 }
 
 // sort puts sections, groups, commands and fixed options in alphabetical

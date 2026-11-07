@@ -28,7 +28,7 @@ func NewEditable() (*EditablePack, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &EditablePack{Logo: DefaultPackLogo, Color: "grey", Files: []EditableFile{{Slug: "examples", Group: *part.group}}}
+	p := &EditablePack{Section: "other", Logo: DefaultPackLogo, Color: "grey", Files: []EditableFile{{Slug: "examples", Group: *part.group}}}
 	p.Title = uniqueTitle("New pack")
 	p.Folder = p.NewFolder()
 	return p, nil
@@ -43,12 +43,8 @@ func uniqueTitle(base string) string {
 	return name
 }
 
-// folderTaken says whether you have a pack in a folder called name, in any
-// section, or name is a section's own folder.
-func folderTaken(name string) bool {
-	_, section := sectionSlugs[name]
-	return section || exists(packDirIn(localDir(), name))
-}
+// folderTaken says whether you have a pack in a folder called name.
+func folderTaken(name string) bool { return exists(packDirIn(localDir(), name)) }
 
 // slugOf is a pack name made a folder name: New pack → new-pack.
 func slugOf(title string) string {
@@ -128,7 +124,7 @@ func (p *EditablePack) Changed() bool {
 		return true
 	}
 	saved, err := LoadEditable(filepath.Base(p.dir))
-	if err != nil || saved.Section != p.Section {
+	if err != nil {
 		return true
 	}
 	have, want := saved.Markdown(), p.Markdown()
@@ -173,3 +169,24 @@ func Asking() bool { return exists(askFile()) }
 func StopAsking() {
 	_ = os.Remove(askFile())
 }
+
+// formNameFile holds the name of the pack the open form is editing, as it
+// changes, for the menu beside it to say what's being edited.
+func formNameFile() string { return filepath.Join(Dir(), "pack-form.name") }
+
+// WriteFormName keeps the name of the pack the form is editing.
+func WriteFormName(name string) error {
+	if err := os.MkdirAll(Dir(), 0o755); err != nil {
+		return err
+	}
+	return writeWhole(formNameFile(), []byte(name))
+}
+
+// FormName is the name of the pack the open form is editing, or "".
+func FormName() string {
+	data, _ := os.ReadFile(formNameFile())
+	return strings.TrimSpace(string(data))
+}
+
+// RemoveFormName forgets it: the form's closed.
+func RemoveFormName() { _ = os.Remove(formNameFile()) }

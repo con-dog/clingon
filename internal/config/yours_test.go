@@ -9,6 +9,18 @@ import (
 	"testing"
 )
 
+// A pack AddCommand starts gets its _pack.md, as every pack has one.
+func TestAddCommandStartsAPack(t *testing.T) {
+	userDir(t)
+	if err := AddCommand("fresh", "Deploy", "Ship", "./ship.sh", ""); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load()
+	if err != nil || len(cfg.Sections) != 1 || cfg.Sections[0].Name != "Fresh" || cfg.Sections[0].Category != Other {
+		t.Errorf("got %+v, %v", cfg, err)
+	}
+}
+
 func TestAddCommandKeepsComments(t *testing.T) {
 	userDir(t)
 	writePack(t, "mine/deploy", "<!-- A module of your clingon pack -->\n# Deploy\n")
@@ -199,9 +211,21 @@ func TestInstallingPartOfAPack(t *testing.T) {
 	}
 }
 
-// A pack of your own is just a folder and a file.
-func TestALocalPackNeedsNoPackFile(t *testing.T) {
+// A pack of your own is a folder with its _pack.md and a module.
+func TestALocalPack(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if err := os.MkdirAll(PackPath("work-tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(PackPath("work-tools"), "deploy.md"), []byte("# Deploy\n\n## Ship\n\n```sh\n./ship.sh\n```\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Load(); err == nil || !strings.Contains(err.Error(), "work-tools has no _pack.md: every pack has one") {
+		t.Fatalf("no _pack.md: %v", err)
+	}
+	if ps, _ := YourPacks(); len(ps) != 1 || !strings.Contains(ps[0].Description, "has errors") {
+		t.Fatalf("listed as broken: %+v", ps)
+	}
 	writePack(t, "work-tools/deploy", "# Deploy\n\n## Ship\n\n```sh\n./ship.sh\n```\n")
 	cfg, _, err := Load()
 	if err != nil {
@@ -262,6 +286,9 @@ func TestYourOwnFolderIsNotAProject(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "deploy", "prod.md"), []byte("# Deploy\n\n## Ship\n\n```sh\n./ship.sh\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "deploy", PackInfoFile), []byte("---\nsection: other\n---\n# Deploy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	p := FindProject(filepath.Join(repo))
 	if p == nil || p.Err != nil || p.Trusted || len(p.Cmds) != 1 {
 		t.Fatalf("got %+v", p)
@@ -284,6 +311,10 @@ func TestProjectPacksAreTrustedWhole(t *testing.T) {
 		}
 	}
 	write("prod.md", "# Deploy\n\n## Ship\n\n```sh\n./ship.sh\n```\n")
+	if p := FindProject(repo); p == nil || p.Err == nil || !strings.Contains(p.Err.Error(), "deploy has no _pack.md") {
+		t.Fatalf("a project pack needs its _pack.md too: %+v", p)
+	}
+	write(PackInfoFile, "---\nsection: other\n---\n# Deploy\n")
 	p := FindProject(repo)
 	if p == nil || p.Err != nil || p.Trusted {
 		t.Fatalf("got %+v", p)

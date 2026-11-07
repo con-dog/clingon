@@ -53,7 +53,7 @@ func TestEditablePack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Title != "Work" || p.Logo != "rocket" || p.Color != "orange" || len(p.Files) != 1 || p.Section != "" {
+	if p.Title != "Work" || p.Logo != "rocket" || p.Color != "orange" || len(p.Files) != 1 || p.Section != "other" {
 		t.Fatalf("loaded %+v", p)
 	}
 	// A new command's blanks come from its command.
@@ -67,11 +67,11 @@ func TestEditablePack(t *testing.T) {
 	if err := p.Save(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(localDir(), "infrastructure", "work", "deploy.md")); err != nil {
-		t.Fatalf("saved in its section: %v", err)
+	if _, err := os.Stat(filepath.Join(localDir(), "work", "deploy.md")); err != nil {
+		t.Fatalf("saved in its folder: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(localDir(), "work")); err == nil {
-		t.Error("the old folder should have moved")
+	if info, _ := os.ReadFile(filepath.Join(localDir(), "work", PackInfoFile)); !strings.HasPrefix(string(info), "---\nsection: infrastructure\n") {
+		t.Errorf("the section is in _pack.md: %q", info)
 	}
 	cfg, _, err := Load()
 	if err != nil {
@@ -79,6 +79,9 @@ func TestEditablePack(t *testing.T) {
 	}
 	if s := cfg.Sections[0]; s.Category != "Infrastructure" || len(s.All()) != 2 {
 		t.Errorf("loads back: %+v", s)
+	}
+	if again, err := LoadEditable("work"); err != nil || again.Section != "infrastructure" {
+		t.Errorf("the form reads the section back: %v %+v", err, again)
 	}
 	// What wouldn't load isn't saved.
 	p.Files[1].Group.Commands[0].Name = "Ship it!"

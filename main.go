@@ -386,7 +386,9 @@ func newPackForm(menu bool) error {
 func runForm(form *ui.PackForm, done string) error {
 	flushSaid() // the form takes over the terminal
 	form.FocusMenu = tmux.FocusMenu
-	if _, err := tea.NewProgram(form).Run(); err != nil {
+	_, err := tea.NewProgram(form).Run()
+	config.RemoveFormName() // closed: the menu stops saying it's open
+	if err != nil {
 		return err
 	}
 	if form.Left != "saved" {

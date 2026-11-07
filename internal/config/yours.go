@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -142,6 +143,24 @@ func readPackDir(dir string) ([]parsedFile, error) {
 	return parts, nil
 }
 
+// YourSections lists the sections of your own that your packs are in: not
+// ones clingon suggests, sorted.
+func YourSections() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, dir := range LocalPacks() {
+		part, err := describeFile(filepath.Join(dir, PackInfoFile))
+		if err != nil || part.info == nil {
+			continue
+		}
+		if s := part.info.Section; !seen[s] && sectionSlugs[s] == "" {
+			seen[s], out = true, append(out, s)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // YourPacks describes each of your packs.
 func YourPacks() ([]Pack, error) { return describePacks(LocalPacks(), "mine") }
 
@@ -197,6 +216,9 @@ func describePack(dir string) Pack {
 		p.Modules = append(p.Modules, Module{Slug: moduleSlug(f), Name: part.group.Name, Description: part.group.Description, Commands: len(part.group.Commands)})
 	}
 	p.Sections = []string{name}
+	if !slices.Contains(mdFiles(dir), filepath.Join(dir, PackInfoFile)) {
+		broken = true
+	}
 	if broken {
 		p.Description = "has errors: run `clingon check`"
 	}
@@ -252,9 +274,6 @@ func NewPackWithLogo(name, logo, color string) error {
 	}
 	if err := checkPackName(name); err != nil {
 		return err
-	}
-	if _, ok := sectionSlugs[name]; ok {
-		return fmt.Errorf("%s is the name of a section folder: call your pack something else, or make it inside packs/mine/%s/", name, name)
 	}
 	dir := PackPath(name)
 	if _, err := os.Stat(dir); err == nil {
@@ -390,6 +409,11 @@ func AddCommand(pack, section, name, cmd, desc string) error {
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
+	}
+	if info := filepath.Join(dir, PackInfoFile); !exists(info) { // a new pack
+		if err := os.WriteFile(info, newPackInfo(sectionTitle(pack)), 0o644); err != nil {
+			return err
+		}
 	}
 	return os.WriteFile(path, doc, 0o644)
 }

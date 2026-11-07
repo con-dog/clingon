@@ -11,7 +11,7 @@ import (
 
 // Colour is all it adds: every pack comes through otherwise as it is.
 func TestMarkdownKeepsTheText(t *testing.T) {
-	files, _ := filepath.Glob("../config/packs/*/*/*.md")
+	files, _ := filepath.Glob("../config/packs/*/*.md")
 	if len(files) < 50 {
 		t.Fatalf("only %d pack files found", len(files))
 	}

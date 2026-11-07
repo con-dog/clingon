@@ -133,6 +133,10 @@ func loadProject(path string) *Project {
 	}
 	slices.Sort(names)
 	for _, name := range names {
+		if err := needsInfo(filepath.Join(path, name), packs[name]); err != nil {
+			p.Err = err
+			return p
+		}
 		cfg.merge(assemble(name, packs[name]))
 	}
 	if errs := cfg.Validate(); len(errs) > 0 {

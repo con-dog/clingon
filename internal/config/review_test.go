@@ -16,6 +16,12 @@ func writePack(t *testing.T, name, body string) {
 	if err := os.WriteFile(PackPath(name), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	info := filepath.Join(filepath.Dir(PackPath(name)), PackInfoFile)
+	if filepath.Dir(info) != localDir() && !exists(info) { // every pack has one
+		if err := os.WriteFile(info, newPackInfo(sectionTitle(filepath.Base(filepath.Dir(info)))), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func TestAddingToAModuleWithNoCommandsYet(t *testing.T) {
@@ -47,11 +53,11 @@ func TestMergedGroupsKeepEachFilesWhen(t *testing.T) {
 	if err := os.WriteFile(remotePath("a/g"), []byte("---\nwhen: .git\n---\n# G\n\n## one\n\n```sh\nls\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(remotePath("a"), PackInfoFile), []byte("# S\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(remotePath("a"), PackInfoFile), []byte("---\nsection: other\n---\n# S\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	writePack(t, "b/g", "---\nwhen: go.mod\n---\n# G\n\n## two\n\n```sh\nls\n```\n")
-	if err := os.WriteFile(filepath.Join(PackPath("b"), PackInfoFile), []byte("# S\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(PackPath("b"), PackInfoFile), []byte("---\nsection: other\n---\n# S\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _, err := Load()

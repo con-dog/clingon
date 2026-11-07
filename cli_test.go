@@ -102,6 +102,9 @@ func TestCheckIncludesTheProjectPack(t *testing.T) {
 	if err := os.WriteFile(module, []byte("# Prod\n\n## Ship\n\n```sh\n./ship.sh\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(module), config.PackInfoFile), []byte("---\nsection: other\n---\n# Deploy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	out, err := output(t, check)
 	if err != nil || !strings.Contains(out, "project pack") || !strings.Contains(out, "asks before using it") {
 		t.Fatalf("got %q %v", out, err)
@@ -676,6 +679,12 @@ func TestPackGuide(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "deploy.md"), []byte(guideExample), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "_pack.md"), []byte(guidePackInfo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if shown := "  " + strings.ReplaceAll(strings.TrimSuffix(guidePackInfo, "\n"), "\n", "\n  "); !strings.Contains(guideRest, shown) {
+		t.Errorf("the guide shows its _pack.md as it's tested:\n%s", shown)
 	}
 	cfg, _, err := config.Load()
 	if err != nil {

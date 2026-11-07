@@ -51,6 +51,9 @@ type PackForm struct {
 	// The part the cursor's in, shown whole; the others are folded to
 	// their heading and name. -1 is the pack, -2 nothing (Add a module).
 	openSub, openCmd int
+	noFold           bool // building every row, to measure them
+
+	named string // the pack's name as last told to the menu
 
 	// FocusMenu moves focus to the menu, beside the form.
 	FocusMenu func()
@@ -248,6 +251,11 @@ func (f *PackForm) refresh(focus string) {
 	}
 	f.openSub, f.openCmd = openPart(focus)
 	f.rows = f.matching(f.pageRows())
+	if f.menu && f.pack.Title != f.named { // so the menu says what you're editing, by its name as it is
+		if config.WriteFormName(f.pack.Title) == nil {
+			f.named = f.pack.Title
+		}
+	}
 	f.sel = -1
 	if len(f.rows) == 0 {
 		return
@@ -295,13 +303,20 @@ func (f *PackForm) refold() {
 // folded says whether a part is folded to its heading and name: any but the
 // one the cursor's in, unless the filter's on, which shows all it finds.
 func (f *PackForm) folded(sub, cmd int) bool {
-	if f.filter.Value() != "" {
+	if f.noFold || f.filter.Value() != "" {
 		return false
 	}
 	if cmd < 0 {
 		return sub != f.openSub
 	}
 	return sub != f.openSub || cmd != f.openCmd
+}
+
+// unfolded is every row of the page, nothing folded.
+func (f *PackForm) unfolded() []formRow {
+	f.noFold = true
+	defer func() { f.noFold = false }()
+	return f.pageRows()
 }
 
 // foldTo is a part's heading and Name row alone, the rest folded away.
@@ -403,12 +418,20 @@ func (f *PackForm) pageRows() []formRow {
 	)
 }
 
+// newSection is the Section list's last option: a section of your own, typed.
+const newSection = "\x00new"
+
 func (f *PackForm) packRows() []formRow {
 	p := f.pack
-	sections := []config.Option{{Value: "", Label: "Other"}}
-	for _, s := range config.SectionSlugs() {
-		sections = append(sections, config.Option{Value: s, Label: config.SectionName(s)})
+	// The sections clingon suggests, then your own, then one more.
+	var sections []config.Option
+	for _, s := range append(config.SectionSlugs(), config.YourSections()...) {
+		sections = append(sections, config.Option{Value: s})
 	}
+	if !slices.ContainsFunc(sections, func(o config.Option) bool { return o.Value == p.Section }) {
+		sections = append(sections, config.Option{Value: p.Section})
+	}
+	sections = append(sections, config.Option{Value: newSection, Label: "+ New section"})
 	var logos []config.Option
 	for _, n := range config.PackLogos {
 		logos = append(logos, config.Option{Value: n, Icon: config.Logos[n]}) // all grey: a choice of shape, colour's the next row
@@ -416,10 +439,6 @@ func (f *PackForm) packRows() []formRow {
 	var colours []config.Option
 	for _, c := range config.PackColors {
 		colours = append(colours, config.Option{Value: c.Name, Icon: config.Logos[p.Logo], Color: c.Hex})
-	}
-	section := "Other"
-	if p.Section != "" {
-		section = config.SectionName(p.Section)
 	}
 	colour, colourHex := p.Color, f.logoColour()
 	for _, c := range config.PackColors { // with none set, the colour its logo has
@@ -431,7 +450,14 @@ func (f *PackForm) packRows() []formRow {
 		{label: "Pack", header: true},
 		{key: "name", label: "Name", value: p.Title, help: "What the menu calls the pack.", text: func(v string) error { f.pack.Title = v; return nil }},
 		{key: "desc", label: "Description", value: p.Description, hint: "one line on what's in it", help: "One line on what's in it, shown by clingon pack.", text: func(v string) error { f.pack.Description = v; return nil }},
-		{key: "section", label: "Section", value: section, help: "Where the menu shows it.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil }},
+		{key: "section", label: "Section", value: p.Section, help: "Where the menu shows it: one of these, or + New section for one of your own.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil },
+			text: func(v string) error {
+				s, err := config.SectionSlug(v)
+				if err == nil {
+					f.pack.Section = s
+				}
+				return err
+			}},
 		{key: "logo", label: "Logo", value: p.Logo, icon: config.Logos[p.Logo], color: f.logoColour(), help: "Its icon in the menu.", options: logos, pick: func(v string) error { f.pack.Logo = v; return nil }},
 		{key: "colour", label: "Colour", value: colour, icon: slotIcon("●"), color: colourHex, help: "The logo's colour.", options: colours, pick: func(v string) error { f.pack.Color = v; return nil }},
 		{key: "needs", label: "Needs", value: joined(p.Needs), hint: "programs, separated by commas", help: "Programs the pack needs, separated by commas: the status bar warns you while one's missing.", text: func(v string) error { f.pack.Needs = splitComma(v); return nil }},
@@ -808,15 +834,15 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		f.issue = ""
 		switch {
-		case r.text != nil:
-			return f.edit(r, r.value)
-		case r.pick != nil:
+		case r.pick != nil: // a list, even if it can also be typed (from the list)
 			f.choosing, f.options, f.opt = r, r.options, 0
 			for i, o := range r.options {
 				if o.Value == currentValue(r) {
 					f.opt = i
 				}
 			}
+		case r.text != nil:
+			return f.edit(r, r.value)
 		case r.confirm != "":
 			f.choosing, f.opt = r, 0
 			f.options = []config.Option{{Value: "no", Label: "No, keep it"}, {Value: "yes", Label: r.confirm}}
@@ -849,6 +875,8 @@ func (f *PackForm) chose() tea.Cmd {
 	case v == "types" || v == "label": // a choice's, typed on its row
 		field, now := f.choiceText(r, v)
 		return f.edit(field, now)
+	case v == newSection: // typed on its row, starting empty
+		return f.edit(r, "")
 	}
 	if err := f.change(func() error { return r.pick(v) }); err != nil {
 		f.issue = err.Error()
@@ -884,7 +912,7 @@ func (f *PackForm) view() string {
 	// lighter, a page laid on top. Inside each, the same padding all round.
 	formW, previewW := f.w, 0
 	if f.w >= minPreviewWidth {
-		formW = min(max(f.w*11/20, 60), 90)
+		formW = f.w / 2 // the menu's a third of the window: the form and its preview a third each
 		previewW = f.w - formW
 	}
 	inner := formW - 2*panelPad
@@ -908,7 +936,7 @@ func (f *PackForm) view() string {
 	form = append(append(form, foot...), "")
 	var prev []string
 	if previewW > 0 { // its title level with where you are
-		prev = append([]string{"", ""}, f.preview(previewW-2*panelPad, f.h-3)...)
+		prev = append([]string{"", ""}, f.preview(previewW-2*panelPad, f.h-3)...) // each with its own left padding, the gutter for a mark
 	}
 	pad := strings.Repeat(" ", panelPad)
 	lines := make([]string, 0, f.h)
@@ -922,7 +950,7 @@ func (f *PackForm) view() string {
 		}
 		line := pad + l
 		if previewW > 0 {
-			line += strings.Repeat(" ", max(formW-ansi.StringWidth(line), 0)) + onBg(pad+p, previewBg, previewW)
+			line += strings.Repeat(" ", max(formW-ansi.StringWidth(line), 0)) + onBg(p, previewBg, previewW)
 		}
 		lines = append(lines, line)
 	}
@@ -1122,9 +1150,10 @@ func scroll(lines []string, at, row, room int, sticky bool, heads []formHead) []
 // page. It says on which line the cursor is, to keep it in view, and which
 // line the cursor's row is (the same, unless a list is open under it).
 func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
-	col := 0 // where values start
-	for i := range f.rows {
-		if r := &f.rows[i]; !r.header && r.do == nil {
+	col := 0 // where values start: as if every part were open, so it stays put as they open and fold
+	all := f.unfolded()
+	for i := range all {
+		if r := &all[i]; !r.header && r.do == nil {
 			col = max(col, f.labelAt(r)+ansi.StringWidth(r.label)+2)
 		}
 	}
@@ -1296,7 +1325,7 @@ func (f *PackForm) preview(w, h int) []string {
 	case sub >= 0 && sub < len(f.pack.Files):
 		file = f.pack.Files[sub].Slug + ".md"
 	}
-	return fit2(filePreview(file, f.pack.Markdown()[file], w), h)
+	return filePreview(file, f.pack.Markdown()[file], marked(r.key, strings.Split(f.pack.Markdown()[file], "\n")), w, h)
 }
 
 func fit2(lines []string, h int) []string {
@@ -1306,14 +1335,187 @@ func fit2(lines []string, h int) []string {
 	return lines
 }
 
-// filePreview is a pack's file, as micro shows it.
-func filePreview(name, text string, w int) []string {
-	rule := faintStyle.Render(strings.Repeat("─", w))
-	out := []string{labelStyle.Render(ansi.Truncate(strings.ToUpper(name), w, "…")), rule}
-	for _, l := range strings.Split(strings.TrimRight(micro.Markdown(text), "\n"), "\n") {
-		out = append(out, ansi.Truncate(l, w, "…"))
+// filePreview is a pack's file, as micro shows it, h lines at most: the
+// lines in on marked, each with a bar in the gutter on a band of the
+// window's own colour, scrolled into view. Every line has the panel's
+// padding at its left, the gutter the bar's in.
+func filePreview(name, text string, on map[int]bool, w, h int) []string {
+	pad := strings.Repeat(" ", panelPad)
+	rule := pad + faintStyle.Render(strings.Repeat("─", w))
+	head := []string{pad + labelStyle.Render(ansi.Truncate(strings.ToUpper(name), w, "…")), rule}
+	var body []string
+	first := -1
+	for i, l := range strings.Split(strings.TrimRight(micro.Markdown(text), "\n"), "\n") {
+		l = ansi.Truncate(l, w, "…")
+		if on[i] {
+			if first < 0 {
+				first = i
+			}
+			body = append(body, marked1(l, w))
+			continue
+		}
+		body = append(body, pad+l)
 	}
-	return append(out, rule)
+	body = append(body, rule)
+	room := max(h-len(head), 1)
+	if len(body) > room { // the marked lines in view, a little way down
+		start := 0
+		if first >= 0 {
+			start = min(max(first-room/3, 0), len(body)-room)
+		}
+		body = body[start : start+room]
+	}
+	return append(head, body...)
+}
+
+// marked1 is a marked line: a pink bar in the gutter, and the line on a
+// band of the window's own colour, set into the raised preview, w wide.
+func marked1(line string, w int) string {
+	bar := cursorBar(cursorStyle) + strings.Repeat(" ", panelPad-1)
+	if lipgloss.NewStyle().Background(raised).Render(" ") == " " { // no colour here (tests)
+		return bar + line
+	}
+	if n := w - ansi.StringWidth(line); n > 0 {
+		line += strings.Repeat(" ", n)
+	}
+	// Not 49m alone: the panel's onBg puts its own colour back after that.
+	const def = "\x1b[0;49m"
+	return cursorBar(cursorStyle) + def + strings.Repeat(" ", panelPad-1) +
+		strings.NewReplacer("\x1b[0m", "\x1b[0m"+def, "\x1b[m", "\x1b[m"+def).Replace(line) + "\x1b[0m"
+}
+
+// marked is which lines of a pack's file the row keyed key writes: its
+// heading, front matter, callout, code or list item. A remove marks all
+// it removes. Lines count from 0, as the file's do from 1.
+func marked(key string, lines []string) map[int]bool {
+	on := map[int]bool{}
+	mark := func(from, to int) {
+		for i := from; i <= to && i >= 0 && i < len(lines); i++ {
+			on[i] = true
+		}
+	}
+	find := func(prefix string, from, to int) int {
+		for i := max(from, 0); i <= to && i < len(lines); i++ {
+			if strings.HasPrefix(lines[i], prefix) {
+				return i
+			}
+		}
+		return -1
+	}
+	last := len(lines) - 1
+	for last > 0 && lines[last] == "" {
+		last--
+	}
+	fmEnd := -1 // the front matter's closing ---
+	if len(lines) > 0 && lines[0] == "---" {
+		fmEnd = find("---", 1, last)
+	}
+	title := find("# ", fmEnd+1, last)
+	heads := []int{}
+	for i := title + 1; i <= last && title >= 0; i++ {
+		if strings.HasPrefix(lines[i], "## ") {
+			heads = append(heads, i)
+		}
+	}
+	descOf := func(from, to int) { // the text under a heading, up to the next thing
+		for i := from; i <= to && lines[i] != "" && !strings.HasPrefix(lines[i], "## "); i++ {
+			on[i] = true
+		}
+	}
+	parts := strings.Split(key, "/")
+	switch field := parts[len(parts)-1]; {
+	case len(parts) == 1: // the pack's _pack.md
+		switch field {
+		case "name":
+			mark(title, title)
+		case "desc":
+			descOf(title+1, last)
+		case "section", "logo", "colour", "needs":
+			mark(find(field+":", 1, fmEnd-1), find(field+":", 1, fmEnd-1))
+		}
+	case len(parts) == 2: // a module's own
+		switch field {
+		case "name":
+			mark(title, title)
+		case "desc":
+			descOf(title+1, last)
+		case "needs", "when":
+			mark(find(field+":", 1, fmEnd-1), find(field+":", 1, fmEnd-1))
+		case "remove":
+			mark(0, last)
+		}
+	default: // a command's, or one of its blanks'
+		var j int
+		if _, err := fmt.Sscanf(parts[1], "%d", &j); err != nil || j >= len(heads) {
+			return on
+		}
+		start, end := heads[j], last
+		if j+1 < len(heads) {
+			end = heads[j+1] - 1
+		}
+		for end > start && lines[end] == "" {
+			end--
+		}
+		open := find("```", start+1, end)
+		shut := find("```", open+1, end)
+		if len(parts) == 3 {
+			switch field {
+			case "name":
+				mark(start, start)
+			case "risk":
+				mark(find("> [!", start+1, start+1), find("> [!", start+1, start+1))
+			case "desc":
+				for i := start + 1; i < open; i++ {
+					if lines[i] != "" && !strings.HasPrefix(lines[i], "> [!") {
+						on[i] = true
+					}
+				}
+			case "cmd":
+				mark(open+1, shut-1)
+			case "needs", "when": // set on the code block's first line, or to be
+				mark(open, open)
+			case "remove":
+				mark(start, end)
+			}
+			return on
+		}
+		var b int
+		if _, err := fmt.Sscanf(parts[2], "%d", &b); err != nil {
+			return on
+		}
+		item, n := -1, -1 // the blank's list item
+		for i := shut + 1; i <= end && shut >= 0; i++ {
+			if strings.HasPrefix(lines[i], "- `<") {
+				if n++; n == b {
+					item = i
+					break
+				}
+			}
+		}
+		if item < 0 {
+			return on
+		}
+		subEnd := item // its choices, under it
+		for subEnd+1 <= end && strings.HasPrefix(lines[subEnd+1], "  - ") {
+			subEnd++
+		}
+		var o int
+		switch _, err := fmt.Sscanf(field, "%d", &o); {
+		case err == nil: // a choice
+			mark(item+1+o, item+1+o)
+		case field == "q":
+			mark(item, item)
+		case field == "kind":
+			mark(item, subEnd)
+		case field == "start": // its default, or where it goes
+			if subEnd > item {
+				mark(subEnd, subEnd)
+			} else {
+				mark(item, item)
+			}
+		}
+	}
+	return on
 }
 
 // footer is only there for a change that couldn't be saved: why, as an

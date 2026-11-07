@@ -14,7 +14,7 @@ import (
 // pack is read in (see markdown.go). Comments in the files aren't kept.
 type EditablePack struct {
 	Folder      string // the pack's folder name: what `clingon pack` calls it
-	Section     string // its section folder (ai, code, …), or "" for Other
+	Section     string // its section, as section: names it: ai, code, …, other
 	Title       string // its name in the menu
 	Description string
 	Logo        string   // one of Logos
@@ -22,7 +22,7 @@ type EditablePack struct {
 	Needs       []string // programs every command needs
 	Files       []EditableFile
 
-	dir string // where it was loaded from: Save moves it if Section changed
+	dir string // where it was loaded from
 }
 
 // EditableFile is a module: its file's name (without .md) and its commands.
@@ -31,13 +31,8 @@ type EditableFile struct {
 	Group Group
 }
 
-// Dir is where the pack's folder is, for its section.
-func (p *EditablePack) Dir() string {
-	if p.Section == "" {
-		return filepath.Join(localDir(), p.Folder)
-	}
-	return filepath.Join(localDir(), p.Section, p.Folder)
-}
+// Dir is where the pack's folder is.
+func (p *EditablePack) Dir() string { return filepath.Join(localDir(), p.Folder) }
 
 // LoadEditable reads your pack called name for the pack form.
 func LoadEditable(name string) (*EditablePack, error) {
@@ -48,10 +43,7 @@ func LoadEditable(name string) (*EditablePack, error) {
 	if _, err := os.Stat(dir); err != nil {
 		return nil, fmt.Errorf("you don't have a pack called mine/%s", name)
 	}
-	p := &EditablePack{Folder: name, Title: sectionTitle(name), dir: dir, Logo: DefaultPackLogo}
-	if sec := filepath.Base(filepath.Dir(dir)); sectionSlugs[sec] != "" {
-		p.Section = sec
-	}
+	p := &EditablePack{Folder: name, Section: "other", Title: sectionTitle(name), dir: dir, Logo: DefaultPackLogo}
 	for _, f := range mdFiles(dir) {
 		data, err := os.ReadFile(f)
 		if err != nil {
@@ -63,6 +55,7 @@ func LoadEditable(name string) (*EditablePack, error) {
 		}
 		if part.info != nil {
 			p.Title, p.Description, p.Logo, p.Needs = part.info.Name, part.info.Description, part.info.Logo, part.info.Requires
+			p.Section = part.info.Section
 			for _, c := range PackColors {
 				if c.Hex == part.info.Color {
 					p.Color = c.Name
@@ -146,20 +139,12 @@ func (p *EditablePack) Check() error {
 }
 
 // Save writes the pack's files if they check out, removing any module's file
-// that's gone, and moving the pack's folder if its section changed.
+// that's gone.
 func (p *EditablePack) Save() error {
 	if err := p.Check(); err != nil {
 		return err
 	}
 	dir := p.Dir()
-	if p.dir != "" && p.dir != dir {
-		if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
-			return err
-		}
-		if err := os.Rename(p.dir, dir); err != nil {
-			return err
-		}
-	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -187,6 +172,7 @@ func (p *EditablePack) Save() error {
 func packMarkdown(p *EditablePack) string {
 	var b strings.Builder
 	var fm []string
+	fm = append(fm, "section: "+p.Section)
 	if p.Logo != "" {
 		fm = append(fm, "logo: "+p.Logo)
 	}

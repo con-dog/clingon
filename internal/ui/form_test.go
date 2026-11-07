@@ -103,7 +103,7 @@ func TestPackFormEditsThePack(t *testing.T) {
 	// A section, picked from the list dropped down under it.
 	f.onRow(t, "section")
 	press(f, kEnter)
-	if !strings.Contains(f.screen(), "Infrastructure") {
+	if !strings.Contains(f.screen(), "infrastructure") {
 		t.Fatalf("the list should be under the row:\n%s", f.screen())
 	}
 	press(f, kLeft)
@@ -535,7 +535,7 @@ func TestPackFormHintsWhereYouAre(t *testing.T) {
 // for a module's rows and its commands', the module's own file.
 func TestPackFormPreviewsItsFile(t *testing.T) {
 	f := newTestForm(t)
-	preview := func() string { return ansi.Strip(strings.Join(f.preview(60, 40), "\n")) }
+	preview := func() string { return strings.TrimSpace(ansi.Strip(strings.Join(f.preview(60, 40), "\n"))) }
 	f.onRow(t, "name")
 	if p := preview(); !strings.HasPrefix(p, "_PACK.MD") || !strings.Contains(p, "# Demo") {
 		t.Errorf("the pack's rows:\n%s", p)
@@ -544,6 +544,116 @@ func TestPackFormPreviewsItsFile(t *testing.T) {
 		f.onRow(t, key)
 		if p := preview(); !strings.HasPrefix(p, "EXAMPLES.MD") || !strings.Contains(p, "## Say hello") || strings.Contains(p, "IN THE MENU") {
 			t.Errorf("%s: the module's file, and only that:\n%s", key, p)
+		}
+	}
+}
+
+// Values start in the same column whatever's open: a command opening, with
+// its labels further in, doesn't move them.
+func TestPackFormValuesStayPut(t *testing.T) {
+	f := newTestForm(t)
+	col := func() int {
+		for _, l := range strings.Split(f.page(), "\n") {
+			if strings.Contains(l, "Name") && strings.Contains(l, "Demo") {
+				return strings.Index(l, "Demo")
+			}
+		}
+		t.Fatalf("no pack name in:\n%s", f.page())
+		return 0
+	}
+	f.onRow(t, "name")
+	before := col()
+	f.onRow(t, "0/0/name")
+	if after := col(); after != before {
+		t.Errorf("the pack's name moved from column %d to %d", before, after)
+	}
+}
+
+// The form tells the menu its pack's name as it changes, and forgets it once closed.
+func TestPackFormTellsTheMenuItsName(t *testing.T) {
+	f := newTestForm(t)
+	if got := config.FormName(); got != "Demo" {
+		t.Errorf("opened: %q", got)
+	}
+	f.onRow(t, "name")
+	typeIn(f, "Deploy tools")
+	if got := config.FormName(); got != "Deploy tools" {
+		t.Errorf("renamed: %q", got)
+	}
+}
+
+// Each field marks the lines of the file it writes, and only those.
+// A section is one clingon suggests, or one of your own: + New section, at
+// the end of the list, types one on the row, starting empty.
+func TestPackFormSectionOfYourOwn(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "section")
+	press(f, kEnter)
+	last := f.options[len(f.options)-1]
+	if f.options[0].Value != "ai" || last.Label != "+ New section" {
+		t.Fatalf("options: %+v", f.options)
+	}
+	press(f, kLeft)
+	f.pick(t, newSection)
+	if f.editing == nil || f.input.Value() != "" {
+		t.Fatalf("a blank box on the row: %+v", f.editing)
+	}
+	f.input.SetValue("Hello There!")
+	press(f, kEnter)
+	if f.pack.Section != "hello-there" || !strings.Contains(f.pack.Markdown()[config.PackInfoFile], "section: hello-there\n") {
+		t.Fatalf("section %q", f.pack.Section)
+	}
+	// It stays in the list, picked.
+	press(f, kEnter)
+	if o := f.options[f.opt]; o.Value != "hello-there" {
+		t.Errorf("on %+v", o)
+	}
+	press(f, kLeft)
+	// A name it can't be is refused, saying why.
+	f.pick(t, newSection)
+	f.input.SetValue("clingon")
+	press(f, kEnter)
+	if f.pack.Section != "hello-there" || !strings.Contains(f.issue, "clingon's own heading") {
+		t.Errorf("section %q, issue %q", f.pack.Section, f.issue)
+	}
+}
+
+func TestPackFormMarksItsLines(t *testing.T) {
+	pack := strings.Split("---\nsection: code\nlogo: rocket\ncolour: orange\n---\n# Demo\nTools.\n", "\n")
+	module := strings.Split("---\nwhen: Dockerfile\n---\n# Deploy\nShip things.\n\n"+
+		"## Build\n\n```sh\ndocker build .\n```\n\n"+
+		"## Push it\n> [!WARNING]\n> Pushes.\n\n```sh needs=docker\ndocker push <image> <tag>\n```\n\n"+
+		"- `<image>` Which image\n- `<tag>` Which tag\n  - (x) `latest`\n  - ( ) `dev`\n", "\n")
+	for _, c := range []struct {
+		key   string
+		lines []string
+		want  string // the marked lines, joined
+	}{
+		{"name", pack, "# Demo"},
+		{"desc", pack, "Tools."},
+		{"colour", pack, "colour: orange"},
+		{"section", pack, "section: code"},
+		{"0/when", module, "when: Dockerfile"},
+		{"0/desc", module, "Ship things."},
+		{"0/0/name", module, "## Build"},
+		{"0/1/risk", module, "> [!WARNING]"},
+		{"0/1/desc", module, "> Pushes."},
+		{"0/1/cmd", module, "docker push <image> <tag>"},
+		{"0/1/needs", module, "```sh needs=docker"},
+		{"0/1/0/q", module, "- `<image>` Which image"},
+		{"0/1/1/kind", module, "- `<tag>` Which tag|  - (x) `latest`|  - ( ) `dev`"},
+		{"0/1/1/1", module, "  - ( ) `dev`"},
+		{"0/0/remove", module, "## Build||```sh|docker build .|```"},
+	} {
+		on := marked(c.key, c.lines)
+		var got []string
+		for i, l := range c.lines {
+			if on[i] {
+				got = append(got, l)
+			}
+		}
+		if strings.Join(got, "|") != c.want {
+			t.Errorf("%s: marked %q, want %q", c.key, strings.Join(got, "|"), c.want)
 		}
 	}
 }

@@ -1815,6 +1815,9 @@ func writeProject(t *testing.T, repo, module string) {
 	if err := os.WriteFile(filepath.Join(dir, "prod.md"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, config.PackInfoFile), []byte("---\nsection: other\n---\n# Deploy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestProjectPacksAskFirst(t *testing.T) {
@@ -3889,5 +3892,13 @@ func TestMenuStepsBackWhileEditing(t *testing.T) {
 	m.blurred = false
 	if v := m.view(); !strings.Contains(ansi.Strip(v), "EDITING") {
 		t.Error("back in the menu, it still says what's being edited")
+	}
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if err := config.WriteFormName("Deploy tools"); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(formNameMsg{})
+	if m.editing != "Deploy tools · esc when done" || !strings.Contains(ansi.Strip(m.view()), "Deploy tools") {
+		t.Errorf("the form's new name: %q", m.editing)
 	}
 }

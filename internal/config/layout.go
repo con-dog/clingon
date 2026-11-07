@@ -1,17 +1,20 @@
 package config
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
-	"sync"
 )
 
-// Packs sit in section folders: packs/<section>/<pack>/, where the section is
-// where the menu shows them. A pack straight in packs/mine/ goes under Other.
+// sectionSlugs are the sections clingon suggests, as a pack's _pack.md names
+// one with section: (infrastructure is Infrastructure). Every _pack.md names a
+// section: one of these, or one of your own, like work-tools.
 var sectionSlugs = map[string]string{
+	"other":          Other,
 	"ai":             "AI",
 	"code":           "Code",
 	"command-line":   CommandLine,
@@ -20,10 +23,22 @@ var sectionSlugs = map[string]string{
 	"system":         "System",
 }
 
-// SectionName is what the menu calls a section folder: code is Code.
-func SectionName(slug string) string { return sectionSlugs[slug] }
+// sectionRe is what a section can be called: lowercase words joined by -.
+var sectionRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-// SectionSlugs lists the section folders, in the menu's order.
+// reservedSections are headings clingon has for itself.
+var reservedSections = map[string]bool{"clingon": true, "this-project": true}
+
+// SectionName is what the menu calls a section: code is Code, and one of your
+// own, work-tools, is Work tools.
+func SectionName(slug string) string {
+	if name, ok := sectionSlugs[slug]; ok {
+		return name
+	}
+	return sectionTitle(slug)
+}
+
+// SectionSlugs lists the sections clingon suggests, in the menu's order.
 func SectionSlugs() []string {
 	var out []string
 	for _, c := range Categories {
@@ -34,6 +49,26 @@ func SectionSlugs() []string {
 		}
 	}
 	return out
+}
+
+// SectionSlug makes what's typed a section's name: Work Tools is work-tools.
+// It says what's wrong if it can't be one.
+func SectionSlug(typed string) (string, error) {
+	s := strings.Trim(notSlug.ReplaceAllString(strings.ToLower(strings.TrimSpace(typed)), "-"), "-")
+	return s, checkSection(s)
+}
+
+// checkSection says what's wrong with a section's name, if anything.
+func checkSection(s string) error {
+	switch {
+	case s == "":
+		return fmt.Errorf("a section needs a name: one of %s, or one of your own", strings.Join(SectionSlugs(), ", "))
+	case !sectionRe.MatchString(s):
+		return fmt.Errorf("a section's name is lowercase letters, digits and -, like work-tools (not %s)", s)
+	case reservedSections[s]:
+		return fmt.Errorf("%s is clingon's own heading: call the section something else", SectionName(s))
+	}
+	return nil
 }
 
 // logoColors is each logo's colour in the menu: a pack's logo brings its own.
@@ -91,26 +126,10 @@ const DefaultPackLogo = "terminal"
 // defaultPacks are added the first time clingon runs.
 var defaultPacks = map[string]bool{"files": true, "network": true, "package-managers": true, "ssh": true, "system": true}
 
-// categoryOf is the menu section of a pack folder: the section folder it's
-// in, or Other.
-func categoryOf(dir string) string {
-	if name, ok := sectionSlugs[filepath.Base(filepath.Dir(dir))]; ok {
-		return name
-	}
-	return Other
-}
-
-// packDirs lists the pack folders in root: those in section folders, and
-// any straight in it. Your own may be links, say to your dotfiles.
+// packDirs lists the pack folders in root. Your own may be links, say to
+// your dotfiles.
 func packDirs(root string) []string {
-	var out []string
-	for _, dir := range subdirs(root) {
-		if _, ok := sectionSlugs[filepath.Base(dir)]; ok {
-			out = append(out, subdirs(dir)...)
-			continue
-		}
-		out = append(out, dir)
-	}
+	out := subdirs(root)
 	sort.Strings(out)
 	return out
 }
@@ -130,51 +149,29 @@ func subdirs(root string) []string {
 	return out
 }
 
-// packDirIn is where the pack called name is under root: where it is, or
-// where it would go (a built-in pack in its section, your own straight in mine/).
-func packDirIn(root, pack string) string {
-	for _, dir := range packDirs(root) {
-		if filepath.Base(dir) == pack {
-			return dir
-		}
-	}
-	if sec := builtinSection(pack); sec != "" && root == remoteDir() {
-		return filepath.Join(root, sec, pack)
-	}
-	return filepath.Join(root, pack)
-}
+// packDirIn is where the pack called name is under root.
+func packDirIn(root, pack string) string { return filepath.Join(root, pack) }
 
-var (
-	builtinOnce  sync.Once
-	builtinIndex map[string]string // pack → its section folder
-)
-
-// builtinSection is the section folder a built-in pack ships in, or "".
-func builtinSection(pack string) string {
-	builtinOnce.Do(func() {
-		builtinIndex = map[string]string{}
-		secs, _ := fs.ReadDir(packFS, "packs")
-		for _, s := range secs {
-			packs, _ := fs.ReadDir(packFS, "packs/"+s.Name())
-			for _, p := range packs {
-				if p.IsDir() {
-					builtinIndex[p.Name()] = s.Name()
-				}
-			}
-		}
-	})
-	return builtinIndex[pack]
+// isBuiltin says whether clingon ships a pack called pack.
+func isBuiltin(pack string) bool {
+	if pack == "" || strings.ContainsAny(pack, "/.") {
+		return false
+	}
+	fi, err := fs.Stat(packFS, builtinDir(pack))
+	return err == nil && fi.IsDir()
 }
 
 // builtinPackNames lists the built-in packs.
 func builtinPackNames() []string {
-	builtinSection("")
+	entries, _ := fs.ReadDir(packFS, "packs")
 	var out []string
-	for p := range builtinIndex {
-		out = append(out, p)
+	for _, e := range entries {
+		if e.IsDir() {
+			out = append(out, e.Name())
+		}
 	}
 	sort.Strings(out)
 	return out
 }
 
-func builtinDir(pack string) string { return "packs/" + builtinSection(pack) + "/" + pack }
+func builtinDir(pack string) string { return "packs/" + pack }

@@ -10,6 +10,9 @@ import (
 
 // guideExample is the pack file `clingon pack guide` shows: harmless commands,
 // since people copy from it.
+// guidePackInfo is the guide's _pack.md, shown indented in guideRest.
+const guidePackInfo = "---\nsection: infrastructure\nlogo: terminal\n---\n# Deploy tools\n"
+
 const guideExample = "# Deploy\n" +
 	"Look around before you ship.\n" +
 	"\n" +
@@ -34,14 +37,9 @@ const guideExample = "# Deploy\n" +
 	"  - [ ] `-n` no new line\n"
 
 // guideTop and guideRest go either side of the example.
-const guideTop = `A pack is a folder in ~/.clingon/packs/mine/ with a Markdown file for each
-module. A section folder decides where it shows in the menu:
-
-  mine/infrastructure/k8s/pods.md    under Infrastructure
-  mine/work/deploy.md                straight in mine/: under Other
-
-Sections: ai, code, command-line, databases, infrastructure, system.
-Folder and file names are lowercase, with no spaces.
+const guideTop = `A pack is a folder in ~/.clingon/packs/mine/ with a _pack.md and a Markdown
+file for each module, like mine/work/deploy.md. Folder and file names are
+lowercase, with no spaces.
 
 A module file, like mine/work/deploy.md:
 `
@@ -67,13 +65,17 @@ at the very top:
 
 For one command, after its code block's language: ` + "```sh when=./Dockerfile" + `
 
-A _pack.md next to the modules names the pack and picks one of clingon's
-logos, like this:
+Every pack has one _pack.md next to its modules. It names the pack, says
+which section of the menu it's in, and picks one of clingon's logos:
 
   ---
+  section: infrastructure
   logo: terminal
   ---
   # Deploy tools
+
+Every _pack.md has a section: ai, code, command-line, databases,
+infrastructure, system, other, or a name of your own, like work-tools.
 
 What you type goes into your shell as written. A blank whose name has
 secret, token or password in it is typed hidden and kept out of your history.

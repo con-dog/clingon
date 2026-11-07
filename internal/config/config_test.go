@@ -171,10 +171,11 @@ func TestLoadMergesFiles(t *testing.T) {
 		}
 	}
 	// Two packs called the same thing in the menu, and one that's not.
-	write("a", "_pack.md", "# Git\n")
+	write("a", "_pack.md", "---\nsection: code\n---\n# Git\n")
 	write("a", "g.md", md("G", "one", "git status"))
-	write("b", "_pack.md", "# Git\n")
+	write("b", "_pack.md", "---\nsection: code\n---\n# Git\n")
 	write("b", "g.md", md("G", "two", "git log"))
+	write("other", "_pack.md", "---\nsection: other\n---\n# Other\n")
 	write("other", "h.md", md("H", "three", "ls"))
 	cfg, files, err := Load()
 	if err != nil {
@@ -184,17 +185,18 @@ func TestLoadMergesFiles(t *testing.T) {
 		t.Fatalf("bad merge: files=%v sections=%+v", files, cfg.Sections)
 	}
 	if o := cfg.Sections[1]; o.Name != "Other" || o.Groups[0].Name != "H" {
-		t.Fatalf("with no _pack.md, the folder names the pack: %+v", o)
+		t.Fatalf("a pack of its own: %+v", o)
 	}
 }
 
 func TestLoadSortsAlphabetically(t *testing.T) {
 	dir := userDir(t)
 	for f, src := range map[string]string{
-		"zed/later.md": md("Later", "b", "ls", "A", "ls"),
-		"zed/early.md": md("early", "x", "ls"),
-		"alpha/one.md": md("One", "c", "ls"),
-		"zed/_pack.md": "# zed\n",
+		"zed/later.md":   md("Later", "b", "ls", "A", "ls"),
+		"zed/early.md":   md("early", "x", "ls"),
+		"alpha/one.md":   md("One", "c", "ls"),
+		"alpha/_pack.md": "---\nsection: other\n---\n# Alpha\n",
+		"zed/_pack.md":   "---\nsection: other\n---\n# zed\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
 			t.Fatal(err)
@@ -216,9 +218,11 @@ func TestLoadSortsAlphabetically(t *testing.T) {
 func TestGroupsNeedTheirTools(t *testing.T) {
 	dir := userDir(t)
 	for f, src := range map[string]string{
-		"a/here.md": "---\nneeds: sh\n---\n" + md("here", "a", "ls"),
-		"a/gone.md": "---\nneeds: no-such-tool-xyz\n---\n" + md("gone", "b", "ls"),
-		"b/gone.md": "---\nneeds: no-such-tool-xyz\n---\n" + md("gone", "c", "ls"),
+		"a/here.md":  "---\nneeds: sh\n---\n" + md("here", "a", "ls"),
+		"a/gone.md":  "---\nneeds: no-such-tool-xyz\n---\n" + md("gone", "b", "ls"),
+		"b/gone.md":  "---\nneeds: no-such-tool-xyz\n---\n" + md("gone", "c", "ls"),
+		"a/_pack.md": "---\nsection: other\n---\n# A\n",
+		"b/_pack.md": "---\nsection: other\n---\n# B\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
 			t.Fatal(err)
@@ -245,8 +249,8 @@ func TestCategories(t *testing.T) {
 	if cfg.Sections[0].Category != "System" || cfg.Sections[1].Category != Other {
 		t.Fatalf("got %q, %q", cfg.Sections[0].Category, cfg.Sections[1].Category)
 	}
-	if len(errs) != 1 || !strings.Contains(errs[0].Error(), `unknown category "Infra"`) {
-		t.Fatalf("want one unknown-category error, got %v", errs)
+	if len(errs) != 0 || cfg.Sections[2].Category != "Infra" {
+		t.Fatalf("a category of its own: %q %v", cfg.Sections[2].Category, errs)
 	}
 }
 

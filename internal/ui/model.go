@@ -299,7 +299,8 @@ func (m *Model) showRoot(focus string) {
 			items = append(items, item{title: "Use this folder's commands?", icon: warnGlyph, ref: projectRef{}})
 		}
 	}
-	for _, cat := range config.Categories {
+	cats := config.MenuCategories(m.opt.Config.Sections)
+	for _, cat := range cats {
 		started := false
 		for i := range m.opt.Config.Sections {
 			s := &m.opt.Config.Sections[i]
@@ -334,7 +335,7 @@ func (m *Model) showRoot(focus string) {
 	}
 	divided := false
 	for _, s := range m.builtin {
-		if slices.Contains(config.Categories, s.Category) {
+		if slices.Contains(cats, s.Category) {
 			continue // listed above
 		}
 		if !divided {
@@ -715,6 +716,18 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case busyGraceMsg:
 		m.quiet = false
 		return m, nil
+	case formNameMsg:
+		if m.busy == "" || m.form == nil || m.editing == "" {
+			return m, nil // the form's closed
+		}
+		if name := config.FormName(); name != "" {
+			_, how, _ := strings.Cut(m.editing, " · ")
+			m.editing = name + " · " + how
+		}
+		if bar := m.drawBar(msg); bar != nil {
+			return m, tea.Batch(formNameTick(), bar)
+		}
+		return m, formNameTick()
 	case noticeTick:
 		if msg.seq != m.notice.seq || m.notice.text == "" {
 			return m, nil
@@ -2181,7 +2194,12 @@ func (m *Model) send() tea.Cmd {
 	if m.run != nil {
 		m.run.sent, m.run.seq = true, m.runSeq
 	}
-	return tea.Batch(wait, tea.Tick(busyGrace, func(time.Time) tea.Msg { return busyGraceMsg{} }))
+	var named tea.Cmd
+	if m.form != nil { // the pack form says its pack's name as you change it
+		config.RemoveFormName() // not an old form's
+		named = formNameTick()
+	}
+	return tea.Batch(wait, named, tea.Tick(busyGrace, func(time.Time) tea.Msg { return busyGraceMsg{} }))
 }
 
 // awaitIdle waits, off the UI thread, for the command just sent to finish,
@@ -2397,6 +2415,13 @@ func (m *Model) infoPane(w int) string {
 		block(dimStyle.Render(desc), w, n, tail),
 		rule,
 	}, "\n")
+}
+
+// formNameMsg is a look at the open pack form's name, to say it as it changes.
+type formNameMsg struct{}
+
+func formNameTick() tea.Cmd {
+	return tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg { return formNameMsg{} })
 }
 
 // editingAway says a pack's form or file is open in the shell and focus is

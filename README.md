@@ -114,19 +114,16 @@ clingon pack edit work-tools
 clingon check                    # find mistakes
 ```
 
-A pack is a folder of Markdown files, one for each module. They read as documentation on GitHub, and clingon runs them. Your packs go in `~/.clingon/packs/mine/`, in a section folder or straight in it:
+A pack is a folder of Markdown files, one for each module. They read as documentation on GitHub, and clingon runs them. Your packs go in `~/.clingon/packs/mine/`, a folder each:
 
 ```
 ~/.clingon/packs/mine/
-  infrastructure/       # shown under Infrastructure
-    k8s/
-      _pack.md          # optional: the pack's name, logo and what it needs
-      pods.md           # a module
-  work/                 # straight in mine/: shown under Other
-    deploy.md
+  k8s/
+    _pack.md            # the pack's name, section, logo and what it needs
+    pods.md             # a module
 ```
 
-The sections are `ai`, `code`, `command-line`, `databases`, `infrastructure` and `system`. Folder and file names are lowercase, with no spaces.
+Folder and file names are lowercase, with no spaces.
 
 Each file starts with a `# Name`, and each `##` heading is a command:
 
@@ -169,16 +166,19 @@ kubectl rollout restart deploy/<app> -n <namespace>
 
 Names use letters, digits, spaces and `( )`. Packs use only this much Markdown: `-` bullets, no bold or italics, and code blocks in `sh`, `bash`, `shell`, `zsh` or no language. `clingon check` names the line and the fix for anything else.
 
-A `_pack.md` names the pack and can pick one of clingon's logos:
+A `_pack.md` names the pack, says which section of the menu it's in, and can pick one of clingon's logos:
 
 ```md
 ---
+section: infrastructure
 logo: terminal
 needs: kubectl
 ---
 # Kubernetes
 Pods, logs and rollouts.
 ```
+
+`section:` is where the menu shows the pack, and every `_pack.md` has one: `ai`, `code`, `command-line`, `databases`, `infrastructure`, `system`, `other`, or a name of your own, like `work-tools`, which gets a heading of its own (Work tools). Section names are lowercase, with `-` between words.
 
 Give a command a callout:
 
@@ -187,7 +187,7 @@ Give a command a callout:
 
 Every built-in pack follows those rules, and a test keeps it that way.
 
-**Project packs:** put packs in `.clingon/packs/` in a repository, like `.clingon/packs/deploy/prod.md`, and their commands appear under **This project** whenever your shell is in that repository. clingon shows you every command and asks before using them, and asks again if any file changes.
+**Project packs:** put packs in `.clingon/packs/` in a repository, like `.clingon/packs/deploy/prod.md` with its `.clingon/packs/deploy/_pack.md`, and their commands appear under **This project** whenever your shell is in that repository. clingon shows you every command and asks before using them, and asks again if any file changes.
 
 ## Good to know
 

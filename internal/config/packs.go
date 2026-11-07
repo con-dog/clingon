@@ -91,7 +91,7 @@ func SplitModule(name string) (pack, module string) {
 
 // builtinFiles lists a built-in pack's files, _pack.md first.
 func builtinFiles(pack string) []string {
-	if builtinSection(pack) == "" {
+	if !isBuiltin(pack) {
 		return nil
 	}
 	entries, err := packFS.ReadDir(builtinDir(pack))
@@ -129,20 +129,17 @@ func loadPack(name string) (*Config, error) {
 		}
 		parts = append(parts, part)
 	}
-	c := assemble(name, parts)
-	for i := range c.Sections {
-		c.Sections[i].Category = sectionSlugs[builtinSection(name)]
-	}
-	return c, nil
+	return assemble(name, parts), nil
 }
 
 // The clingon folder holds:
 //
 //	packs/_available.yaml  every pack you can install (written by clingon)
-//	packs/remote/          installed packs, in section folders like
-//	                       remote/infrastructure/docker: adding copies one in,
-//	                       removing deletes it (rather like node_modules)
-//	packs/mine/            your own packs, in section folders or straight in it
+//	packs/remote/          installed packs, a folder each, like remote/docker:
+//	                       adding copies one in, removing deletes it (rather
+//	                       like node_modules)
+//	packs/mine/            your own packs, a folder each; each pack's _pack.md
+//	                       says which section of the menu it's in
 //	recipes.yaml           your saved recipes
 //	config/                what clingon keeps for itself
 //
@@ -265,7 +262,7 @@ func installFile(pack, file string) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(remoteDir(), builtinSection(pack), pack)
+	dir := filepath.Join(remoteDir(), pack)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -514,9 +511,6 @@ func PackUpdates() ([]PackUpdate, error) {
 		}
 		files := mdFiles(dir)
 		stale := !slices.Contains(files, filepath.Join(dir, PackInfoFile))
-		if filepath.Base(filepath.Dir(dir)) != builtinSection(pack) {
-			stale = true // clingon has moved it to another section
-		}
 		for _, f := range files {
 			if isPackFile(f) && !matchesBuiltin(pack, f) {
 				stale = true
@@ -536,7 +530,6 @@ func UpdatePack(pack string) error {
 		return err
 	}
 	dir := packDirIn(remoteDir(), pack)
-	moved := filepath.Join(remoteDir(), builtinSection(pack), pack)
 	for _, f := range moduleFiles(dir) {
 		name := filepath.Base(f)
 		if _, err := builtinFile(pack, name); err != nil {
@@ -548,12 +541,6 @@ func UpdatePack(pack string) error {
 		if err := installFile(pack, name); err != nil {
 			return err
 		}
-	}
-	if dir != moved { // installed again in its new section: the old folder goes
-		if err := os.RemoveAll(dir); err != nil {
-			return err
-		}
-		dir = moved
 	}
 	if len(moduleFiles(dir)) == 0 {
 		return os.RemoveAll(dir) // everything it had is gone
