@@ -1607,7 +1607,7 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 	barIs := func(when, want string) {
 		t.Helper()
 		line := m.statusBar(120)
-		if got := strings.TrimSpace(ansi.Strip(line)); got != strings.TrimSpace(" ? help  "+want) {
+		if got := strings.TrimSpace(ansi.Strip(line)); got != strings.TrimSpace(" ? help  "+m.where()+"  "+want) {
 			t.Errorf("%s: bar %q, want %q", when, got, want)
 		}
 		if w := ansi.StringWidth(line); w != 120 {
@@ -3899,7 +3899,7 @@ func TestMenuStepsBackWhileEditing(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.Update(formNameMsg{})
-	if m.editing != "Deploy tools · esc when done" || !strings.Contains(ansi.Strip(m.view()), "Deploy tools") {
+	if m.editing != "Deploy tools · esc when done" {
 		t.Errorf("the form's new name: %q", m.editing)
 	}
 }
@@ -3935,5 +3935,42 @@ func TestTopTallyIsTheHighlightedPacks(t *testing.T) {
 	m.list.refilter()
 	if got := m.list.tally(); !strings.Contains(got, " of 7 commands") {
 		t.Errorf("filtering: %q", got)
+	}
+}
+
+// Beside ? help, a chip says where you are: IN MENUS, IN SHELL, or IN FORMS
+// with the pack form open and focus there; then the bar is the form's keys,
+// as it says them, on the quiet band, and nothing else. Editing in micro, the
+// bar says how you're done there.
+func TestWhereChipAndFormKeys(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	m := New(Options{Config: &config.Config{}, FocusMenu: func() {}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
+	chip := func() string { return strings.Fields(ansi.Strip(m.statusBar(120)))[2] + " " + strings.Fields(ansi.Strip(m.statusBar(120)))[3] }
+	if got := chip(); got != "IN MENUS" {
+		t.Errorf("chip %q", got)
+	}
+	m.blurred = true
+	if got := chip(); got != "IN SHELL" {
+		t.Errorf("chip %q", got)
+	}
+	m.busy, m.editing, m.form = "Edit a pack", "Demo · esc when done", &pending{}
+	if err := config.WriteFormKeys([]string{"↑↓ move", "→ edit", "esc done"}); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(formNameMsg{})
+	if got := chip(); got != "IN FORMS" {
+		t.Errorf("chip %q", got)
+	}
+	if s := strings.TrimSpace(ansi.Strip(m.barBody(80))); s != "↑↓ move · → edit · esc done" {
+		t.Errorf("the form's keys, and only them: %q", s)
+	}
+	m.form, m.formKeys, m.editing = nil, nil, "demo in micro · Ctrl-Q when done"
+	if s := strings.TrimSpace(ansi.Strip(m.barBody(80))); s != "Ctrl-Q done · shift-tab menu" {
+		t.Errorf("micro: %q", s)
+	}
+	m.blurred = false
+	if got := chip(); got != "IN MENUS" || strings.Contains(ansi.Strip(m.barBody(80)), "Ctrl-Q") {
+		t.Errorf("back in the menu: %q, %q", got, ansi.Strip(m.barBody(80)))
 	}
 }

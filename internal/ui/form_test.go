@@ -1020,3 +1020,34 @@ func TestPackFormRuleLevelWithTheMenus(t *testing.T) {
 		}
 	}
 }
+
+// The form tells the menu's status bar the keys that work right now, and
+// only those: on a heading, on a field, typing, in a list, asking to save.
+func TestPackFormTellsItsKeys(t *testing.T) {
+	f := newTestForm(t)
+	has := func(when string, want ...string) {
+		t.Helper()
+		got := config.FormKeys()
+		for _, w := range want {
+			if !slices.Contains(got, w) {
+				t.Errorf("%s: no %q in %q", when, w, got)
+			}
+		}
+	}
+	f.onRow(t, "0/head")
+	press(f, kDown, kUp)
+	has("a heading", "→ open", "← collapse", "esc done")
+	press(f, kDown)
+	has("a field", "→ edit", "/ filter")
+	press(f, kRight)
+	has("typing", "enter done", "ctrl-c cancel")
+	press(f, kEsc)
+	f.onRow(t, "menu")
+	press(f, kDown, kUp, kRight)
+	has("a list", "↑↓ choose", "→ take", "← close")
+	press(f, kLeft)
+	f.onRow(t, "desc")
+	typeIn(f, "changed")
+	press(f, kEsc)
+	has("asking", "↑↓ choose", "→ take", "← back")
+}

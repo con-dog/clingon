@@ -207,6 +207,7 @@ type Model struct {
 	editing   string                      // what the editor in the shell is editing, while busy is that editor
 	form      *pending                    // the pack form last opened, to open again to carry on with its draft
 	draft     *config.EditablePack        // the pack form's changes, while asking whether to save them
+	formKeys  []string                    // the keys that work in the open pack form now, as it says them
 	waiting   bool                        // a wait for the shell to finish (started on focus) is under way
 	scrolling bool                        // the shell is scrolled back: nothing can be sent until it stops
 	typed     string                      // what's typed at the shell's prompt: sending asks first
@@ -724,6 +725,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_, how, _ := strings.Cut(m.editing, " · ")
 			m.editing = name + " · " + how
 		}
+		m.formKeys = config.FormKeys()
 		if bar := m.drawBar(msg); bar != nil {
 			return m, tea.Batch(formNameTick(), bar)
 		}
@@ -2213,6 +2215,7 @@ func (m *Model) send() tea.Cmd {
 	var named tea.Cmd
 	if m.form != nil { // the pack form says its pack's name as you change it
 		config.RemoveFormName() // not an old form's
+		m.formKeys = nil
 		named = formNameTick()
 	}
 	return tea.Batch(wait, named, tea.Tick(busyGrace, func(time.Time) tea.Msg { return busyGraceMsg{} }))
@@ -2451,7 +2454,7 @@ func infoTop(h int) int { return 2*infoN(h) + 4 }
 type formNameMsg struct{}
 
 func formNameTick() tea.Cmd {
-	return tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg { return formNameMsg{} })
+	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg { return formNameMsg{} })
 }
 
 // editingAway says a pack's form or file is open in the shell and focus is
@@ -2983,6 +2986,9 @@ func (m *Model) keysBar(w int) string {
 func (m *Model) statusBar(w int) string {
 	chip := lipgloss.NewStyle().Background(accent).Foreground(ink).Bold(true).Padding(0, 1)
 	notch := chip.Render("? help")
+	if m.opt.FocusMenu != nil { // in clingon's window, where there's a shell to be in
+		notch += lipgloss.NewStyle().Background(purple).Foreground(text).Bold(true).Padding(0, 1).Render(m.where())
+	}
 	nw := ansi.StringWidth(notch)
 	if w <= nw {
 		return ansi.Truncate(notch, max(w, 0), "")
@@ -3012,8 +3018,10 @@ func (m *Model) barBody(w int) string {
 		return bar(red, m.errMsg, w)
 	case m.hint != "":
 		return bar(raised, m.hint, w)
-	case m.busy != "" && m.editing != "": // not a wait: you're working there
-		return bar(purple, "✎ Editing "+m.editing, w)
+	case m.busy != "" && m.editing != "" && m.blurred: // not a wait: you're working there
+		return m.editingBar(w)
+	case m.busy != "" && m.editing != "": // back in the menu, the form open beside it: the menu's keys
+		return m.keysBar(w)
 	case m.busy != "" && !m.quiet:
 		return bar(orange, "◔ "+m.busy+" is running in the shell · tab to go there", w)
 	case m.scrolling:
@@ -3071,6 +3079,34 @@ func bar(bg color.Color, msg string, w int) string {
 	}
 	st := lipgloss.NewStyle().Background(bg).Foreground(fg).Bold(bg != raised).Padding(0, 1).Width(w)
 	return st.Render(ansi.Truncate(msg, max(w-2, 0), "…"))
+}
+
+// editingBar is the bar while a pack's open in the form or micro beside the
+// menu: on the quiet band the keys have, as they look when browsing, what's
+// being edited and the keys for it.
+func (m *Model) editingBar(w int) string {
+	keys := m.formKeys                   // the form's, as it says them
+	if m.form == nil || len(keys) == 0 { // micro, in the shell: how you're done there
+		_, how, _ := strings.Cut(m.editing, " · ")
+		keys = []string{strings.TrimSuffix(how, " when done") + " done"}
+		if m.opt.FocusMenu != nil {
+			keys = append(keys, "shift-tab menu")
+		}
+	}
+	line := strings.Join(keyHints(keys), faintStyle.Render(" · "))
+	return onBg(" "+ansi.Truncate(line, max(w-2, 0), "…"), raised, w)
+}
+
+// where is the chip beside ? help: where you are, the menu, the shell, or
+// the pack form (in the shell's pane, but a place of its own).
+func (m *Model) where() string {
+	switch {
+	case !m.blurred:
+		return "IN MENUS"
+	case m.busy != "" && m.editing != "" && m.form != nil && len(m.formKeys) > 0:
+		return "IN FORMS"
+	}
+	return "IN SHELL"
 }
 
 // newsBar is the top level's news on the quiet band: only its glyph is

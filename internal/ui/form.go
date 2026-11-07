@@ -53,9 +53,10 @@ type PackForm struct {
 
 	// The part the cursor's in, shown whole; the others are folded to
 	// their heading and name. -1 is the pack, -2 nothing (Add a module).
-	lastSub int             // the module the cursor was last in, for the preview to show under _pack.md
-	toggled map[string]bool // modules ("1") and commands ("1/2") opened or collapsed by hand; open unless said
-	noFold  bool            // building every row, to measure them
+	lastSub  int             // the module the cursor was last in, for the preview to show under _pack.md
+	toldKeys string          // the keys the menu's status bar was last told, joined
+	toggled  map[string]bool // modules ("1") and commands ("1/2") opened or collapsed by hand; open unless said
+	noFold   bool            // building every row, to measure them
 
 	named string // the pack's name as last told to the menu
 
@@ -278,6 +279,9 @@ func (f *PackForm) refresh(focus string) {
 	}
 	f.reveal(focus)
 	f.rows = f.matching(f.pageRows())
+	if f.menu && f.toldKeys == "" { // the bar says the form's keys from the start
+		f.tellKeys()
+	}
 	if f.menu && f.pack.Title != f.named { // so the menu says what you're editing, by its name as it is
 		if config.WriteFormName(f.pack.Title) == nil {
 			f.named = f.pack.Title
@@ -839,9 +843,56 @@ func (f *PackForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		f.pageSize = max(f.h-10, 1)
 		return f, nil
 	case tea.KeyPressMsg:
-		return f, f.key(msg)
+		cmd := f.key(msg)
+		f.tellKeys()
+		return f, cmd
 	}
 	return f, nil
+}
+
+// barKeys are the keys that work in the form right now, for the status bar:
+// keys are said there and nowhere else.
+func (f *PackForm) barKeys() []string {
+	switch {
+	case f.help:
+		return []string{"any key back"}
+	case f.saving:
+		return []string{"↑↓ choose", "→ take", "← back"}
+	case f.editing != nil:
+		return []string{"←→ move", "enter done", "ctrl-c cancel"}
+	case f.choosing != nil:
+		return []string{"↑↓ choose", "→ take", "← close"}
+	case f.filtering:
+		return []string{"↑↓ move", "→ edit", "/ stop filtering", "esc clear"}
+	}
+	keys := []string{"↑↓ move"}
+	if r := f.selectedRow(); r != nil {
+		switch {
+		case r.header || r.fold == "closed":
+			keys = append(keys, "→ open")
+		case r.pick != nil || r.confirm != "":
+			keys = append(keys, "→ choose")
+		case r.do != nil:
+			keys = append(keys, "→ add")
+		case r.text != nil:
+			keys = append(keys, "→ edit")
+		}
+		if r.header || r.fold == "open" {
+			keys = append(keys, "← collapse")
+		}
+	}
+	keys = append(keys, "/ filter", "[ ] jump", "esc done", "shift-tab menu")
+	return keys
+}
+
+// tellKeys has the menu's status bar say the form's keys, when they change.
+func (f *PackForm) tellKeys() {
+	if !f.menu {
+		return
+	}
+	if keys := strings.Join(f.barKeys(), "\n"); keys != f.toldKeys && config.WriteFormKeys(f.barKeys()) == nil {
+		f.toldKeys = keys
+	}
 }
 
 // edit starts typing into a row's field, in place.

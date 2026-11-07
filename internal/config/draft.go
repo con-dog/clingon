@@ -188,5 +188,29 @@ func FormName() string {
 	return strings.TrimSpace(string(data))
 }
 
-// RemoveFormName forgets it: the form's closed.
-func RemoveFormName() { _ = os.Remove(formNameFile()) }
+// RemoveFormName forgets it, and its keys: the form's closed.
+func RemoveFormName() {
+	_ = os.Remove(formNameFile())
+	_ = os.Remove(formKeysFile())
+}
+
+// formKeysFile holds the keys that work in the open form right now, for the
+// status bar, which the menu draws, to say.
+func formKeysFile() string { return filepath.Join(Dir(), "pack-form.keys") }
+
+// WriteFormKeys keeps the keys that work in the form now, one a line.
+func WriteFormKeys(keys []string) error {
+	if err := os.MkdirAll(Dir(), 0o755); err != nil {
+		return err
+	}
+	return writeWhole(formKeysFile(), []byte(strings.Join(keys, "\n")))
+}
+
+// FormKeys are the keys that work in the open form now, or none.
+func FormKeys() []string {
+	data, _ := os.ReadFile(formKeysFile())
+	if s := strings.TrimSpace(string(data)); s != "" {
+		return strings.Split(s, "\n")
+	}
+	return nil
+}
