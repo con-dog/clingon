@@ -2369,8 +2369,11 @@ func (m *Model) stepsNote() string {
 			}
 		}
 	}
-	if c == nil || len(c.Args) == 0 {
+	switch {
+	case c == nil:
 		return ""
+	case len(c.Args) == 0:
+		return "No steps"
 	}
 	return plural(len(c.Args), "step")
 }

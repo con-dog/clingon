@@ -2779,8 +2779,7 @@ func TestStatusBarShowsTheVersion(t *testing.T) {
 }
 
 // The info pane has no headings: the command's block, and under it the
-// description, led by how many steps the command takes; none, and it's the
-// description alone. Filling in, the same, with no → run · ← back under it
+// description, led by how many steps the command takes (No steps, for none). Filling in, the same, with no → run · ← back under it
 // (the status bar says those).
 func TestDescriptionSaysHowManySteps(t *testing.T) {
 	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
@@ -2791,16 +2790,13 @@ func TestDescriptionSaysHowManySteps(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
 	m.showSection(&m.opt.Config.Sections[0])
 	view := func() string { return strings.Join(strings.Fields(ansi.Strip(m.view())), " ") }
-	want := map[string]string{"a two": "2 steps: Does a.", "b one": "1 step: Does b.", "c none": "Does c."}
+	want := map[string]string{"a two": "2 steps: Does a.", "b one": "1 step: Does b.", "c none": "No steps: Does c."}
 	for i, it := range m.list.view {
 		if w, ok := want[it.title]; ok {
 			m.list.cursor = i
 			v := view()
 			if !strings.Contains(v, w) || strings.Contains(v, "DESCRIPTION") || strings.Contains(v, "COMMAND ") {
 				t.Errorf("%s: want %q, no headings:\n%s", it.title, w, ansi.Strip(m.view()))
-			}
-			if it.title == "c none" && strings.Contains(v, "steps: Does c.") {
-				t.Errorf("no steps, no count")
 			}
 		}
 	}
