@@ -581,7 +581,7 @@ func (f *PackForm) moduleRows(i int) []formRow {
 		{key: k("desc"), label: "Desc", value: g.Description, hint: "what's in it", help: "What's in the module.", text: func(v string) error { f.group(i).Description = v; return nil }},
 		{key: k("needs"), label: "Need", value: joined(g.Requires), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
 		{key: k("when"), label: "When", value: joined(g.When), look: frontLook("when"), hint: "files, like .git", help: "Files that must be here or in a folder above for these commands, like .git; ./Dockerfile means this folder only.", text: func(v string) error { f.group(i).When = splitComma(v); return nil }},
-		{key: k("remove"), label: "Remove this module", risk: config.RiskWarn, help: "Removes the module and every command in it.", confirm: "Yes, remove it", do: func() error {
+		{key: k("remove"), label: "Drop", value: "No", risk: config.RiskWarn, help: "Yes removes the module, and every command in it.", confirm: "Yes", do: func() error {
 			f.pack.Files = slices.Delete(f.pack.Files, i, i+1)
 			return nil
 		}},
@@ -639,7 +639,7 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 	for b := range c.Args {
 		rows = append(rows, f.blankRows(i, j, b)...)
 	}
-	rows = append(rows, formRow{key: k("remove"), label: "Remove this command", risk: config.RiskWarn, help: "Removes the command.", confirm: "Yes, remove it", do: func() error {
+	rows = append(rows, formRow{key: k("remove"), label: "Drop", value: "No", risk: config.RiskWarn, help: "Yes removes the command.", confirm: "Yes", do: func() error {
 		g := f.group(i)
 		g.Commands = slices.Delete(g.Commands, j, j+1)
 		return nil
@@ -786,7 +786,7 @@ func (f *PackForm) choiceRows(i, j, b, o int) []formRow {
 			a.Default = strings.Join(on, a.Separator())
 			return nil
 		}},
-		{key: k("remove"), label: "Remove this choice", risk: config.RiskWarn, help: "Removes the choice.", confirm: "Yes, remove it", do: func() error {
+		{key: k("remove"), label: "Drop", value: "No", risk: config.RiskWarn, help: "Yes removes the choice.", confirm: "Yes", do: func() error {
 			a := f.blank(i, j, b)
 			opt := a.Options[o]
 			if a.Kind() == "flags" {
@@ -1054,7 +1054,7 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			return f.edit(r, r.value)
 		case r.confirm != "":
 			f.choosing, f.opt = r, 0
-			f.options = []config.Option{{Value: "no", Label: "No, keep it"}, {Value: "yes", Label: r.confirm}}
+			f.options = []config.Option{{Value: "no", Label: "No"}, {Value: "drop", Label: r.confirm}}
 		case r.do != nil:
 			if err := f.change(r.do); err != nil {
 				f.issue = err.Error()
@@ -1072,8 +1072,8 @@ func (f *PackForm) chose() tea.Cmd {
 	r, v := f.choosing, f.options[f.opt].Value
 	f.choosing, f.issue = nil, ""
 	switch {
-	case r.confirm != "": // a No/Yes: only Yes does it
-		if v != "yes" {
+	case r.confirm != "": // a Drop's No/Yes: only Yes does it
+		if v != "drop" {
 			return nil
 		}
 		if err := f.change(r.do); err != nil {
@@ -1487,13 +1487,7 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 	}
 	room := max(w-f.labelAt(r), 1)
 	switch {
-	case r.confirm != "": // a remove
-		st := faintStyle
-		if on {
-			st = dangerStyle
-		}
-		rest += st.Render(ansi.Truncate(dangerGlyph+" "+r.label, room, "…"))
-	case r.do != nil && flatForm: // an add, as a ghost of what it adds, where it'll be
+	case r.do != nil && r.confirm == "" && flatForm: // an add, as a ghost of what it adds, where it'll be
 		word, st := "", lipgloss.NewStyle().Foreground(purple).Faint(true)
 		switch {
 		case r.key == "add-module":
@@ -1507,7 +1501,7 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 			st = cursorStyle
 		}
 		rest = " " + st.Render("+") + " " + st.Render(word)
-	case r.do != nil: // an add
+	case r.do != nil && r.confirm == "": // an add
 		st := accentStyle
 		if on {
 			st = cursorStyle
@@ -1532,6 +1526,12 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 			f.input.SetWidth(room)
 			more = strings.Split(f.input.View(), "\n")
 			rest, more = rest+more[0], more[1:]
+		case r.confirm != "": // a Drop: faint, its No, until you're on it
+			st := faintStyle
+			if on {
+				st = fieldStyle
+			}
+			rest += st.Render(r.value)
 		case r.value != "":
 			v := fieldStyle.Render(r.value)
 			if r.look != nil {
@@ -1557,7 +1557,7 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 		if r.note != "" {
 			rest += faintStyle.Render(ansi.Truncate("  · "+r.note, max(w-ansi.StringWidth(g)-1-ansi.StringWidth(rest), 0), ""))
 		}
-		if r.pick != nil {
+		if r.pick != nil || r.confirm != "" {
 			rest += lipgloss.NewStyle().Foreground(soft).Render(" ▾") // periwinkle: plainly there, under the white value
 		}
 	}
@@ -1590,7 +1590,7 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 		title = o.Value
 	}
 	switch {
-	case on && (o.Value == "yes" || o.Value == "remove"):
+	case on && o.Value == "drop": // a Drop's Yes
 		title = dangerStyle.Render(title)
 	case on:
 		title = cursorStyle.Render(title)

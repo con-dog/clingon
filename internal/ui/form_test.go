@@ -153,11 +153,15 @@ func TestPackFormEditsThePack(t *testing.T) {
 		t.Error("the bad name shouldn't have been kept")
 	}
 
-	// Removing asks first: No is first and does nothing.
+	// Drop is a row like the rest, No until you say Yes: No is first, and
+	// does nothing.
 	f.onRow(t, "1/0/remove")
+	if !strings.Contains(f.screen(), "Drop  No ▾") {
+		t.Fatalf("a Drop row:\n%s", f.screen())
+	}
 	press(f, kRight)
-	if !strings.Contains(f.screen(), "No, keep it") {
-		t.Fatalf("should ask:\n%s", f.screen())
+	if len(f.options) != 2 || f.options[0].Label != "No" || f.options[1].Label != "Yes" || f.opt != 0 {
+		t.Fatalf("should ask, No first: %+v", f.options)
 	}
 	press(f, kRight) // No
 	if len(f.pack.Files[1].Group.Commands) != 1 {
