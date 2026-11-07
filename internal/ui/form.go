@@ -1580,8 +1580,8 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 		title = dangerStyle.Render(title)
 	case on:
 		title = cursorStyle.Render(title)
-	default: // periwinkle, as the file's keys are: what can be set
-		title = lipgloss.NewStyle().Foreground(soft).Render(title)
+	default: // white, as values are
+		title = fieldStyle.Render(title)
 	}
 	g := strings.Repeat("│  ", r.depth) + "│"
 	switch {
@@ -1595,7 +1595,7 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 	if o.Icon != "" {
 		st := iconStyle(o.Color)
 		if o.Color == "" { // one without a colour of its own, as its title
-			st = lipgloss.NewStyle().Foreground(soft)
+			st = fieldStyle
 		}
 		rest += st.Render(o.Icon) + iconGap(o.Icon)
 	}

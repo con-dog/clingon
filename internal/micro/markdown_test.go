@@ -42,7 +42,7 @@ func TestMarkdownColoursWhatMatters(t *testing.T) {
 		"\x1b[38;5;79m grep\x1b[m",
 		"\x1b[38;5;180m\"\x1b[m\x1b[38;5;117m<branch>\x1b[m\x1b[38;5;180m\"\x1b[m",
 		"\x1b[38;5;117m`<branch>`\x1b[m",
-		"\x1b[38;5;103m  - \x1b[m\x1b[38;5;147m(x)\x1b[m",
+		"\x1b[38;5;103m  - \x1b[m\x1b[38;5;147m(\x1b[mx\x1b[38;5;147m)\x1b[m",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in %q", want, got)

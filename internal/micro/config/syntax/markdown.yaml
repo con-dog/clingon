@@ -8,7 +8,12 @@ detect:
 rules:
     # Text with a mark of its own; plain text stays the default colour.
     - statement: "^\\s*- "
+    # A choice's mark: its ( ) or [ ] lavender, the x picking it plain, as text
+    # is (later rules win: the whole mark, then the x, then its opening
+    # bracket again, then the bullet).
     - special.mark: "^\\s*- (\\([ x]\\)|\\[[ x]\\])"
+    - special.tick: "^\\s*- [(\\[]x"
+    - special.mark: "^\\s*- [(\\[]"
     - statement: "^\\s*- "
     - constant.string: "`[^`]*`"
     - special.blank: "`<[A-Za-z_][A-Za-z0-9_-]*>`"
