@@ -252,7 +252,7 @@ func commandMarkdown(c *Command) string {
 				b.WriteString(choiceMarkdown("(", ")", o.Value == a.Default, o))
 			}
 		case "flags":
-			on := strings.Fields(a.Default)
+			on := a.Ticked(a.Default)
 			for _, o := range a.Options {
 				b.WriteString(choiceMarkdown("[", "]", slices.Contains(on, o.Value), o))
 			}

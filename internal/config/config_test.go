@@ -339,3 +339,21 @@ func TestSectionAndGroupNamesCantHideThings(t *testing.T) {
 		t.Errorf("an emoji with a joiner is one glyph: %v", errs)
 	}
 }
+
+// A tick-any blank's ticked choices are found by matching its choices, so a
+// choice with a space in it, like -n 5, stays one.
+func TestTicked(t *testing.T) {
+	a := Arg{Type: "flags", Options: []Option{{Value: "-n 5"}, {Value: "-n"}, {Value: "-v"}, {Value: "5"}}}
+	for s, want := range map[string]string{
+		"":          "",
+		"-v":        "-v",
+		"-n 5 -v":   "-n 5|-v",
+		"-n -v":     "-n|-v",
+		"-v -n 5":   "-v|-n 5",
+		"-x -n 5 5": "-x|-n 5|5",
+	} {
+		if got := strings.Join(a.Ticked(s), "|"); got != want {
+			t.Errorf("%q: got %q, want %q", s, got, want)
+		}
+	}
+}

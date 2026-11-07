@@ -506,13 +506,19 @@ func (f *PackForm) moduleRows(i int) []formRow {
 func (f *PackForm) commandRows(i, j int) []formRow {
 	c := f.command(i, j)
 	k := func(s string) string { return fmt.Sprintf("%d/%d/%s", i, j, s) }
-	risks := []config.Option{{Value: "", Label: "none"}, {Value: config.RiskWarn, Label: "asks first"}, {Value: config.RiskDanger, Label: "dangerous: you type a code first"}}
-	risk := map[string]string{"": "none", config.RiskWarn: "asks first", config.RiskDanger: "dangerous"}[c.Risk]
+	// Each with the glyph the menu marks it with; none with a grey dot.
+	risks := []config.Option{
+		{Value: "", Label: "none", Icon: "●", Color: greyHex}, // one cell, as ⚠ and ☠ are: not the logos' centred twin
+		{Value: config.RiskWarn, Label: "warning", Icon: warnGlyph, Color: orangeHex},
+		{Value: config.RiskDanger, Label: "dangerous", Icon: dangerGlyph, Color: redHex},
+	}
+	risk := map[string]string{"": "none", config.RiskWarn: "warning", config.RiskDanger: "dangerous"}[c.Risk]
+	riskIcon := risks[max(slices.IndexFunc(risks, func(o config.Option) bool { return o.Value == c.Risk }), 0)]
 	rows := []formRow{
 		{label: "Command", header: true},
 		{key: k("name"), label: "Name", value: c.Name, help: "What the menu calls it: letters, digits, spaces and ( ).", text: func(v string) error { f.command(i, j).Name = v; return nil }},
 		{key: k("desc"), label: "Description", value: c.Desc, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
-		{key: k("risk"), label: "Risk", value: risk, help: "Whether clingon asks before it runs.", options: risks, pick: func(v string) error { f.command(i, j).Risk = v; return nil }},
+		{key: k("risk"), label: "Risk", value: risk, icon: riskIcon.Icon, color: riskIcon.Color, help: "Whether clingon asks before it runs: warning asks first; dangerous has you type a short code, then asks.", options: risks, pick: func(v string) error { f.command(i, j).Risk = v; return nil }},
 		{key: k("cmd"), label: "Command", value: c.Cmd, help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
 			c := f.command(i, j)
 			c.Cmd = v
@@ -582,7 +588,7 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 
 // pickedFirst says if a choice is a default: picked (or ticked) until you change it.
 func pickedFirst(a *config.Arg, v string) bool {
-	return a.Kind() == "flags" && slices.Contains(strings.Fields(a.Default), v) || a.Kind() == "choose" && a.Default == v
+	return a.Kind() == "flags" && slices.Contains(a.Ticked(a.Default), v) || a.Kind() == "choose" && a.Default == v
 }
 
 // choiceRow is one of a blank's choices, on one row: what it types, its label,
@@ -618,16 +624,18 @@ func (f *PackForm) choiceRow(i, j, b, o int) formRow {
 					}
 					return nil
 				}
-				on := slices.DeleteFunc(strings.Fields(a.Default), func(s string) bool { return s == opt.Value })
+				on := slices.DeleteFunc(a.Ticked(a.Default), func(s string) bool { return s == opt.Value })
 				if !pickedFirst(a, opt.Value) {
 					on = append(on, opt.Value)
 				}
-				a.Default = strings.Join(on, " ")
+				a.Default = strings.Join(on, a.Separator())
 			case "remove":
-				a.Options = slices.Delete(a.Options, o, o+1)
-				if pickedFirst(a, opt.Value) || a.Default == opt.Value {
-					a.Default = strings.Join(slices.DeleteFunc(strings.Fields(a.Default), func(s string) bool { return s == opt.Value }), " ")
+				if a.Kind() == "flags" {
+					a.Default = strings.Join(slices.DeleteFunc(a.Ticked(a.Default), func(s string) bool { return s == opt.Value }), a.Separator())
+				} else if a.Default == opt.Value {
+					a.Default = ""
 				}
+				a.Options = slices.Delete(a.Options, o, o+1)
 			}
 			return nil
 		}}
@@ -646,10 +654,15 @@ func (f *PackForm) choiceText(r *formRow, what string) (*formRow, string) {
 			op.Label = s
 			return nil
 		}
-		on := strings.Fields(a.Default)
-		if k := slices.Index(on, op.Value); k >= 0 {
-			on[k] = s
-			a.Default = strings.Join(on, " ")
+		switch {
+		case a.Kind() == "flags":
+			on := a.Ticked(a.Default)
+			if k := slices.Index(on, op.Value); k >= 0 {
+				on[k] = s
+				a.Default = strings.Join(on, a.Separator())
+			}
+		case a.Default == op.Value:
+			a.Default = s
 		}
 		op.Value = s
 		return nil

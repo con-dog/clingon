@@ -185,6 +185,31 @@ func (a Arg) Separator() string {
 	return *a.Join
 }
 
+// Ticked splits s, a tick-any blank's answer or default (its choices joined by
+// Separator), into the choices ticked. A choice can have the separator in it,
+// like -n 5, so each is matched against the choices, longest first; anything
+// else goes up to the next separator.
+func (a Arg) Ticked(s string) []string {
+	sep := a.Separator()
+	var out []string
+	for s != "" {
+		best := ""
+		for _, o := range a.Options {
+			if (s == o.Value || strings.HasPrefix(s, o.Value+sep)) && len(o.Value) > len(best) {
+				best = o.Value
+			}
+		}
+		if best == "" {
+			best, _, _ = strings.Cut(s, sep)
+		}
+		if best != "" {
+			out = append(out, best)
+		}
+		s = strings.TrimPrefix(s[len(best):], sep)
+	}
+	return out
+}
+
 func (a Arg) Label() string {
 	if a.Prompt != "" {
 		return a.Prompt

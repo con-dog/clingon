@@ -1701,7 +1701,7 @@ func (m *Model) pickStep(items []item, a config.Arg, prev string) tea.Cmd {
 	}
 	j.usePick = true
 	if a.Multi() {
-		for _, v := range strings.Split(prev, a.Separator()) {
+		for _, v := range a.Ticked(prev) {
 			for _, it := range j.pick.items {
 				if v != "" && it.value == v {
 					j.pick.tick(it.idx, true)
@@ -2604,7 +2604,7 @@ func describe(c *config.Command, vals, said map[string]string, step int, tentati
 			v = secretMask
 		}
 		if a.CountAs != "" && v != "" {
-			if n := len(strings.Split(v, a.Separator())); n >= countFrom { // too many to name
+			if n := len(a.Ticked(v)); n >= countFrom { // too many to name
 				v = plural(n, a.CountAs)
 				if i != step { // and too many to say about, once they're chosen
 					says = ""

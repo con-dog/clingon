@@ -20,14 +20,22 @@ var (
 	accent = lipgloss.Color(PinkHex)   // 212 pink: the cursor, marks, what you act on
 	purple = lipgloss.Color("#875fff") // 99: the menu's headings, the prompt's folder
 	soft   = lipgloss.Color("#afafff") // 147 periwinkle: headings and keys in the shell's output, far enough from the prompt's purple; flags
-	grey   = lipgloss.Color("#8787af") // 103 lavender: secondary text, the prompt's branch
+	grey   = lipgloss.Color(greyHex)   // 103 lavender: secondary text, the prompt's branch
 	faint  = lipgloss.Color("#5f5f87") // 60: chrome: rules, frames, placeholders
 	raised = lipgloss.Color("0")       // ANSI black, which clingon's window makes a step lighter than its background, in its violet (internal/window): the cursor's row, the command block, bars
 	text   = lipgloss.Color("#e4e4e4") // 254: text on coloured bands
-	orange = lipgloss.Color("#ffaf5f") // 215: cautions
-	red    = lipgloss.Color("#ff5f87") // 204: errors, danger; the prompt after a failure
+	orange = lipgloss.Color(orangeHex) // 215: cautions
+	red    = lipgloss.Color(redHex)    // 204: errors, danger; the prompt after a failure
 	green  = lipgloss.Color("#5fd7af") // 79: values, all's well
 	ink    = lipgloss.Color("#121212") // 233: dark text on bright bands
+)
+
+// greyHex, orangeHex and redHex are the risk glyphs' colours, for where a
+// colour's given as a hex.
+const (
+	greyHex   = "#8787af"
+	orangeHex = "#ffaf5f"
+	redHex    = "#ff5f87"
 )
 
 // PinkHex is clingon's pink, for a pack's color field.

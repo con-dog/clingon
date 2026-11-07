@@ -618,6 +618,28 @@ func TestPackFormSectionOfYourOwn(t *testing.T) {
 	}
 }
 
+// Any number of a tick-any blank's choices can be ticked by default, even
+// ones with a space in them.
+func TestPackFormTicksSeveral(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "0/0/0/kind")
+	f.pick(t, "flags")
+	a := &f.pack.Files[0].Group.Commands[0].Args[0]
+	a.Options[0].Value = "-n 5"
+	for _, o := range []string{"0/0/0/0", "0/0/0/1"} {
+		f.onRow(t, o)
+		f.pick(t, "first")
+	}
+	if md := f.pack.Markdown()["examples.md"]; !strings.Contains(md, "  - [x] `-n 5`\n  - [x] `two`\n") {
+		t.Fatalf("both ticked:\n%s", md)
+	}
+	f.onRow(t, "0/0/0/0")
+	f.pick(t, "first")
+	if a.Default != "two" {
+		t.Errorf("unticked: %q", a.Default)
+	}
+}
+
 func TestPackFormMarksItsLines(t *testing.T) {
 	pack := strings.Split("---\nsection: code\nlogo: rocket\ncolour: orange\n---\n# Demo\nTools.\n", "\n")
 	module := strings.Split("---\nwhen: Dockerfile\n---\n# Deploy\nShip things.\n\n"+
