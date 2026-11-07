@@ -23,15 +23,15 @@ const packUsage = `Usage:
   clingon pack add NAME...       add curated packs, or single modules, like aws/ecs
   clingon pack remove NAME...    remove packs or single modules (curated or your own)
   clingon pack update [NAME...]  bring added packs up to date
-  clingon pack create [NAME]     start your own pack, as a form (or NAME LOGO COLOUR)
+  clingon pack create [NAME]     start your own pack, as a form (or NAME LOGO TINT)
   clingon pack edit NAME         edit your pack, as a form (--files: its Markdown, in micro)
-  clingon pack sections NAME     list the sections in your pack
+  clingon pack modules NAME      list the modules in your pack
   clingon pack describe NAME     print a pack's files, whether you have it or not
   clingon pack guide             how to write a pack: the folders and the format
 
 A pack comes from clingon (in packs/remote once added) or is your own (in
 packs/mine). If you have one of each with the same name, say remote/NAME or
-mine/NAME. A pack is a folder, with a file for each section: aws is all of AWS,
+mine/NAME. A pack is a folder, with a file for each module: aws is all of AWS,
 and aws/ecs is just its ECS commands.
 `
 
@@ -269,8 +269,8 @@ func packCmd(args []string) error {
 		_, err = os.Stdout.Write(data)
 		return err
 
-	case "sections":
-		ref, err := one("sections")
+	case "modules":
+		ref, err := one("modules")
 		if err != nil {
 			return err
 		}
@@ -281,7 +281,7 @@ func packCmd(args []string) error {
 			for _, s := range names {
 				rows = append(rows, row{mark: info, label: s})
 			}
-			outln(card("Sections of "+ref, rows, cardWidth()))
+			outln(card("Modules of "+ref, rows, cardWidth()))
 			return nil
 		}
 		for _, s := range names {
@@ -381,10 +381,10 @@ func isSelf(name string) bool {
 }
 
 const commandUsage = `Usage:
-  clingon command add PACK SECTION NAME COMMAND [DESCRIPTION]
+  clingon command add PACK MODULE NAME COMMAND [DESCRIPTION]
   clingon command list
 
-Commands go in your own packs; add creates the pack and section if needed.
+Commands go in your own packs; add creates the pack and module if needed.
 Each <placeholder> in COMMAND is asked for when you run it, e.g.
   clingon command add mine Deploy "Tail logs" 'kubectl logs -f deploy/<app>'
 `
@@ -398,7 +398,7 @@ func commandCmd(args []string) error {
 	case "add":
 		a := args[1:]
 		if len(a) < 4 || len(a) > 5 {
-			return fmt.Errorf("usage: clingon command add PACK SECTION NAME COMMAND [DESCRIPTION]")
+			return fmt.Errorf("usage: clingon command add PACK MODULE NAME COMMAND [DESCRIPTION]")
 		}
 		desc := ""
 		if len(a) == 5 {

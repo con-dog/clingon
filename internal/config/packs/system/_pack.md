@@ -1,5 +1,5 @@
 ---
-section: system
+menu: system
 logo: cpu
 needs: ps, pkill, df, du, base64
 ---

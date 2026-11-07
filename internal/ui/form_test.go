@@ -102,7 +102,7 @@ func TestPackFormEditsThePack(t *testing.T) {
 		t.Fatalf("shown, and not saved yet:\n%s", f.screen())
 	}
 	// A section, picked from the list dropped down under it.
-	f.onRow(t, "section")
+	f.onRow(t, "menu")
 	press(f, kEnter)
 	if !strings.Contains(f.screen(), "infrastructure") {
 		t.Fatalf("the list should be under the row:\n%s", f.screen())
@@ -491,7 +491,7 @@ func TestPackFormHasTheMenusKeys(t *testing.T) {
 	if r := f.selectedRow(); f.help || r.key != "name" {
 		t.Fatal("a key should just close the keys")
 	}
-	f.onRow(t, "section")
+	f.onRow(t, "menu")
 	press(f, kEnter, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if f.choosing != nil || f.Left != "" {
 		t.Fatal("ctrl-c should cancel the list, not leave")
@@ -548,20 +548,41 @@ func TestPackFormHintsWhereYouAre(t *testing.T) {
 	}
 }
 
-// The preview is the file the cursor's row is in: the pack's _pack.md, or
-// for a module's rows and its commands', the module's own file.
+// The preview is the pack's _pack.md, always, and under it the module the
+// cursor's in, or was last in; the file the cursor's row writes is the one
+// with its lines marked.
 func TestPackFormPreviewsItsFile(t *testing.T) {
 	f := newTestForm(t)
-	preview := func() string { return strings.TrimSpace(ansi.Strip(strings.Join(f.preview(60, 40), "\n"))) }
-	f.onRow(t, "name")
-	if p := preview(); !strings.HasPrefix(p, "_PACK.MD") || !strings.Contains(p, "# Demo") {
-		t.Errorf("the pack's rows:\n%s", p)
-	}
-	for _, key := range []string{"0/name", "0/0/cmd"} {
-		f.onRow(t, key)
-		if p := preview(); !strings.HasPrefix(p, "EXAMPLES.MD") || !strings.Contains(p, "## Say hello") || strings.Contains(p, "IN THE MENU") {
-			t.Errorf("%s: the module's file, and only that:\n%s", key, p)
+	f.pack.Files = append(f.pack.Files, config.EditableFile{Slug: "more", Group: config.Group{Name: "More", Commands: []config.Command{{Name: "Ls", Cmd: "ls"}}}})
+	f.refresh("name")
+	plain := func() string { return ansi.Strip(strings.Join(f.preview(60, 40), "\n")) }
+	order := func(p string, names ...string) bool {
+		at := 0
+		for _, n := range names {
+			k := strings.Index(p[at:], n)
+			if k < 0 {
+				return false
+			}
+			at += k
 		}
+		return true
+	}
+	f.onRow(t, "name")
+	if p := plain(); !order(p, "_PACK.MD", "# Demo", "EXAMPLES.MD", "## Say hello") {
+		t.Errorf("on the pack's rows, the pack and its first module:\n%s", p)
+	}
+	f.onRow(t, "1/name")
+	if p := plain(); !order(p, "_PACK.MD", "# Demo", "MORE.MD", "# More") || strings.Contains(p, "EXAMPLES.MD") {
+		t.Errorf("in the second module, it under the pack:\n%s", p)
+	}
+	f.onRow(t, "needs")
+	if p := plain(); !strings.Contains(p, "MORE.MD") {
+		t.Errorf("back on the pack's rows, the module last in:\n%s", p)
+	}
+	f.onRow(t, "1/0/cmd")
+	got := strings.Join(f.preview(60, 40), "\n")
+	if bar, mod := strings.Index(got, cursorBar(cursorStyle)), strings.Index(got, "MORE.MD"); strings.Count(got, cursorBar(cursorStyle)) != 1 || bar < mod {
+		t.Errorf("the command's line marked, in the module's file only:\n%s", got)
 	}
 }
 
@@ -604,10 +625,10 @@ func TestPackFormTellsTheMenuItsName(t *testing.T) {
 // the end of the list, types one on the row, starting empty.
 func TestPackFormSectionOfYourOwn(t *testing.T) {
 	f := newTestForm(t)
-	f.onRow(t, "section")
+	f.onRow(t, "menu")
 	press(f, kEnter)
 	last := f.options[len(f.options)-1]
-	if f.options[0].Value != "ai" || last.Label != "+ New section" {
+	if f.options[0].Value != "ai" || last.Label != "+ New menu" {
 		t.Fatalf("options: %+v", f.options)
 	}
 	press(f, kLeft)
@@ -617,7 +638,7 @@ func TestPackFormSectionOfYourOwn(t *testing.T) {
 	}
 	f.input.SetValue("Hello There!")
 	press(f, kEnter)
-	if f.pack.Section != "hello-there" || !strings.Contains(f.pack.Markdown()[config.PackInfoFile], "section: hello-there\n") {
+	if f.pack.Section != "hello-there" || !strings.Contains(f.pack.Markdown()[config.PackInfoFile], "menu: hello-there\n") {
 		t.Fatalf("section %q", f.pack.Section)
 	}
 	// It's in the list from then on; the list opens at its top, as every list does.
@@ -730,7 +751,7 @@ func TestPackFormRenamesABlank(t *testing.T) {
 }
 
 func TestPackFormMarksItsLines(t *testing.T) {
-	pack := strings.Split("---\nsection: code\nlogo: rocket\ncolour: orange\n---\n# Demo\nTools.\n", "\n")
+	pack := strings.Split("---\nmenu: code\nlogo: rocket\ntint: orange\n---\n# Demo\nTools.\n", "\n")
 	module := strings.Split("---\nwhen: Dockerfile\n---\n# Deploy\nShip things.\n\n"+
 		"## Build\n\n```sh\ndocker build .\n```\n\n"+
 		"## Push it\n> [!WARNING]\n> Pushes.\n\n```sh needs=docker\ndocker push <image> <tag>\n```\n\n"+
@@ -742,8 +763,8 @@ func TestPackFormMarksItsLines(t *testing.T) {
 	}{
 		{"name", pack, "# Demo"},
 		{"desc", pack, "Tools."},
-		{"colour", pack, "colour: orange"},
-		{"section", pack, "section: code"},
+		{"tint", pack, "tint: orange"},
+		{"menu", pack, "menu: code"},
 		{"0/when", module, "when: Dockerfile"},
 		{"0/desc", module, "Ship things."},
 		{"0/0/name", module, "## Build"},

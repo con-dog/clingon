@@ -1,5 +1,5 @@
 ---
-section: databases
+menu: databases
 logo: postgres
 needs: psql
 ---

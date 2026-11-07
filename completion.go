@@ -45,12 +45,12 @@ _clingon() {
   case $words[2] in
     pack|packs)
       if (( CURRENT == 3 )); then
-        compadd list available add remove create update edit sections describe guide
+        compadd list available add remove create update edit modules describe guide
         return
       fi
       case $words[3] in
         add) compadd -- ${(f)"$(clingon pack available --short 2>/dev/null | cut -f1)"} ;;
-        remove|rm|sections) compadd -- ${(f)"$(clingon pack list --short 2>/dev/null | cut -f1)"} ;;
+        remove|rm|modules) compadd -- ${(f)"$(clingon pack list --short 2>/dev/null | cut -f1)"} ;;
         update) compadd -- ${(f)"$(clingon pack list --remote --short 2>/dev/null | cut -f1)"} ;;
         edit) compadd -- ${(f)"$(clingon pack list --mine --short 2>/dev/null | cut -f1)"} ;;
         describe|cat) compadd -- ${(f)"$(clingon pack list --short 2>/dev/null | cut -f1)"} ${(f)"$(clingon pack available --short 2>/dev/null | cut -f1)"} ;;
@@ -76,7 +76,7 @@ const bashCompletion = `_clingon() {
     1) words="print pack command recipe edit check doctor crash update welcome completion version help" ;;
     2)
       case ${COMP_WORDS[1]} in
-        pack|packs) words="list available add remove create update edit sections describe guide" ;;
+        pack|packs) words="list available add remove create update edit modules describe guide" ;;
         command|commands|cmd) words="add list" ;;
         recipe|recipes) words="add remove list describe" ;;
         doctor) words=$(clingon pack list --remote --short 2>/dev/null | cut -f1) ;;

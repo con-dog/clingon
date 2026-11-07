@@ -1,5 +1,5 @@
 ---
-section: system
+menu: system
 logo: globe
 needs: lsof, curl, ping
 ---

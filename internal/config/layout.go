@@ -10,9 +10,9 @@ import (
 	"strings"
 )
 
-// sectionSlugs are the sections clingon suggests, as a pack's _pack.md names
-// one with section: (infrastructure is Infrastructure). Every _pack.md names a
-// section: one of these, or one of your own, like work-tools.
+// sectionSlugs are the menu's sections clingon suggests, as a pack's _pack.md
+// names one with menu: (infrastructure is Infrastructure). Every _pack.md
+// names one: one of these, or one of your own, like work-tools.
 var sectionSlugs = map[string]string{
 	"other":          Other,
 	"ai":             "AI",
@@ -62,11 +62,11 @@ func SectionSlug(typed string) (string, error) {
 func checkSection(s string) error {
 	switch {
 	case s == "":
-		return fmt.Errorf("a section needs a name: one of %s, or one of your own", strings.Join(SectionSlugs(), ", "))
+		return fmt.Errorf("menu: needs a name: one of %s, or one of your own", strings.Join(SectionSlugs(), ", "))
 	case !sectionRe.MatchString(s):
-		return fmt.Errorf("a section's name is lowercase letters, digits and -, like work-tools (not %s)", s)
+		return fmt.Errorf("a menu name is lowercase letters, digits and -, like work-tools (not %s)", s)
 	case reservedSections[s]:
-		return fmt.Errorf("%s is clingon's own heading: call the section something else", SectionName(s))
+		return fmt.Errorf("%s is clingon's own heading: give the menu another name", SectionName(s))
 	}
 	return nil
 }
@@ -82,7 +82,7 @@ var logoColors = map[string]string{
 	"cpu": "#af87ff", "shield": "#ffd75f",
 }
 
-// PackColors are the colours a pack's logo can be given with colour: in its
+// PackColors are the colours a pack's logo can be given with tint: in its
 // _pack.md, by name, in the order `clingon pack create` offers them.
 var PackColors = []struct{ Name, Hex string }{
 	{"grey", "#8787af"}, {"pink", "#ff87d7"}, {"purple", "#af87ff"}, {"blue", "#5f87ff"},

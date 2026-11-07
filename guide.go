@@ -11,7 +11,7 @@ import (
 // guideExample is the pack file `clingon pack guide` shows: harmless commands,
 // since people copy from it.
 // guidePackInfo is the guide's _pack.md, shown indented in guideRest.
-const guidePackInfo = "---\nsection: infrastructure\nlogo: terminal\n---\n# Deploy tools\n"
+const guidePackInfo = "---\nmenu: infrastructure\nlogo: terminal\n---\n# Deploy tools\n"
 
 const guideExample = "# Deploy\n" +
 	"Look around before you ship.\n" +
@@ -69,12 +69,12 @@ Every pack has one _pack.md next to its modules. It names the pack, says
 which section of the menu it's in, and picks one of clingon's logos:
 
   ---
-  section: infrastructure
+  menu: infrastructure
   logo: terminal
   ---
   # Deploy tools
 
-Every _pack.md has a section: ai, code, command-line, databases,
+Every _pack.md has a menu: ai, code, command-line, databases,
 infrastructure, system, other, or a name of your own, like work-tools.
 
 What you type goes into your shell as written. A blank whose name has

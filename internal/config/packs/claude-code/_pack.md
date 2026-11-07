@@ -1,5 +1,5 @@
 ---
-section: ai
+menu: ai
 logo: claude
 needs: claude
 ---

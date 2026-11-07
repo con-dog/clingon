@@ -14,7 +14,7 @@ import (
 //
 //	---                    front matter, optional: settings for the whole file
 //	needs: docker          programs every command needs (and in _pack.md,
-//	                       section:, which it must have, logo: and colour:)
+//	                       menu:, which it must have, logo: and tint:)
 //	when: compose.yaml     files that must be here or in a folder above
 //	---
 //	# Name                 the pack's or module's name; every file starts with one
@@ -219,24 +219,24 @@ func withoutCode(l string) string {
 // parsePack reads a _pack.md.
 func parsePack(path string, data []byte) (*packInfo, error) {
 	m := &mdLines{path: path, lines: stripComments(strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n"))}
-	fm, err := m.frontMatter("section", "logo", "colour", "needs")
+	fm, err := m.frontMatter("menu", "logo", "tint", "needs")
 	if err != nil {
 		return nil, err
 	}
 	keyAt := func(key string) int {
 		return max(slices.IndexFunc(m.lines, func(l string) bool { return strings.HasPrefix(strings.TrimSpace(l), key+":") }), 0)
 	}
-	s := fm["section"]
+	s := fm["menu"]
 	if s == "" {
-		return nil, m.errf(0, "_pack.md says which section of the menu the pack is in, in its front matter: section: and one of %s, or one of your own", strings.Join(SectionSlugs(), ", "))
+		return nil, m.errf(0, "_pack.md says where in the menu the pack goes, in its front matter: menu: and one of %s, or one of your own", strings.Join(SectionSlugs(), ", "))
 	}
 	if err := checkSection(s); err != nil {
-		return nil, m.errf(keyAt("section"), "%s", err)
+		return nil, m.errf(keyAt("menu"), "%s", err)
 	}
 	hex := ""
-	if c := fm["colour"]; c != "" {
+	if c := fm["tint"]; c != "" {
 		if hex = colorHex(c); hex == "" {
-			return nil, m.errf(keyAt("colour"), "there's no colour called %s: use one of %s", c, colorNames())
+			return nil, m.errf(keyAt("tint"), "there's no tint called %s: use one of %s", c, colorNames())
 		}
 	}
 	name, desc, err := m.title()

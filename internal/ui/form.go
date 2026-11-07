@@ -51,6 +51,7 @@ type PackForm struct {
 
 	// The part the cursor's in, shown whole; the others are folded to
 	// their heading and name. -1 is the pack, -2 nothing (Add a module).
+	lastSub int             // the module the cursor was last in, for the preview to show under _pack.md
 	toggled map[string]bool // modules ("1") and commands ("1/2") opened or collapsed by hand; open unless said
 	noFold  bool            // building every row, to measure them
 
@@ -514,7 +515,7 @@ func (f *PackForm) packRows() []formRow {
 	if !slices.ContainsFunc(sections, func(o config.Option) bool { return o.Value == p.Section }) {
 		sections = append(sections, config.Option{Value: p.Section})
 	}
-	sections = append(sections, config.Option{Value: newSection, Label: "+ New section"})
+	sections = append(sections, config.Option{Value: newSection, Label: "+ New menu"})
 	var logos []config.Option
 	for _, n := range config.PackLogos {
 		logos = append(logos, config.Option{Value: n, Icon: config.Logos[n]}) // all grey: a choice of shape, colour's the next row
@@ -533,7 +534,7 @@ func (f *PackForm) packRows() []formRow {
 		{label: "Pack", header: true},
 		{key: "name", label: "Name", value: p.Title, look: mdLook("# ", ""), help: "What the menu calls the pack.", text: func(v string) error { f.pack.Title = v; return nil }},
 		{key: "desc", label: "Desc", value: p.Description, hint: "one line on what's in it", help: "One line on what's in it, shown by clingon pack.", text: func(v string) error { f.pack.Description = v; return nil }},
-		{key: "section", label: "Menu", value: p.Section, look: frontLook("section"), help: "Where the menu shows it: one of these, or + New section for one of your own.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil },
+		{key: "menu", label: "Menu", value: p.Section, look: frontLook("menu"), help: "Where the menu shows it: one of these, or + New menu for one of your own.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil },
 			text: func(v string) error {
 				s, err := config.SectionSlug(v)
 				if err == nil {
@@ -542,7 +543,7 @@ func (f *PackForm) packRows() []formRow {
 				return err
 			}},
 		{key: "logo", label: "Logo", value: p.Logo, look: frontLook("logo"), icon: config.Logos[p.Logo], color: f.logoColour(), help: "Its icon in the menu.", options: logos, pick: func(v string) error { f.pack.Logo = v; return nil }},
-		{key: "colour", label: "Tint", value: colour, look: frontLook("colour"), icon: slotIcon("●"), color: colourHex, help: "The logo's colour.", options: colours, pick: func(v string) error { f.pack.Color = v; return nil }},
+		{key: "tint", label: "Tint", value: colour, look: frontLook("tint"), icon: slotIcon("●"), color: colourHex, help: "The logo's colour.", options: colours, pick: func(v string) error { f.pack.Color = v; return nil }},
 		{key: "needs", label: "Need", value: joined(p.Needs), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs the pack needs, separated by commas: the status bar warns you while one's missing.", text: func(v string) error { f.pack.Needs = splitComma(v); return nil }},
 	}
 	if f.folded(-1, -1) {
@@ -1495,22 +1496,38 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 	return lead + " " + rest
 }
 
-// preview is the Markdown file the cursor's row is in, as it'll be saved,
+// preview is the pack's _pack.md, and under it the module the cursor's in
+// (or was last in), as they'll be saved,
 // coloured as micro colours it: the pack's _pack.md, or a module's file
 // for its rows and its commands'.
 func (f *PackForm) preview(w, h int) []string {
-	r := f.selectedRow()
-	if r == nil {
-		return nil
+	md := f.pack.Markdown()
+	key, sub := "", -2
+	if r := f.selectedRow(); r != nil {
+		key = r.key
+		sub, _ = openPart(key)
 	}
-	file := config.PackInfoFile
-	switch sub, _ := openPart(r.key); {
-	case sub == -2:
-		return nil
-	case sub >= 0 && sub < len(f.pack.Files):
-		file = f.pack.Files[sub].Slug + ".md"
+	if sub >= 0 {
+		f.lastSub = sub
 	}
-	return filePreview(file, f.pack.Markdown()[file], marked(r.key, strings.Split(f.pack.Markdown()[file], "\n")), w, h)
+	f.lastSub = min(f.lastSub, len(f.pack.Files)-1)
+	lines := func(file string) []string { return strings.Split(md[file], "\n") }
+	// The pack's own file, always, whole unless it would take over half.
+	var on map[int]bool
+	if sub == -1 {
+		on = marked(key, lines(config.PackInfoFile))
+	}
+	out := filePreview(config.PackInfoFile, md[config.PackInfoFile], on, w, max(h/2, 1))
+	if f.lastSub < 0 {
+		return out
+	}
+	// Under it, the module you're in, or were last in, in what's left.
+	file := f.pack.Files[f.lastSub].Slug + ".md"
+	on = nil
+	if sub == f.lastSub {
+		on = marked(key, lines(file))
+	}
+	return append(append(out, ""), filePreview(file, md[file], on, w, max(h-len(out)-1, 3))...)
 }
 
 func fit2(lines []string, h int) []string {
@@ -1615,7 +1632,7 @@ func marked(key string, lines []string) map[int]bool {
 			mark(title, title)
 		case "desc":
 			descOf(title+1, last)
-		case "section", "logo", "colour", "needs":
+		case "menu", "logo", "tint", "needs":
 			mark(find(field+":", 1, fmEnd-1), find(field+":", 1, fmEnd-1))
 		}
 	case len(parts) == 2: // a module's own

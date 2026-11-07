@@ -70,7 +70,7 @@ func TestEditablePack(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(localDir(), "work", "deploy.md")); err != nil {
 		t.Fatalf("saved in its folder: %v", err)
 	}
-	if info, _ := os.ReadFile(filepath.Join(localDir(), "work", PackInfoFile)); !strings.HasPrefix(string(info), "---\nsection: infrastructure\n") {
+	if info, _ := os.ReadFile(filepath.Join(localDir(), "work", PackInfoFile)); !strings.HasPrefix(string(info), "---\nmenu: infrastructure\n") {
 		t.Errorf("the section is in _pack.md: %q", info)
 	}
 	cfg, _, err := Load()

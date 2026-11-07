@@ -1815,7 +1815,7 @@ func writeProject(t *testing.T, repo, module string) {
 	if err := os.WriteFile(filepath.Join(dir, "prod.md"), []byte(module), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, config.PackInfoFile), []byte("---\nsection: other\n---\n# Deploy\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, config.PackInfoFile), []byte("---\nmenu: other\n---\n# Deploy\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

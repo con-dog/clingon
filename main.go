@@ -425,7 +425,7 @@ func editPackAs(ref, done string) error {
 		say(warn, "`clingon pack update` overwrites curated packs")
 	case !config.IsLocal(name):
 		if strings.Contains(name, "/") {
-			return fmt.Errorf("you don't have mine/%s: `clingon command add` starts a section", name)
+			return fmt.Errorf("you don't have mine/%s: `clingon command add` starts one", name)
 		}
 		if err := config.NewPack(name); err != nil {
 			return err

@@ -1,5 +1,5 @@
 ---
-section: system
+menu: system
 logo: terminal
 needs: ssh, ssh-keygen
 ---

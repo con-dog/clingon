@@ -170,7 +170,7 @@ A `_pack.md` names the pack, says which section of the menu it's in, and can pic
 
 ```md
 ---
-section: infrastructure
+menu: infrastructure
 logo: terminal
 needs: kubectl
 ---
@@ -178,7 +178,7 @@ needs: kubectl
 Pods, logs and rollouts.
 ```
 
-`section:` is where the menu shows the pack, and every `_pack.md` has one: `ai`, `code`, `command-line`, `databases`, `infrastructure`, `system`, `other`, or a name of your own, like `work-tools`, which gets a heading of its own (Work tools). Section names are lowercase, with `-` between words.
+`menu:` is where the menu shows the pack, and every `_pack.md` has one: `ai`, `code`, `command-line`, `databases`, `infrastructure`, `system`, `other`, or a name of your own, like `work-tools`, which gets a heading of its own (Work tools). Menu names are lowercase, with `-` between words.
 
 Give a command a callout:
 

@@ -1,5 +1,5 @@
 ---
-section: code
+menu: code
 logo: go
 needs: go
 ---

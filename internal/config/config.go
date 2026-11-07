@@ -49,7 +49,7 @@ type packInfo struct {
 	Logo        string   `yaml:"logo"`
 	Color       string   `yaml:"color"`
 	Category    string   `yaml:"category"`
-	Section     string   `yaml:"-"` // as section: names it: work-tools, for Work tools
+	Section     string   `yaml:"-"` // as menu: names it: work-tools, for Work tools
 }
 
 // Categories are the main menu's headings clingon suggests, in order
@@ -285,12 +285,12 @@ func needsInfo(dir string, parts []parsedFile) error {
 	if len(parts) == 0 || slices.ContainsFunc(parts, func(p parsedFile) bool { return p.info != nil }) {
 		return nil
 	}
-	return fmt.Errorf("%s has no %s: every pack has one, with its # Name and section: (one of %s, or one of your own)", dir, PackInfoFile, strings.Join(SectionSlugs(), ", "))
+	return fmt.Errorf("%s has no %s: every pack has one, with its # Name and menu: (one of %s, or one of your own)", dir, PackInfoFile, strings.Join(SectionSlugs(), ", "))
 }
 
 // newPackInfo is the _pack.md a pack gets when clingon starts it.
 func newPackInfo(title string) []byte {
-	return []byte("---\nsection: other\nlogo: " + DefaultPackLogo + "\n---\n# " + title + "\n")
+	return []byte("---\nmenu: other\nlogo: " + DefaultPackLogo + "\n---\n# " + title + "\n")
 }
 
 // parsedFile is one file of a pack: its _pack.md, or a module.

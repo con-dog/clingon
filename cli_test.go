@@ -102,7 +102,7 @@ func TestCheckIncludesTheProjectPack(t *testing.T) {
 	if err := os.WriteFile(module, []byte("# Prod\n\n## Ship\n\n```sh\n./ship.sh\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(module), config.PackInfoFile), []byte("---\nsection: other\n---\n# Deploy\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(filepath.Dir(module), config.PackInfoFile), []byte("---\nmenu: other\n---\n# Deploy\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, err := output(t, check)

@@ -1,5 +1,5 @@
 ---
-section: system
+menu: system
 logo: folder
 needs: find, grep, tar, rsync, less, diff
 ---

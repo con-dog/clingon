@@ -171,11 +171,11 @@ func TestLoadMergesFiles(t *testing.T) {
 		}
 	}
 	// Two packs called the same thing in the menu, and one that's not.
-	write("a", "_pack.md", "---\nsection: code\n---\n# Git\n")
+	write("a", "_pack.md", "---\nmenu: code\n---\n# Git\n")
 	write("a", "g.md", md("G", "one", "git status"))
-	write("b", "_pack.md", "---\nsection: code\n---\n# Git\n")
+	write("b", "_pack.md", "---\nmenu: code\n---\n# Git\n")
 	write("b", "g.md", md("G", "two", "git log"))
-	write("other", "_pack.md", "---\nsection: other\n---\n# Other\n")
+	write("other", "_pack.md", "---\nmenu: other\n---\n# Other\n")
 	write("other", "h.md", md("H", "three", "ls"))
 	cfg, files, err := Load()
 	if err != nil {
@@ -195,8 +195,8 @@ func TestLoadSortsAlphabetically(t *testing.T) {
 		"zed/later.md":   md("Later", "b", "ls", "A", "ls"),
 		"zed/early.md":   md("early", "x", "ls"),
 		"alpha/one.md":   md("One", "c", "ls"),
-		"alpha/_pack.md": "---\nsection: other\n---\n# Alpha\n",
-		"zed/_pack.md":   "---\nsection: other\n---\n# zed\n",
+		"alpha/_pack.md": "---\nmenu: other\n---\n# Alpha\n",
+		"zed/_pack.md":   "---\nmenu: other\n---\n# zed\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
 			t.Fatal(err)
@@ -221,8 +221,8 @@ func TestGroupsNeedTheirTools(t *testing.T) {
 		"a/here.md":  "---\nneeds: sh\n---\n" + md("here", "a", "ls"),
 		"a/gone.md":  "---\nneeds: no-such-tool-xyz\n---\n" + md("gone", "b", "ls"),
 		"b/gone.md":  "---\nneeds: no-such-tool-xyz\n---\n" + md("gone", "c", "ls"),
-		"a/_pack.md": "---\nsection: other\n---\n# A\n",
-		"b/_pack.md": "---\nsection: other\n---\n# B\n",
+		"a/_pack.md": "---\nmenu: other\n---\n# A\n",
+		"b/_pack.md": "---\nmenu: other\n---\n# B\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
 			t.Fatal(err)

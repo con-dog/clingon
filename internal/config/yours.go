@@ -270,7 +270,7 @@ func NewPackWithLogo(name, logo, color string) error {
 		return fmt.Errorf("there's no logo called %s: try one of %s", logo, strings.Join(PackLogos, ", "))
 	}
 	if color != "" && colorHex(color) == "" {
-		return fmt.Errorf("there's no colour called %s: try one of %s", color, colorNames())
+		return fmt.Errorf("there's no tint called %s: try one of %s", color, colorNames())
 	}
 	if err := checkPackName(name); err != nil {
 		return err
@@ -285,7 +285,7 @@ func NewPackWithLogo(name, logo, color string) error {
 	info := strings.Replace(string(StarterInfo), "# My commands", "# "+sectionTitle(name), 1)
 	logoLine := "logo: " + logo
 	if color != "" {
-		logoLine += "\ncolour: " + color
+		logoLine += "\ntint: " + color
 	}
 	info = strings.Replace(info, "logo: "+DefaultPackLogo, logoLine, 1)
 	if err := os.WriteFile(filepath.Join(dir, PackInfoFile), []byte(info), 0o644); err != nil {

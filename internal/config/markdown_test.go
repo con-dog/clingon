@@ -68,7 +68,7 @@ func TestMarkdownCommand(t *testing.T) {
 }
 
 func TestMarkdownPackFile(t *testing.T) {
-	part, err := parsePackFile(PackInfoFile, []byte("---\nsection: infrastructure\nlogo: docker\nneeds: docker, git\n---\n# Docker\nContainers and images.\n"))
+	part, err := parsePackFile(PackInfoFile, []byte("---\nmenu: infrastructure\nlogo: docker\nneeds: docker, git\n---\n# Docker\nContainers and images.\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,20 +113,20 @@ func TestMarkdownMistakes(t *testing.T) {
 			t.Errorf("%s: want %q, got %v", c.name, c.want, err)
 		}
 	}
-	if _, err := parsePackFile(PackInfoFile, []byte("---\nsection: other\n---\n# P\nAbout.\n\n## A command\n")); err == nil || !strings.Contains(err.Error(), "go in a module file") {
+	if _, err := parsePackFile(PackInfoFile, []byte("---\nmenu: other\n---\n# P\nAbout.\n\n## A command\n")); err == nil || !strings.Contains(err.Error(), "go in a module file") {
 		t.Errorf("_pack.md with a command: %v", err)
 	}
 }
 
 func TestPackColour(t *testing.T) {
-	part, err := parsePackFile(PackInfoFile, []byte("---\nsection: other\nlogo: rocket\ncolour: orange\n---\n# Launch\n"))
+	part, err := parsePackFile(PackInfoFile, []byte("---\nmenu: other\nlogo: rocket\ntint: orange\n---\n# Launch\n"))
 	if err != nil || part.info.Color != "#ff8700" {
 		t.Fatalf("got %+v %v", part.info, err)
 	}
-	if _, err := parsePackFile(PackInfoFile, []byte("---\nsection: other\ncolour: mauve\n---\n# X\n")); err == nil || !strings.Contains(err.Error(), "no colour called mauve") {
+	if _, err := parsePackFile(PackInfoFile, []byte("---\nmenu: other\ntint: mauve\n---\n# X\n")); err == nil || !strings.Contains(err.Error(), "no tint called mauve") {
 		t.Errorf("an unknown colour: %v", err)
 	}
-	if _, err := parsePackFile("s.md", []byte("---\ncolour: orange\n---\n# S\n")); err == nil {
+	if _, err := parsePackFile("s.md", []byte("---\ntint: orange\n---\n# S\n")); err == nil {
 		t.Error("a module has no colour of its own")
 	}
 }
@@ -135,26 +135,26 @@ func TestPackColour(t *testing.T) {
 // It's one clingon suggests or one of your own, lowercase.
 func TestPackSection(t *testing.T) {
 	g := parsedFile{group: &Group{Name: "G", Commands: []Command{{Name: "ps", Cmd: "ps"}}}}
-	if _, err := parsePackFile(PackInfoFile, []byte("# Plain\n")); err == nil || !strings.Contains(err.Error(), ":1: _pack.md says which section") {
+	if _, err := parsePackFile(PackInfoFile, []byte("# Plain\n")); err == nil || !strings.Contains(err.Error(), ":1: _pack.md says where in the menu") {
 		t.Errorf("no section: %v", err)
 	}
-	if _, err := parsePackFile(PackInfoFile, []byte("---\nsection:\n---\n# Plain\n")); err == nil || !strings.Contains(err.Error(), "says which section") {
+	if _, err := parsePackFile(PackInfoFile, []byte("---\nmenu:\n---\n# Plain\n")); err == nil || !strings.Contains(err.Error(), "says where in the menu") {
 		t.Errorf("an empty section: %v", err)
 	}
-	part, err := parsePackFile(PackInfoFile, []byte("---\nsection: other\n---\n# Plain\n"))
+	part, err := parsePackFile(PackInfoFile, []byte("---\nmenu: other\n---\n# Plain\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c := assemble("plain", []parsedFile{part, g}); c.Sections[0].Category != Other {
 		t.Errorf("other: %q", c.Sections[0].Category)
 	}
-	part, err = parsePackFile(PackInfoFile, []byte("---\nsection: work-tools\n---\n# Mine\n"))
+	part, err = parsePackFile(PackInfoFile, []byte("---\nmenu: work-tools\n---\n# Mine\n"))
 	if err != nil || part.info.Section != "work-tools" || part.info.Category != "Work tools" {
 		t.Errorf("a section of your own: %v %+v", err, part.info)
 	}
 	for src, want := range map[string]string{
-		"---\nlogo: rocket\nsection: Work Tools\n---\n# X\n": ":3: a section's name is lowercase letters, digits and -, like work-tools",
-		"---\nsection: clingon\n---\n# X\n":                  "Clingon is clingon's own heading",
+		"---\nlogo: rocket\nmenu: Work Tools\n---\n# X\n": ":3: a menu name is lowercase letters, digits and -, like work-tools",
+		"---\nmenu: clingon\n---\n# X\n":                  "Clingon is clingon's own heading",
 	} {
 		if _, err := parsePackFile(PackInfoFile, []byte(src)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: want %q, got %v", src, want, err)
@@ -167,7 +167,7 @@ func TestPackSection(t *testing.T) {
 	if strings.Join(cats, ",") != "AI,Code,Command Line,Databases,Infrastructure,System,Work tools,Other" {
 		t.Errorf("headings: %v", cats)
 	}
-	if _, err := parsePackFile("s.md", []byte("---\nsection: code\n---\n# S\n")); err == nil {
+	if _, err := parsePackFile("s.md", []byte("---\nmenu: code\n---\n# S\n")); err == nil {
 		t.Error("a module has no section of its own")
 	}
 	for _, slug := range builtinPackNames() {
@@ -196,7 +196,7 @@ func TestCheckFile(t *testing.T) {
 	if len(ps) != 1 || ps[0].Line != 9 || !strings.Contains(ps[0].Message, "never used") {
 		t.Errorf("a check of the whole command, at its heading: %+v", ps)
 	}
-	if ps := CheckFile("/tmp/mine/work/_pack.md", []byte("---\nsection: other\nlogo: rocket\ncolour: mauve\n---\n# W\n")); len(ps) != 1 || ps[0].Line != 4 {
+	if ps := CheckFile("/tmp/mine/work/_pack.md", []byte("---\nmenu: other\nlogo: rocket\ntint: mauve\n---\n# W\n")); len(ps) != 1 || ps[0].Line != 4 {
 		t.Errorf("_pack.md: %+v", ps)
 	}
 }

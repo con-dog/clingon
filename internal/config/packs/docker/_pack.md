@@ -1,5 +1,5 @@
 ---
-section: infrastructure
+menu: infrastructure
 logo: docker
 needs: docker
 ---

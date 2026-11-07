@@ -286,7 +286,7 @@ func TestYourOwnFolderIsNotAProject(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "deploy", "prod.md"), []byte("# Deploy\n\n## Ship\n\n```sh\n./ship.sh\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "deploy", PackInfoFile), []byte("---\nsection: other\n---\n# Deploy\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ProjectDir, "deploy", PackInfoFile), []byte("---\nmenu: other\n---\n# Deploy\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	p := FindProject(filepath.Join(repo))
@@ -314,7 +314,7 @@ func TestProjectPacksAreTrustedWhole(t *testing.T) {
 	if p := FindProject(repo); p == nil || p.Err == nil || !strings.Contains(p.Err.Error(), "deploy has no _pack.md") {
 		t.Fatalf("a project pack needs its _pack.md too: %+v", p)
 	}
-	write(PackInfoFile, "---\nsection: other\n---\n# Deploy\n")
+	write(PackInfoFile, "---\nmenu: other\n---\n# Deploy\n")
 	p := FindProject(repo)
 	if p == nil || p.Err != nil || p.Trusted {
 		t.Fatalf("got %+v", p)
@@ -465,7 +465,7 @@ func TestNewPackLogo(t *testing.T) {
 	if colors["Launch"] != "#ff8700" || colors["Plain"] != LogoColor(DefaultPackLogo) {
 		t.Errorf("the chosen colour, else the logo's own: %v", colors)
 	}
-	if err := NewPackWithLogo("odd", "rocket", "mauve"); err == nil || !strings.Contains(err.Error(), "no colour called mauve") {
+	if err := NewPackWithLogo("odd", "rocket", "mauve"); err == nil || !strings.Contains(err.Error(), "no tint called mauve") {
 		t.Errorf("an unknown colour: %v", err)
 	}
 }

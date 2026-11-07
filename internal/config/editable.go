@@ -15,7 +15,7 @@ import (
 // pack is read in (see markdown.go). Comments in the files aren't kept.
 type EditablePack struct {
 	Folder      string // the pack's folder name: what `clingon pack` calls it
-	Section     string // its section, as section: names it: ai, code, …, other
+	Section     string // where in the menu, as menu: names it: ai, code, …, other
 	Title       string // its name in the menu
 	Description string
 	Logo        string   // one of Logos
@@ -200,12 +200,12 @@ func (p *EditablePack) Save() error {
 func packMarkdown(p *EditablePack) string {
 	var b strings.Builder
 	var fm []string
-	fm = append(fm, "section: "+p.Section)
+	fm = append(fm, "menu: "+p.Section)
 	if p.Logo != "" {
 		fm = append(fm, "logo: "+p.Logo)
 	}
 	if p.Color != "" {
-		fm = append(fm, "colour: "+p.Color)
+		fm = append(fm, "tint: "+p.Color)
 	}
 	if len(p.Needs) > 0 {
 		fm = append(fm, "needs: "+strings.Join(p.Needs, ", "))
