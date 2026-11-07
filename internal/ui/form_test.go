@@ -419,7 +419,7 @@ func TestPackFormHeadingsStick(t *testing.T) {
 			t.Fatalf("line %d should be %s:\n%s", 6+i, want, f.screen())
 		}
 	}
-	if !strings.Contains(f.screen(), "Default") {
+	if !strings.Contains(f.screen(), "Base") {
 		t.Fatalf("and the cursor's row in view:\n%s", f.screen())
 	}
 }
@@ -502,18 +502,18 @@ func TestPackFormHasTheMenusKeys(t *testing.T) {
 func TestPackFormFoldsTheOtherParts(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "name")
-	if p := f.page(); !strings.Contains(p, "Section") || strings.Contains(p, "Say hello") || !strings.Contains(p, "· 1 command") {
+	if p := f.page(); !strings.Contains(p, "Menu  ") || strings.Contains(p, "Say hello") || !strings.Contains(p, "· 1 command") {
 		t.Errorf("in the pack, its module folded:\n%s", p)
 	}
 	press(f, kDown, kDown, kDown, kDown, kDown, kDown) // past Needs, into the module
 	if r := f.selectedRow(); r == nil || r.key != "0/name" {
 		t.Fatalf("down from the pack's last row: %+v", r)
 	}
-	if p := f.page(); strings.Contains(p, "Section") || !strings.Contains(p, "Say hello") || strings.Contains(p, "Prints a greeting.") {
+	if p := f.page(); strings.Contains(p, "Menu  ") || !strings.Contains(p, "Say hello") || strings.Contains(p, "Prints a greeting.") {
 		t.Errorf("in the module, the pack and its command folded:\n%s", p)
 	}
 	press(f, kUp)
-	if r := f.selectedRow(); r == nil || r.key != "name" || !strings.Contains(f.page(), "Section") {
+	if r := f.selectedRow(); r == nil || r.key != "name" || !strings.Contains(f.page(), "Menu  ") {
 		t.Errorf("back up, onto the pack's name, opens it: %+v\n%s", r, f.page())
 	}
 }
