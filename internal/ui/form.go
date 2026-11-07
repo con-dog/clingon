@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -71,6 +72,7 @@ type formRow struct {
 	depth                    int  // 0 the pack's, 1 a module's, 2 a command's: how far in its tree guides go
 	branch                   bool // an add that ends its level, drawn on the tree's └─
 	icon, color              string
+	look                     func(string) string // the value coloured as it is in the Markdown, if it's coloured there
 	risk                     string
 	// One of: typed in, picked from options, or done (after a No/Yes, with
 	// confirm as the Yes).
@@ -418,6 +420,36 @@ func (f *PackForm) pageRows() []formRow {
 	)
 }
 
+// mdLook colours a value as the preview colours it: the line it's on in the
+// Markdown, before and after being what's around it there, coloured as micro
+// colours the file, cut down to the value.
+func mdLook(before, after string) func(string) string {
+	return func(v string) string {
+		lines := strings.Split(micro.Markdown(before+v+after), "\n")
+		pre := ansi.StringWidth(before[strings.LastIndex(before, "\n")+1:])
+		cut := ansi.Cut(lines[strings.Count(before, "\n")], pre, pre+ansi.StringWidth(v))
+		return emptySGR.ReplaceAllString(cut, "") // what's left of the colour of what was cut away
+	}
+}
+
+// emptySGR is a colour that's set and reset with nothing in it.
+var emptySGR = regexp.MustCompile(`\x1b\[[0-9;]*m\x1b\[0?m`)
+
+// frontLook colours a setting's value as it is in the front matter.
+func frontLook(key string) func(string) string { return mdLook("---\n"+key+": ", "\n---") }
+
+// iconGap is the space after an icon before its text: one after a glyph that
+// fills its cell, as the menu has after ⚠ and ☠; two after one of clingon's
+// font's logos and centred twins, drawn across two cells.
+func iconGap(icon string) string {
+	for _, r := range icon {
+		if r >= 0xE000 && r <= 0xF8FF { // the font's own, in the private use area
+			return "  "
+		}
+	}
+	return " "
+}
+
 // newSection is the Section list's last option: a section of your own, typed.
 const newSection = "\x00new"
 
@@ -448,9 +480,9 @@ func (f *PackForm) packRows() []formRow {
 	}
 	rows := []formRow{
 		{label: "Pack", header: true},
-		{key: "name", label: "Name", value: p.Title, help: "What the menu calls the pack.", text: func(v string) error { f.pack.Title = v; return nil }},
+		{key: "name", label: "Name", value: p.Title, look: mdLook("# ", ""), help: "What the menu calls the pack.", text: func(v string) error { f.pack.Title = v; return nil }},
 		{key: "desc", label: "Description", value: p.Description, hint: "one line on what's in it", help: "One line on what's in it, shown by clingon pack.", text: func(v string) error { f.pack.Description = v; return nil }},
-		{key: "section", label: "Section", value: p.Section, help: "Where the menu shows it: one of these, or + New section for one of your own.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil },
+		{key: "section", label: "Section", value: p.Section, look: frontLook("section"), help: "Where the menu shows it: one of these, or + New section for one of your own.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil },
 			text: func(v string) error {
 				s, err := config.SectionSlug(v)
 				if err == nil {
@@ -458,9 +490,9 @@ func (f *PackForm) packRows() []formRow {
 				}
 				return err
 			}},
-		{key: "logo", label: "Logo", value: p.Logo, icon: config.Logos[p.Logo], color: f.logoColour(), help: "Its icon in the menu.", options: logos, pick: func(v string) error { f.pack.Logo = v; return nil }},
-		{key: "colour", label: "Colour", value: colour, icon: slotIcon("●"), color: colourHex, help: "The logo's colour.", options: colours, pick: func(v string) error { f.pack.Color = v; return nil }},
-		{key: "needs", label: "Needs", value: joined(p.Needs), hint: "programs, separated by commas", help: "Programs the pack needs, separated by commas: the status bar warns you while one's missing.", text: func(v string) error { f.pack.Needs = splitComma(v); return nil }},
+		{key: "logo", label: "Logo", value: p.Logo, look: frontLook("logo"), icon: config.Logos[p.Logo], color: f.logoColour(), help: "Its icon in the menu.", options: logos, pick: func(v string) error { f.pack.Logo = v; return nil }},
+		{key: "colour", label: "Colour", value: colour, look: frontLook("colour"), icon: slotIcon("●"), color: colourHex, help: "The logo's colour.", options: colours, pick: func(v string) error { f.pack.Color = v; return nil }},
+		{key: "needs", label: "Needs", value: joined(p.Needs), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs the pack needs, separated by commas: the status bar warns you while one's missing.", text: func(v string) error { f.pack.Needs = splitComma(v); return nil }},
 	}
 	if f.folded(-1, -1) {
 		return foldTo(rows, "")
@@ -473,10 +505,10 @@ func (f *PackForm) moduleRows(i int) []formRow {
 	k := func(s string) string { return fmt.Sprintf("%d/%s", i, s) }
 	rows := []formRow{
 		{label: "Module", header: true},
-		{key: k("name"), label: "Name", value: g.Name, help: "What the menu calls the module.", text: func(v string) error { f.group(i).Name = v; return nil }},
+		{key: k("name"), label: "Name", value: g.Name, look: mdLook("# ", ""), help: "What the menu calls the module.", text: func(v string) error { f.group(i).Name = v; return nil }},
 		{key: k("desc"), label: "Description", value: g.Description, hint: "what's in it", help: "What's in the module.", text: func(v string) error { f.group(i).Description = v; return nil }},
-		{key: k("needs"), label: "Needs", value: joined(g.Requires), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
-		{key: k("when"), label: "When", value: joined(g.When), hint: "files, like .git", help: "Files that must be here or in a folder above for these commands, like .git; ./Dockerfile means this folder only.", text: func(v string) error { f.group(i).When = splitComma(v); return nil }},
+		{key: k("needs"), label: "Needs", value: joined(g.Requires), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
+		{key: k("when"), label: "When", value: joined(g.When), look: frontLook("when"), hint: "files, like .git", help: "Files that must be here or in a folder above for these commands, like .git; ./Dockerfile means this folder only.", text: func(v string) error { f.group(i).When = splitComma(v); return nil }},
 		{key: k("remove"), label: "Remove this module", risk: config.RiskWarn, help: "Removes the module and every command in it.", confirm: "Yes, remove it", do: func() error {
 			f.pack.Files = slices.Delete(f.pack.Files, i, i+1)
 			return nil
@@ -513,20 +545,24 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 		{Value: config.RiskDanger, Label: "dangerous", Icon: dangerGlyph, Color: redHex},
 	}
 	risk := map[string]string{"": "none", config.RiskWarn: "warning", config.RiskDanger: "dangerous"}[c.Risk]
+	var descLook func(string) string // in a callout's > lines when it has a risk
+	if c.Risk != "" {
+		descLook = mdLook("> ", "")
+	}
 	riskIcon := risks[max(slices.IndexFunc(risks, func(o config.Option) bool { return o.Value == c.Risk }), 0)]
 	rows := []formRow{
 		{label: "Command", header: true},
-		{key: k("name"), label: "Name", value: c.Name, help: "What the menu calls it: letters, digits, spaces and ( ).", text: func(v string) error { f.command(i, j).Name = v; return nil }},
-		{key: k("desc"), label: "Description", value: c.Desc, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
+		{key: k("name"), label: "Name", value: c.Name, look: mdLook("## ", ""), help: "What the menu calls it: letters, digits, spaces and ( ).", text: func(v string) error { f.command(i, j).Name = v; return nil }},
 		{key: k("risk"), label: "Risk", value: risk, icon: riskIcon.Icon, color: riskIcon.Color, help: "Whether clingon asks before it runs: warning asks first; dangerous has you type a short code, then asks.", options: risks, pick: func(v string) error { f.command(i, j).Risk = v; return nil }},
-		{key: k("cmd"), label: "Command", value: c.Cmd, help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
+		{key: k("desc"), label: "Description", value: c.Desc, look: descLook, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
+		{key: k("needs"), label: "Needs", value: joined(c.Requires), hint: "programs, separated by commas", help: "Programs this command needs, separated by commas.", text: func(v string) error { f.command(i, j).Requires = splitComma(v); return nil }},
+		{key: k("when"), label: "When", value: joined(c.When), hint: "files, like .git", help: "Files that must be here or in a folder above, like .git.", text: func(v string) error { f.command(i, j).When = splitComma(v); return nil }},
+		{key: k("cmd"), label: "Command", value: c.Cmd, look: mdLook("```sh\n", "\n```"), help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
 			c := f.command(i, j)
 			c.Cmd = v
 			config.SyncBlanks(c)
 			return nil
 		}},
-		{key: k("needs"), label: "Needs", value: joined(c.Requires), hint: "programs, separated by commas", help: "Programs this command needs, separated by commas.", text: func(v string) error { f.command(i, j).Requires = splitComma(v); return nil }},
-		{key: k("when"), label: "When", value: joined(c.When), hint: "files, like .git", help: "Files that must be here or in a folder above, like .git.", text: func(v string) error { f.command(i, j).When = splitComma(v); return nil }},
 	}
 	for b := range c.Args {
 		rows = append(rows, f.blankRows(i, j, b)...)
@@ -574,7 +610,7 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 		}})
 	}
 	if kd := a.Kind(); kd == "text" || kd == "secret" {
-		return append(rows, formRow{key: k("start"), sub: true, label: "Default", value: a.Default, hint: "none", help: "What's filled in for " + name + " until you change it.", text: func(v string) error { f.blank(i, j, b).Default = v; return nil }})
+		return append(rows, formRow{key: k("start"), sub: true, label: "Default", value: a.Default, look: mdLook("  - (x) `", "`"), hint: "none", help: "What's filled in for " + name + " until you change it.", text: func(v string) error { f.blank(i, j, b).Default = v; return nil }})
 	}
 	for o := range a.Options {
 		rows = append(rows, f.choiceRow(i, j, b, o))
@@ -608,7 +644,17 @@ func (f *PackForm) choiceRow(i, j, b, o int) formRow {
 		v += "  · default"
 		first = notFirst
 	}
-	return formRow{key: fmt.Sprintf("%d/%d/%d/%d", i, j, b, o), sub: true, label: "Choice", value: v,
+	look := func(string) string { // what it types as in the file, its label plain, and a faint note
+		s := mdLook("  - ( ) `", "`")(opt.Value)
+		if opt.Label != "" {
+			s += "  " + fieldStyle.Render(opt.Label)
+		}
+		if pickedFirst(a, opt.Value) {
+			s += faintStyle.Render("  · default")
+		}
+		return s
+	}
+	return formRow{key: fmt.Sprintf("%d/%d/%d/%d", i, j, b, o), sub: true, label: "Choice", value: v, look: look,
 		help:    "One of the answers offered: what it types, then its label.",
 		options: []config.Option{{Value: "types", Label: "Change what it types"}, {Value: "label", Label: "Change its label"}, {Value: "first", Label: first}, {Value: "remove", Label: "Remove it"}},
 		pick: func(what string) error {
@@ -1254,14 +1300,18 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 		switch {
 		case f.editing != nil && f.editing.key == r.key:
 			rest += inputView(f.input, room)
-		case r.value != "" && strings.HasSuffix(r.key, "/cmd"):
-			rest += ansi.Truncate(highlight(r.value), room, "…") // coloured as the menu and shell colour it
-		case r.value != "" && r.icon != "":
-			rest += iconStyle(r.color).Render(r.icon) + "  " + fieldStyle.Render(ansi.Truncate(r.value, max(room-3, 1), "…"))
-		case r.value != "" && r.label == "Name": // what you look for: the pack's, a module's and a command's names
-			rest += fieldStyle.Bold(true).Render(ansi.Truncate(r.value, room, "…"))
 		case r.value != "":
-			rest += fieldStyle.Render(ansi.Truncate(r.value, room, "…"))
+			v := fieldStyle.Render(r.value)
+			if r.look != nil {
+				if l := r.look(r.value); l != ansi.Strip(l) { // plain in the file: the form's plain white
+					v = l
+				}
+			}
+			if r.icon != "" {
+				rest += iconStyle(r.color).Render(r.icon) + iconGap(r.icon)
+				room = max(room-1-len(iconGap(r.icon)), 1)
+			}
+			rest += ansi.Truncate(v, room, "…")
 		case r.hint != "" && on: // only where you are: elsewhere they'd fill the form with what isn't yours
 			rest += dimStyle.Italic(true).Render(ansi.Truncate(r.hint, room, "…"))
 		case r.text != nil:
@@ -1303,7 +1353,7 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 	in := max(col-ansi.StringWidth(g)-2, 0) // set in under the value, the bar a cell before it
 	rest := " "
 	if o.Icon != "" {
-		rest += iconStyle(o.Color).Render(o.Icon) + "  "
+		rest += iconStyle(o.Color).Render(o.Icon) + iconGap(o.Icon)
 	}
 	rest += title
 	lead := faintStyle.Render(g) + strings.Repeat(" ", in)

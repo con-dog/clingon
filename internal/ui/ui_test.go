@@ -3185,8 +3185,8 @@ func TestCursorsBlink(t *testing.T) {
 // Each blank says how to answer it.
 func TestBlanksSayHowToAnswer(t *testing.T) {
 	for want, a := range map[string]config.Arg{
-		"type":          {Name: "x"},
-		"↑↓ to choose":  {Name: "x", Options: []config.Option{{Value: "a"}}},
+		"type":            {Name: "x"},
+		"↑↓ to choose":    {Name: "x", Options: []config.Option{{Value: "a"}}},
 		"space to select": {Name: "x", Type: "flags", Options: []config.Option{{Value: "a"}}},
 	} {
 		if got := inputHint(a); got != want {

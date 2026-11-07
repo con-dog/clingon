@@ -640,6 +640,27 @@ func TestPackFormTicksSeveral(t *testing.T) {
 	}
 }
 
+// A value is coloured as the preview colours it in the Markdown: a name as a
+// heading, the command as code (its blanks pink), a choice as what it types.
+func TestPackFormColoursAsTheMarkdown(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "0/0/0/kind")
+	f.pick(t, "flags")
+	for key, want := range map[string]string{
+		"name":     "\x1b[1;38;5;212mDemo",
+		"0/0/name": "\x1b[1;38;5;212mSay hello",
+		"0/0/cmd":  "\x1b[38;5;212m<who>",
+		"0/0/0/0":  "\x1b[38;5;180mone",
+		"logo":     fieldStyle.Render("rocket"), // plain in the file: the form's white
+	} {
+		f.onRow(t, key)
+		r := f.selectedRow()
+		if got := f.rowLine(r, false, false, 20, 100); !strings.Contains(got, want) {
+			t.Errorf("%s: want %q in %q", key, want, got)
+		}
+	}
+}
+
 func TestPackFormMarksItsLines(t *testing.T) {
 	pack := strings.Split("---\nsection: code\nlogo: rocket\ncolour: orange\n---\n# Demo\nTools.\n", "\n")
 	module := strings.Split("---\nwhen: Dockerfile\n---\n# Deploy\nShip things.\n\n"+
@@ -676,6 +697,21 @@ func TestPackFormMarksItsLines(t *testing.T) {
 		}
 		if strings.Join(got, "|") != c.want {
 			t.Errorf("%s: marked %q, want %q", c.key, strings.Join(got, "|"), c.want)
+		}
+	}
+}
+
+// One space after a glyph that fills its cell, as the menu has after ⚠ and ☠;
+// two after a logo, drawn across two cells.
+func TestIconGap(t *testing.T) {
+	for _, g := range []string{warnGlyph, dangerGlyph, "●"} {
+		if iconGap(g) != " " {
+			t.Errorf("%q: %q", g, iconGap(g))
+		}
+	}
+	for n, g := range config.Logos {
+		if iconGap(g) != "  " {
+			t.Errorf("logo %s: %q", n, iconGap(g))
 		}
 	}
 }

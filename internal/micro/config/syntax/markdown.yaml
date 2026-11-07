@@ -41,11 +41,12 @@ rules:
             - special: "<[A-Za-z_][A-Za-z0-9_-]*>"
             - identifier: "\\b(needs|when)="
 
-    # Front matter: settings for the whole file.
+    # Front matter: settings for the whole file, their values plain text.
     - comment:
         start: "^---$"
         end: "^---$"
         rules:
+            - special.value: "^[a-z]+:.*$"
             - identifier: "^[a-z]+:"
 
     - comment:

@@ -41,6 +41,7 @@ color-link special.mark "147"
 color-link special.warning "bold 215"
 color-link special.caution "bold 204"
 color-link special.program "79"
+color-link special.value "default"
 color-link special.fence "103"
 # Packs' checks (plug/clingon): issues as an orange chip, like clingon's status
 # bar, marked in the gutter in the same orange. The gutter's own unseen mark

@@ -154,7 +154,7 @@ func TestPackSection(t *testing.T) {
 	}
 	for src, want := range map[string]string{
 		"---\nlogo: rocket\nsection: Work Tools\n---\n# X\n": ":3: a section's name is lowercase letters, digits and -, like work-tools",
-		"---\nsection: clingon\n---\n# X\n":                   "Clingon is clingon's own heading",
+		"---\nsection: clingon\n---\n# X\n":                  "Clingon is clingon's own heading",
 	} {
 		if _, err := parsePackFile(PackInfoFile, []byte(src)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: want %q, got %v", src, want, err)
