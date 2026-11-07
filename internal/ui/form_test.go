@@ -142,11 +142,11 @@ func TestPackFormEditsThePack(t *testing.T) {
 		t.Fatalf("cards should be titled with what they are:\n%s", page)
 	}
 
-	// A bad name: refused, said why.
+	// A bad name: refused, said why, on the menu's status bar.
 	f.onRow(t, "1/0/name")
 	typeIn(f, "Ship it!")
-	if !strings.Contains(f.screen(), "ISSUE:") || f.input == nil {
-		t.Fatalf("a bad name should be an issue, still being typed:\n%s", f.screen())
+	if keys := config.FormKeys(); len(keys) == 0 || !strings.HasPrefix(keys[0], config.FormIssuePrefix) || strings.Contains(f.screen(), "ISSUE:") || f.input == nil {
+		t.Fatalf("a bad name should be said on the status bar, not the form, still being typed: %q\n%s", keys, f.screen())
 	}
 	press(f, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}) // gives up on it
 	if f.pack.Files[1].Group.Commands[0].Name != "Ship it" {
@@ -1036,18 +1036,18 @@ func TestPackFormTellsItsKeys(t *testing.T) {
 	}
 	f.onRow(t, "0/head")
 	press(f, kDown, kUp)
-	has("a heading", "→ open", "← collapse", "esc done")
+	has("a heading", "→ go", "← back", "esc done")
 	press(f, kDown)
-	has("a field", "→ edit", "/ filter")
+	has("a field", "→ go", "/ filter")
 	press(f, kRight)
 	has("typing", "enter done", "ctrl-c cancel")
 	press(f, kEsc)
 	f.onRow(t, "menu")
 	press(f, kDown, kUp, kRight)
-	has("a list", "↑↓ choose", "→ take", "← close")
+	has("a list", "↑↓ choose", "→ go", "← back")
 	press(f, kLeft)
 	f.onRow(t, "desc")
 	typeIn(f, "changed")
 	press(f, kEsc)
-	has("asking", "↑↓ choose", "→ take", "← back")
+	has("asking", "↑↓ choose", "→ go", "← back")
 }

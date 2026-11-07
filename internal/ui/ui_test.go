@@ -2808,7 +2808,7 @@ func TestDescriptionSaysHowManySteps(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	pane := ansi.Strip(m.view())
 	pane = pane[:strings.LastIndex(pane, "\n")] // the status bar, here in the pane, is the last line
-	if v := strings.Join(strings.Fields(pane), " "); !strings.Contains(v, "2 steps: Does a.") || strings.Contains(v, "→ run") || strings.Contains(v, "← back") || strings.Contains(v, "→ next") {
+	if v := strings.Join(strings.Fields(pane), " "); !strings.Contains(v, "2 steps: Does a.") || strings.Contains(v, "→ go") || strings.Contains(v, "← back") {
 		t.Errorf("filling in:\n%s", pane)
 	}
 }
@@ -3955,15 +3955,19 @@ func TestWhereChipAndFormKeys(t *testing.T) {
 		t.Errorf("chip %q", got)
 	}
 	m.busy, m.editing, m.form = "Edit a pack", "Demo · esc when done", &pending{}
-	if err := config.WriteFormKeys([]string{"↑↓ move", "→ edit", "esc done"}); err != nil {
+	if err := config.WriteFormKeys([]string{"↑↓ move", "→ go", "esc done"}); err != nil {
 		t.Fatal(err)
 	}
 	m.Update(formNameMsg{})
 	if got := chip(); got != "IN FORMS" {
 		t.Errorf("chip %q", got)
 	}
-	if s := strings.TrimSpace(ansi.Strip(m.barBody(80))); s != "↑↓ move · → edit · esc done" {
+	if s := strings.TrimSpace(ansi.Strip(m.barBody(80))); s != "↑↓ move · → go · esc done" {
 		t.Errorf("the form's keys, and only them: %q", s)
+	}
+	m.formKeys = []string{config.FormIssuePrefix + "a pack needs a module with a command in it", "↑↓ move"}
+	if s := strings.TrimSpace(ansi.Strip(m.barBody(80))); s != "✗ a pack needs a module with a command in it" {
+		t.Errorf("a change the form refused, why, in place of its keys: %q", s)
 	}
 	m.form, m.formKeys, m.editing = nil, nil, "demo in micro · Ctrl-Q when done"
 	if s := strings.TrimSpace(ansi.Strip(m.barBody(80))); s != "Ctrl-Q done · shift-tab menu" {

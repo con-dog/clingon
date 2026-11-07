@@ -1795,9 +1795,6 @@ func (j *job) current(a config.Arg) string {
 	return j.pick.query() // nothing matches: take what was typed
 }
 
-// lastStep reports whether the arg being filled is the final one.
-func (j *job) lastStep() bool { return j.step == len(j.ref.cmd.Args)-1 }
-
 // keyOnClosedList is a key on a list with its filter closed, the same in every
 // list: / opens it, starting its cursor, and any other text says that's how. Fast
 // typing can bring more with the /, which goes on to be typed in. The rest goes to
@@ -2880,10 +2877,7 @@ func (m *Model) promptKeys() []string {
 		return nil // barKeys says the list's
 	case modeFill:
 		j := m.job
-		keys = []string{"→ next", "← back"}
-		if j.lastStep() {
-			keys[0] = "→ run"
-		}
+		keys = []string{"→ go", "← back"}
 		switch {
 		case j.usePick && j.pick.filtering:
 			keys = append(keys, "/ stop filtering", "esc clear")
@@ -2905,9 +2899,9 @@ func (m *Model) promptKeys() []string {
 	case modeTrust, modeTyped, modeQuit, modeSave:
 		keys = []string{"↑↓ choose", "enter select"}
 	case modeSavePack:
-		keys = []string{"↑↓ choose", "enter select", "← back to the form"}
+		keys = []string{"↑↓ choose", "enter select", "← back"}
 	case modeSaveName:
-		keys = []string{"→ add and run", "← back"}
+		keys = []string{"→ go", "← back"}
 	}
 	return keys
 }
@@ -3085,7 +3079,10 @@ func bar(bg color.Color, msg string, w int) string {
 // menu: on the quiet band the keys have, as they look when browsing, what's
 // being edited and the keys for it.
 func (m *Model) editingBar(w int) string {
-	keys := m.formKeys                   // the form's, as it says them
+	keys := m.formKeys                                                       // the form's, as it says them
+	if len(keys) > 0 && strings.HasPrefix(keys[0], config.FormIssuePrefix) { // a change it refused: why
+		return bar(orange, "✗ "+strings.TrimPrefix(keys[0], config.FormIssuePrefix), w)
+	}
 	if m.form == nil || len(keys) == 0 { // micro, in the shell: how you're done there
 		_, how, _ := strings.Cut(m.editing, " · ")
 		keys = []string{strings.TrimSuffix(how, " when done") + " done"}

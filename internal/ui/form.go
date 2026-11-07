@@ -857,40 +857,38 @@ func (f *PackForm) barKeys() []string {
 	case f.help:
 		return []string{"any key back"}
 	case f.saving:
-		return []string{"↑↓ choose", "→ take", "← back"}
+		return []string{"↑↓ choose", "→ go", "← back"}
 	case f.editing != nil:
 		return []string{"←→ move", "enter done", "ctrl-c cancel"}
 	case f.choosing != nil:
-		return []string{"↑↓ choose", "→ take", "← close"}
+		return []string{"↑↓ choose", "→ go", "← back"}
 	case f.filtering:
-		return []string{"↑↓ move", "→ edit", "/ stop filtering", "esc clear"}
+		return []string{"↑↓ move", "→ go", "/ stop filtering", "esc clear"}
 	}
 	keys := []string{"↑↓ move"}
 	if r := f.selectedRow(); r != nil {
-		switch {
-		case r.header || r.fold == "closed":
-			keys = append(keys, "→ open")
-		case r.pick != nil || r.confirm != "":
-			keys = append(keys, "→ choose")
-		case r.do != nil:
-			keys = append(keys, "→ add")
-		case r.text != nil:
-			keys = append(keys, "→ edit")
+		if r.header || r.fold == "closed" || r.pick != nil || r.confirm != "" || r.do != nil || r.text != nil {
+			keys = append(keys, "→ go")
 		}
 		if r.header || r.fold == "open" {
-			keys = append(keys, "← collapse")
+			keys = append(keys, "← back")
 		}
 	}
 	keys = append(keys, "/ filter", "[ ] jump", "esc done", "shift-tab menu")
 	return keys
 }
 
-// tellKeys has the menu's status bar say the form's keys, when they change.
+// tellKeys has the menu's status bar say the form's keys, when they change,
+// and why a change was refused, while it was: the bar says it, not the form.
 func (f *PackForm) tellKeys() {
 	if !f.menu {
 		return
 	}
-	if keys := strings.Join(f.barKeys(), "\n"); keys != f.toldKeys && config.WriteFormKeys(f.barKeys()) == nil {
+	lines := f.barKeys()
+	if f.issue != "" {
+		lines = append([]string{config.FormIssuePrefix + f.issue}, lines...)
+	}
+	if keys := strings.Join(lines, "\n"); keys != f.toldKeys && config.WriteFormKeys(lines) == nil {
 		f.toldKeys = keys
 	}
 }
@@ -1966,11 +1964,10 @@ func marked(key string, lines []string) map[int]bool {
 // footer is only there for a change that couldn't be saved: why, as an
 // orange chip like the status bar's.
 func (f *PackForm) footer(w int) []string {
-	var out []string
-	if f.issue != "" {
-		out = append(out, issueChip(f.issue, w))
+	if f.issue != "" && !f.menu { // on its own, with no status bar to say it on
+		return []string{issueChip(f.issue, w)}
 	}
-	return out
+	return nil // beside the menu, its status bar says it
 }
 
 // issueChip is a problem as an orange chip, like the status bar and micro's.

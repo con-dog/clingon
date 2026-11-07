@@ -206,6 +206,10 @@ func WriteFormKeys(keys []string) error {
 	return writeWhole(formKeysFile(), []byte(strings.Join(keys, "\n")))
 }
 
+// FormIssuePrefix starts the line of the form's keys that's why a change was
+// refused, while it was, for the bar to say instead of the keys.
+const FormIssuePrefix = "! "
+
 // FormKeys are the keys that work in the open form now, or none.
 func FormKeys() []string {
 	data, _ := os.ReadFile(formKeysFile())
