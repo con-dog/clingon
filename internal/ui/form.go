@@ -1582,8 +1582,8 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 }
 
 // optionLine is one of the options in the list dropped down under row r, set
-// in under its value. The list's cursor is the form's, set in with it: the bar
-// just before the option, and the band from there across.
+// in under its value. The list's cursor is the form's, as on every row: the
+// bar at the left, and the band across.
 func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) string {
 	title := o.Label
 	if title == "" {
@@ -1604,8 +1604,7 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 	case r.branch:
 		g = strings.Repeat("│  ", max(r.depth-1, 0))
 	}
-	in := max(col-ansi.StringWidth(g)-2, 0) // set in under the value, the bar a cell before it
-	rest := " "
+	rest := strings.Repeat(" ", max(col-ansi.StringWidth(g)-1, 1)) // the option under the value; the bar where every row's is
 	if o.Icon != "" {
 		st := iconStyle(o.Color)
 		if o.Color == "" { // one without a colour of its own, as its title
@@ -1614,11 +1613,10 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 		rest += st.Render(o.Icon) + iconGap(o.Icon)
 	}
 	rest += title
-	lead := faintStyle.Render(g) + strings.Repeat(" ", in)
 	if on {
-		return lead + onBg(cursorBar(cursorStyle)+rest, formCursorBg, max(w-ansi.StringWidth(g)-in, 1))
+		return faintStyle.Render(g) + onBg(cursorBar(cursorStyle)+rest, formCursorBg, max(w-ansi.StringWidth(g), 1))
 	}
-	return lead + " " + rest
+	return faintStyle.Render(g) + " " + rest
 }
 
 // preview is the pack's _pack.md, and under it the module the cursor's in
