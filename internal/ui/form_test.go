@@ -35,6 +35,7 @@ var (
 	kUp    = tea.KeyPressMsg{Code: tea.KeyUp}
 	kEnter = tea.KeyPressMsg{Code: tea.KeyEnter}
 	kLeft  = tea.KeyPressMsg{Code: tea.KeyLeft}
+	kRight = tea.KeyPressMsg{Code: tea.KeyRight}
 	kEsc   = tea.KeyPressMsg{Code: tea.KeyEscape}
 )
 
@@ -51,7 +52,7 @@ func (f *PackForm) onRow(t *testing.T, key string) {
 	t.Helper()
 	f.refresh(key)
 	for i, r := range f.rows {
-		if r.key == key && !r.header {
+		if r.key == key && !r.still() {
 			f.sel = i
 			return
 		}
@@ -497,24 +498,40 @@ func TestPackFormHasTheMenusKeys(t *testing.T) {
 	}
 }
 
-// Only the part the cursor's in is shown whole: the others fold to their
-// heading and name, a module saying how many commands it has.
-func TestPackFormFoldsTheOtherParts(t *testing.T) {
+// Modules and commands open (▾) and collapse (▸) on their headings: → opens,
+// ← collapses, enter does either. Collapsed, a part is its heading with its
+// name, a module saying how many commands it has. Going to a row in one
+// opens it.
+func TestPackFormCollapses(t *testing.T) {
 	f := newTestForm(t)
-	f.onRow(t, "name")
-	if p := f.page(); !strings.Contains(p, "Menu  ") || strings.Contains(p, "Say hello") || !strings.Contains(p, "· 1 command") {
-		t.Errorf("in the pack, its module folded:\n%s", p)
+	f.onRow(t, "needs")
+	press(f, kDown)
+	if r := f.selectedRow(); r == nil || r.key != "0/head" {
+		t.Fatalf("down from the pack's last row, onto the module's heading: %+v", r)
 	}
-	press(f, kDown, kDown, kDown, kDown, kDown, kDown) // past Needs, into the module
-	if r := f.selectedRow(); r == nil || r.key != "0/name" {
-		t.Fatalf("down from the pack's last row: %+v", r)
+	if p := f.page(); !strings.Contains(p, "▾ MODULE") || !strings.Contains(p, "Say hello") {
+		t.Fatalf("open to begin with:\n%s", p)
 	}
-	if p := f.page(); strings.Contains(p, "Menu  ") || !strings.Contains(p, "Say hello") || strings.Contains(p, "Prints a greeting.") {
-		t.Errorf("in the module, the pack and its command folded:\n%s", p)
+	press(f, kLeft)
+	p := f.page()
+	if !strings.Contains(p, "▸ MODULE") || !strings.Contains(p, "Examples  · 1 command") || strings.Contains(p, "Say hello") || strings.Contains(p, "A friendly example.") {
+		t.Fatalf("← collapses it:\n%s", p)
 	}
-	press(f, kUp)
-	if r := f.selectedRow(); r == nil || r.key != "name" || !strings.Contains(f.page(), "Menu  ") {
-		t.Errorf("back up, onto the pack's name, opens it: %+v\n%s", r, f.page())
+	if r := f.selectedRow(); r == nil || r.key != "0/head" {
+		t.Fatalf("still on its heading: %+v", r)
+	}
+	press(f, kRight)
+	if p := f.page(); !strings.Contains(p, "▾ MODULE") || !strings.Contains(p, "Say hello") {
+		t.Fatalf("→ opens it:\n%s", p)
+	}
+	f.onRow(t, "0/0/head")
+	press(f, kEnter)
+	if p := f.page(); !strings.Contains(p, "▸ COMMAND") || strings.Contains(p, "Prints a greeting.") || !strings.Contains(p, "Say hello") {
+		t.Fatalf("enter collapses a command, its name beside its heading:\n%s", p)
+	}
+	f.onRow(t, "0/0/name")
+	if p := f.page(); !strings.Contains(p, "▾ COMMAND") || !strings.Contains(p, "Prints a greeting.") {
+		t.Errorf("going to a row in it opens it:\n%s", p)
 	}
 }
 

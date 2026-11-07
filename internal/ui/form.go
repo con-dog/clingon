@@ -51,8 +51,8 @@ type PackForm struct {
 
 	// The part the cursor's in, shown whole; the others are folded to
 	// their heading and name. -1 is the pack, -2 nothing (Add a module).
-	openSub, openCmd int
-	noFold           bool // building every row, to measure them
+	toggled map[string]bool // modules ("1") and commands ("1/2") opened or collapsed by hand; open unless said
+	noFold  bool            // building every row, to measure them
 
 	named string // the pack's name as last told to the menu
 
@@ -252,7 +252,7 @@ func (f *PackForm) refresh(focus string) {
 	if r := f.selectedRow(); r != nil && focus == "" {
 		focus = r.key
 	}
-	f.openSub, f.openCmd = openPart(focus)
+	f.reveal(focus)
 	f.rows = f.matching(f.pageRows())
 	if f.menu && f.pack.Title != f.named { // so the menu says what you're editing, by its name as it is
 		if config.WriteFormName(f.pack.Title) == nil {
@@ -294,25 +294,56 @@ func openPart(key string) (sub, cmd int) {
 	return sub, cmd
 }
 
-// refold opens the part the cursor's moved into, folding the one it left.
-func (f *PackForm) refold() {
-	if r := f.selectedRow(); r != nil {
-		if sub, cmd := openPart(r.key); sub != f.openSub || cmd != f.openCmd {
-			f.refresh(r.key)
-		}
+// fold opens or collapses the module or command whose heading r is.
+func (f *PackForm) fold(r *formRow, open bool) {
+	sub, cmd := openPart(r.key)
+	f.setOpen(sub, cmd, open)
+	f.refresh(r.key)
+}
+
+// partKey is how a module ("1") or a command ("1/2") is kept open or collapsed.
+func partKey(sub, cmd int) string {
+	if cmd < 0 {
+		return fmt.Sprint(sub)
+	}
+	return fmt.Sprintf("%d/%d", sub, cmd)
+}
+
+// isOpen says whether a module or command is open: it is unless it's been
+// collapsed.
+func (f *PackForm) isOpen(sub, cmd int) bool {
+	open, said := f.toggled[partKey(sub, cmd)]
+	return open || !said
+}
+
+// setOpen opens or collapses a module or command.
+func (f *PackForm) setOpen(sub, cmd int, open bool) {
+	if f.toggled == nil {
+		f.toggled = map[string]bool{}
+	}
+	f.toggled[partKey(sub, cmd)] = open
+}
+
+// reveal opens what the row keyed key is in, so going to it (after adding
+// it, say) shows it. A part's own heading shows either way.
+func (f *PackForm) reveal(key string) {
+	sub, cmd := openPart(key)
+	if sub < 0 || strings.HasSuffix(key, "/head") && strings.Count(key, "/") == 1 {
+		return
+	}
+	f.setOpen(sub, -1, true)
+	if cmd >= 0 && !(strings.HasSuffix(key, "/head") && strings.Count(key, "/") == 2) {
+		f.setOpen(sub, cmd, true)
 	}
 }
 
-// folded says whether a part is folded to its heading and name: any but the
-// one the cursor's in, unless the filter's on, which shows all it finds.
+// folded says whether a part is collapsed to its heading: as it's been left,
+// unless the filter's on, which shows all it finds. The pack's never is.
 func (f *PackForm) folded(sub, cmd int) bool {
-	if f.noFold || f.filter.Value() != "" {
+	if f.noFold || f.filter.Value() != "" || sub < 0 {
 		return false
 	}
-	if cmd < 0 {
-		return sub != f.openSub
-	}
-	return sub != f.openSub || cmd != f.openCmd
+	return !f.isOpen(sub, cmd)
 }
 
 // unfolded is every row of the page, nothing folded.
@@ -322,10 +353,10 @@ func (f *PackForm) unfolded() []formRow {
 	return f.pageRows()
 }
 
-// foldTo is a part's heading and Name row alone, the rest folded away.
+// foldTo is a part collapsed to its heading, its name beside it.
 func foldTo(rows []formRow, note string) []formRow {
-	rows[1].note = note
-	return rows[:2]
+	rows[0].value, rows[0].look, rows[0].note = rows[1].value, rows[1].look, note
+	return rows[:1]
 }
 
 // matching is the rows the filter leaves, each with the headings it's under:
@@ -369,7 +400,7 @@ func (f *PackForm) matching(rows []formRow) []formRow {
 // move puts the cursor on the next row (or, with -1, the one before) that
 // isn't a card's title.
 // still says whether the cursor passes a row by: a heading, or a title.
-func (r formRow) still() bool { return r.header || r.title }
+func (r formRow) still() bool { return r.header && r.key == "" || r.title }
 
 func (f *PackForm) move(d int) {
 	for i := f.sel + d; i >= 0 && i < len(f.rows); i += d {
@@ -508,7 +539,7 @@ func (f *PackForm) moduleRows(i int) []formRow {
 	g := f.group(i)
 	k := func(s string) string { return fmt.Sprintf("%d/%s", i, s) }
 	rows := []formRow{
-		{label: "Module", header: true},
+		{key: k("head"), label: "Module", header: true},
 		{key: k("name"), label: "Name", value: g.Name, look: mdLook("# ", ""), help: "What the menu calls the module.", text: func(v string) error { f.group(i).Name = v; return nil }},
 		{key: k("desc"), label: "Desc", value: g.Description, hint: "what's in it", help: "What's in the module.", text: func(v string) error { f.group(i).Description = v; return nil }},
 		{key: k("needs"), label: "Need", value: joined(g.Requires), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
@@ -555,7 +586,7 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 	}
 	riskIcon := risks[max(slices.IndexFunc(risks, func(o config.Option) bool { return o.Value == c.Risk }), 0)]
 	rows := []formRow{
-		{label: "Command", header: true},
+		{key: k("head"), label: "Command", header: true},
 		{key: k("name"), label: "Name", value: c.Name, look: mdLook("## ", ""), help: "What the menu calls it: letters, digits, spaces and ( ).", text: func(v string) error { f.command(i, j).Name = v; return nil }},
 		{key: k("risk"), label: "Risk", value: risk, icon: riskIcon.Icon, color: riskIcon.Color, help: "Whether clingon asks before it runs: warning asks first; dangerous has you type a short code, then asks.", options: risks, pick: func(v string) error { f.command(i, j).Risk = v; return nil }},
 		{key: k("desc"), label: "Desc", value: c.Desc, look: descLook, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
@@ -858,26 +889,20 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 	switch k {
 	case "up":
 		f.move(-1)
-		f.refold()
 	case "down":
 		f.move(1)
-		f.refold()
 	case "pgup":
 		for range max(f.pageSize, 1) {
 			f.move(-1)
 		}
-		f.refold()
 	case "pgdown":
 		for range max(f.pageSize, 1) {
 			f.move(1)
 		}
-		f.refold()
 	case "[":
 		f.jump(-1)
-		f.refold()
 	case "]":
 		f.jump(1)
-		f.refold()
 	case "?":
 		f.help = true
 	case "/":
@@ -891,6 +916,10 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return f.done()
 	case "left": // back, as at the menu's top: nothing above this but a filter left on
+		if r := f.selectedRow(); r != nil && r.header { // on a module's or command's heading: collapse it
+			f.fold(r, false)
+			return nil
+		}
 		if f.filter.Value() != "" {
 			f.filter.SetValue("")
 			f.refresh("")
@@ -902,6 +931,11 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		f.issue = ""
+		if r.header { // a module's or command's heading: → opens it, enter opens or collapses it
+			sub, cmd := openPart(r.key)
+			f.fold(r, k == "right" || !f.isOpen(sub, cmd))
+			return nil
+		}
 		switch {
 		case r.pick != nil: // a list, even if it can also be typed (from the list): from the top
 			f.choosing, f.options, f.opt = r, r.options, 0
@@ -1080,7 +1114,14 @@ var (
 // module and command it's part of. A field's ends in its level's │, with
 // the cell after it for the cursor's bar; an add that ends its level is on
 // the level's └, the bar in place of its ─.
+// flatForm draws the form without its tree: the pack's, a module's and a
+// command's rows all start in one column, under their headings. A trial.
+const flatForm = true
+
 func guide(r *formRow) string {
+	if flatForm {
+		return ""
+	}
 	cont := strings.Repeat("│  ", max(r.depth-1, 0))
 	switch {
 	case r.header && r.depth == 0:
@@ -1219,7 +1260,11 @@ func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
 		r := &f.rows[i]
 		if r.header || r.branch { // a new part of the tree, a line apart
 			if len(out) > 0 {
-				out = append(out, faintStyle.Render(strings.TrimRight(strings.Repeat("│  ", max(r.depth-1, 0))+"│", " ")))
+				gap := strings.TrimRight(strings.Repeat("│  ", max(r.depth-1, 0))+"│", " ")
+				if flatForm {
+					gap = ""
+				}
+				out = append(out, faintStyle.Render(gap))
 			}
 		}
 		if r.branch {
@@ -1227,7 +1272,14 @@ func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
 		}
 		if r.header {
 			heads = append(heads, formHead{line: len(out), depth: r.depth, name: -1})
-			out = append(out, faintStyle.Render(guide(r))+ansi.Truncate(formHeading(r.label), max(w-ansi.StringWidth(guide(r)), 1), "…"))
+			if i == f.sel {
+				at, row = len(out), len(out)
+			}
+			if flatForm {
+				out = append(out, f.headLine(r, i == f.sel, col, w))
+			} else {
+				out = append(out, faintStyle.Render(guide(r))+ansi.Truncate(formHeading(r.label), max(w-ansi.StringWidth(guide(r)), 1), "…"))
+			}
 			continue
 		}
 		on := i == f.sel
@@ -1251,10 +1303,47 @@ func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
 	return out, at, row, heads
 }
 
+// headLine is a heading in the flat form: the cursor's bar, then for a
+// module or command an arrow saying whether it's open (▾) or collapsed (▸),
+// then the heading; collapsed, its name beside it in the values' column.
+func (f *PackForm) headLine(r *formRow, on bool, col, w int) string {
+	slot := " "
+	if on {
+		slot = cursorBar(cursorStyle)
+	}
+	arrow := " "
+	if r.key != "" {
+		arrow = "▾"
+		if r.value != "" {
+			arrow = "▸"
+		}
+	}
+	head := strings.ToUpper(r.label)
+	line := slot + " " + lipgloss.NewStyle().Foreground(soft).Render(arrow) + " " + headerStyle.Render(head)
+	if r.value != "" {
+		v := fieldStyle.Render(r.value)
+		if r.look != nil {
+			v = r.look(r.value)
+		}
+		line += strings.Repeat(" ", max(col-4-ansi.StringWidth(head), 2)) + v
+		if r.note != "" {
+			line += faintStyle.Render("  · " + r.note)
+		}
+	}
+	line = ansi.Truncate(line, w, "…")
+	if on {
+		return onBg(line, formCursorBg, w)
+	}
+	return line
+}
+
 // labelAt is the column a row's label starts in: past its guide, the bar's
 // cell and a space, and set in under its blank for a blank's own rows.
 func (f *PackForm) labelAt(r *formRow) int {
 	n := ansi.StringWidth(guide(r)) + 2
+	if flatForm {
+		n += 2 // under its heading, past the heading's arrow
+	}
 	return n + 2*r.sub
 }
 
@@ -1269,10 +1358,13 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 	switch {
 	case on:
 		slot = cursorBar(cursorStyle)
-	case r.branch:
+	case r.branch && !flatForm:
 		slot = "─"
 	}
 	rest := " " + strings.Repeat("  ", r.sub)
+	if flatForm {
+		rest += "  "
+	}
 	room := max(w-f.labelAt(r), 1)
 	switch {
 	case r.confirm != "": // a remove
@@ -1350,7 +1442,10 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 		title = dimStyle.Render(title)
 	}
 	g := strings.Repeat("│  ", r.depth) + "│"
-	if r.branch {
+	switch {
+	case flatForm:
+		g = ""
+	case r.branch:
 		g = strings.Repeat("│  ", max(r.depth-1, 0))
 	}
 	in := max(col-ansi.StringWidth(g)-2, 0) // set in under the value, the bar a cell before it
