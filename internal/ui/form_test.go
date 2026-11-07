@@ -1040,14 +1040,26 @@ func TestPackFormTellsItsKeys(t *testing.T) {
 	press(f, kDown)
 	has("a field", "→ go", "/ filter")
 	press(f, kRight)
-	has("typing", "enter done", "ctrl-c cancel")
+	has("typing", "→ go", "← back", "ctrl-c cancel")
 	press(f, kEsc)
 	f.onRow(t, "menu")
 	press(f, kDown, kUp, kRight)
-	has("a list", "↑↓ choose", "→ go", "← back")
+	has("a list", "↑↓ move", "→ go", "← back")
 	press(f, kLeft)
 	f.onRow(t, "desc")
 	typeIn(f, "changed")
 	press(f, kEsc)
-	has("asking", "↑↓ choose", "→ go", "← back")
+	has("asking", "↑↓ move", "→ go", "← back")
+}
+
+// A filter left on, closed, says how to edit and clear it on the status bar,
+// as the menu's does: esc clears it before it's done.
+func TestPackFormFilterKeys(t *testing.T) {
+	f := newTestForm(t)
+	for _, r := range "/greet/" {
+		press(f, tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if got := config.FormKeys(); !slices.Contains(got, "/ edit filter") || !slices.Contains(got, "esc clear") || slices.Contains(got, "esc done") {
+		t.Errorf("filtered: %q", got)
+	}
 }

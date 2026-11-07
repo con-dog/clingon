@@ -857,11 +857,11 @@ func (f *PackForm) barKeys() []string {
 	case f.help:
 		return []string{"any key back"}
 	case f.saving:
-		return []string{"↑↓ choose", "→ go", "← back"}
+		return []string{"↑↓ move", "→ go", "← back"}
 	case f.editing != nil:
-		return []string{"←→ move", "enter done", "ctrl-c cancel"}
+		return []string{"→ go", "← back", "ctrl-c cancel"} // through the text, then out of it, as in the menu
 	case f.choosing != nil:
-		return []string{"↑↓ choose", "→ go", "← back"}
+		return []string{"↑↓ move", "→ go", "← back"}
 	case f.filtering:
 		return []string{"↑↓ move", "→ go", "/ stop filtering", "esc clear"}
 	}
@@ -874,7 +874,11 @@ func (f *PackForm) barKeys() []string {
 			keys = append(keys, "← back")
 		}
 	}
-	keys = append(keys, "/ filter", "[ ] jump", "esc done", "shift-tab menu")
+	if f.filter.Value() != "" { // closed, and still applied: esc clears it first
+		keys = append(keys, "/ edit filter", "[ ] jump", "esc clear", "shift-tab menu")
+	} else {
+		keys = append(keys, "/ filter", "[ ] jump", "esc done", "shift-tab menu")
+	}
 	return keys
 }
 
@@ -1265,7 +1269,7 @@ func (f *PackForm) filterLine(w int) string {
 	case f.filtering:
 		return inputView(&f.filter, w)
 	case f.filter.Value() != "":
-		return ansi.Truncate(accentStyle.Render("❯ ")+strings.TrimSpace(f.filter.Value())+faintStyle.Render("  / to edit · esc to clear"), w, "…")
+		return ansi.Truncate(accentStyle.Render("❯ ")+strings.TrimSpace(f.filter.Value()), w, "…") // the status bar says how to edit or clear it
 	}
 	return accentStyle.Render("❯ /") + faintStyle.Render(" to filter")
 }
@@ -1316,7 +1320,7 @@ func guide(r *formRow) string {
 func (f *PackForm) keys(w int) []string {
 	keys := [][2]string{
 		{"↑ ↓", "move"},
-		{"→ or enter", "edit, open, or take the choice; typing, done"},
+		{"→ or enter", "go: edit, open, or take the choice; typing, done"},
 		{"←", "back: close what's open"},
 		{"[ ]", "jump to the previous or next heading"},
 		{"/", "filter; again stops"},

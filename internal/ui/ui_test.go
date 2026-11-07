@@ -1302,7 +1302,7 @@ func TestFillInNamesTheCommand(t *testing.T) {
 	lines := func(w, h int) []string { return strings.Split(ansi.Strip(m.fillView(w, h)), "\n") }
 	got := lines(60, 20)
 	row := func(l string) string { return strings.TrimSpace(strings.TrimPrefix(l, "▌")) }
-	if row(got[0]) != "Step 1 of 2" || got[1] != "" || row(got[2]) != "count (type)" || !strings.HasPrefix(row(got[3]), "❯") || strings.Contains(strings.Join(got, "\n"), "BIGGEST") {
+	if row(got[0]) != "Step 1 of 2" || got[1] != "" || row(got[2]) != "count" || !strings.HasPrefix(row(got[3]), "❯") || strings.Contains(strings.Join(got, "\n"), "BIGGEST") {
 		t.Errorf("how far along alone, then the blank with its input, and no heading:\n%q", got[:4])
 	}
 	// Only your answer is in the panel: it has the edge, and fills the width.
@@ -1312,14 +1312,14 @@ func TestFillInNamesTheCommand(t *testing.T) {
 	if head := lines(10, 20)[0]; ansi.StringWidth(head) > 10 {
 		t.Errorf("a narrow panel should fit: %q", head)
 	}
-	if got := lines(60, 5); !strings.HasPrefix(row(got[0]), "count (type)  Step 1 of 2") {
+	if got := lines(60, 5); !strings.HasPrefix(row(got[0]), "count  Step 1 of 2") {
 		t.Errorf("no room: the blank and how far along on one line: %q", got)
 	}
 
 	// A pick list keeps its rows in the height it's given, header and all.
 	m.Update(typed("3"))
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if got := lines(60, 8); !strings.HasPrefix(got[0], "❯ / to filter") || got[1] != "" || row(got[2]) != "Step 2 of 2" || got[3] != "" || row(got[4]) != "kind (↑↓ to choose)" || !strings.Contains(got[5], "x") || len(got) > 8 {
+	if got := lines(60, 8); !strings.HasPrefix(got[0], "❯ / to filter") || got[1] != "" || row(got[2]) != "Step 2 of 2" || got[3] != "" || row(got[4]) != "kind" || !strings.Contains(got[5], "x") || len(got) > 8 {
 		t.Errorf("pick list: %q", got)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
@@ -1583,7 +1583,7 @@ func TestStatusBarSaysWhenAToolIsMissing(t *testing.T) {
 	if bar() != news.Text { // the top level has news; missing tools are for sections
 		t.Errorf("top menu: got %q, want %q", bar(), news.Text)
 	}
-	for i, want := range []string{"✗ Needs clingon-test-nope (not installed)", "✗ Needs clingon-test-gopls (not on PATH: it's in ~/go/bin)", "→ go · ← back · / filter · [ ] jump"} {
+	for i, want := range []string{"✗ Needs clingon-test-nope (not installed)", "✗ Needs clingon-test-gopls (not on PATH: it's in ~/go/bin)", "↑↓ move · → go · ← back · / filter · [ ] jump"} {
 		m.showSection(&cfg.Sections[i])
 		if bar() != want {
 			t.Errorf("%s: got %q, want %q", cfg.Sections[i].Name, bar(), want)
@@ -1620,10 +1620,10 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 			t.Errorf("%s: footer %q, want %q", when, got, want)
 		}
 	}
-	barIs("top", "→ go · / filter · [ ] jump · esc quit · tab shell") // no r recipe: there isn't one yet
+	barIs("top", "↑↓ move · → go · / filter · [ ] jump · esc quit · tab shell") // no r recipe: there isn't one yet
 	footIs("top", "")
 
-	keys := "→ go · / filter · [ ] jump · esc quit · tab shell"
+	keys := "↑↓ move · → go · / filter · [ ] jump · esc quit · tab shell"
 	m.news = &Headline{Kind: Attention, Text: "↑ Update clingon"}
 	barIs("news that needs acting on wins", "↑ Update clingon")
 	m.news = &Headline{Kind: Info, Text: "• Add 5 packs"}
@@ -1633,10 +1633,10 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 	m.news = nil
 
 	m.showSection(&m.opt.Config.Sections[0])
-	barIs("section", "→ go · ← back · / filter · [ ] jump · 1-9 add · tab shell")
+	barIs("section", "↑↓ move · → go · ← back · / filter · [ ] jump · 1-9 add · tab shell")
 
 	m.Update(typed("/"))
-	barIs("filtering", "→ go · ← back · / stop filtering · esc clear filter · tab shell")
+	barIs("filtering", "↑↓ move · → go · ← back · / stop filtering · esc clear · tab shell")
 	footIs("filtering", "")
 	m.Update(typed("/"))
 
@@ -1655,7 +1655,7 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 	if m.mode != modeConfirm {
 		t.Fatalf("mode %v", m.mode)
 	}
-	barIs("a prompt", "↑↓ choose · enter select")
+	barIs("a prompt", "↑↓ move · → go · ← back")
 	answer(m, false)
 
 	// The notch stays through anything else the bar has to say.
@@ -1669,14 +1669,14 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 		t.Errorf("bar %q", bar)
 	}
 	footIs("with a recipe", "")
-	if !slices.Contains(m.barKeys(), "r recipe") {
+	if !slices.Contains(m.barKeys(), "r recipe") || !slices.Contains(m.barKeys(), "x clear recipe") {
 		t.Errorf("with a current recipe, r goes to it: %q", m.barKeys())
 	}
 
 	// In print mode there's no shell pane to go to, and no recipes.
 	p := New(Options{Config: &config.Config{Sections: sections}})
 	p.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
-	if bar := strings.TrimSpace(ansi.Strip(p.statusBar(120))); bar != "? help  → go · / filter · [ ] jump · esc quit" {
+	if bar := strings.TrimSpace(ansi.Strip(p.statusBar(120))); bar != "? help  ↑↓ move · → go · / filter · [ ] jump · esc quit" {
 		t.Errorf("print mode: bar %q", bar)
 	}
 }
@@ -2961,10 +2961,10 @@ func TestSlashKeepsTheFilter(t *testing.T) {
 		t.Fatalf("filtering %v, query %q", m.list.filtering, m.list.query())
 	}
 	view := ansi.Strip(m.view())
-	if !strings.Contains(view, "❯ ban") || !strings.Contains(view, "esc to clear") || strings.Contains(view, "apple") {
+	if !strings.Contains(view, "❯ ban") || strings.Contains(view, "esc to clear") || strings.Contains(view, "apple") {
 		t.Errorf("the filter should still show, and apply:\n%s", view)
 	}
-	if bar := ansi.Strip(m.statusBar(120)); !strings.Contains(bar, "/ edit filter") || !strings.Contains(bar, "esc clear filter") {
+	if bar := ansi.Strip(m.statusBar(120)); !strings.Contains(bar, "/ edit filter") || !strings.Contains(bar, "esc clear") {
 		t.Errorf("bar %q", bar)
 	}
 	// Coming back to the menu doesn't throw it away.
@@ -3005,8 +3005,8 @@ func TestSlashKeepsTheFilter(t *testing.T) {
 	if m.job.pick.filtering || m.job.pick.query() != "blu" || len(m.job.pick.values()) != 1 {
 		t.Fatalf("filtering %v, query %q, values %v", m.job.pick.filtering, m.job.pick.query(), m.job.pick.values())
 	}
-	if f := ansi.Strip(m.footer(70)); strings.Contains(f, "filter") {
-		t.Errorf("the filter's own row says how: footer %q", f)
+	if f := ansi.Strip(m.footer(70)); !strings.Contains(f, "/ edit filter · esc clear") {
+		t.Errorf("the status bar says how to edit or clear the filter: footer %q", f)
 	}
 	m.Update(esc)
 	if m.mode != modeFill || m.job.pick.filtered() || len(m.job.pick.values()) != 1 {
@@ -3180,22 +3180,6 @@ func TestCursorsBlink(t *testing.T) {
 	m.Update(tea.BlurMsg{})
 	if _, cmd := m.Update(typed("z")); cmd == nil || !m.job.input.Focused() || m.job.input.Value() != "z" {
 		t.Errorf("a key should bring it back too: focused %v, value %q", m.job.input.Focused(), m.job.input.Value())
-	}
-}
-
-// Each blank says how to answer it.
-func TestBlanksSayHowToAnswer(t *testing.T) {
-	for want, a := range map[string]config.Arg{
-		"type":            {Name: "x"},
-		"↑↓ to choose":    {Name: "x", Options: []config.Option{{Value: "a"}}},
-		"space to select": {Name: "x", Type: "flags", Options: []config.Option{{Value: "a"}}},
-	} {
-		if got := inputHint(a); got != want {
-			t.Errorf("%+v: %q, want %q", a, got, want)
-		}
-	}
-	if got := inputHint(config.Arg{Name: "x", Type: "secret"}); got != "type" {
-		t.Errorf("secret: %q", got)
 	}
 }
 

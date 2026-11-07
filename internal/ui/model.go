@@ -2100,7 +2100,7 @@ func (m *Model) trustView(w, avail int) string {
 func (m *Model) helpView(w int) string {
 	keys := [][2]string{
 		{"↑ ↓", "move"},
-		{"→ or enter", "open, next blank, run, or take the choice"},
+		{"→ or enter", "go: open, next blank, run, or take the choice"},
 		{"←", "back"},
 		{"[ ]", "jump to the previous or next heading"},
 		{"/", "filter (on the top level, every command); again stops"},
@@ -2881,7 +2881,8 @@ func (m *Model) promptKeys() []string {
 		switch {
 		case j.usePick && j.pick.filtering:
 			keys = append(keys, "/ stop filtering", "esc clear")
-		case j.usePick && j.pick.filtered(): // the filter's own row says how
+		case j.usePick && j.pick.filtered():
+			keys = append(keys, "/ edit filter", "esc clear")
 		case j.usePick:
 			keys = append(keys, "/ filter")
 		}
@@ -2891,15 +2892,16 @@ func (m *Model) promptKeys() []string {
 		if j.usePick && j.pick.multi && !j.pick.filtering {
 			keys = append([]string{"space select"}, keys...)
 		}
-	case modeConfirm:
-		keys = []string{"↑↓ choose", "enter select"}
-		if p := m.pending; p.risk == config.RiskDanger && !p.typed {
-			keys = []string{"type the code", "enter go on", "← back"}
+		if j.usePick {
+			keys = append([]string{"↑↓ move"}, keys...)
 		}
-	case modeTrust, modeTyped, modeQuit, modeSave:
-		keys = []string{"↑↓ choose", "enter select"}
-	case modeSavePack:
-		keys = []string{"↑↓ choose", "enter select", "← back"}
+	case modeConfirm:
+		keys = []string{"↑↓ move", "→ go", "← back"}
+		if p := m.pending; p.risk == config.RiskDanger && !p.typed {
+			keys = []string{"type the code", "→ go", "← back"}
+		}
+	case modeTrust, modeTyped, modeQuit, modeSave, modeSavePack:
+		keys = []string{"↑↓ move", "→ go", "← back"}
 	case modeSaveName:
 		keys = []string{"→ go", "← back"}
 	}
@@ -2936,15 +2938,15 @@ func (m *Model) barKeys() []string {
 		return m.promptKeys()
 	}
 	recipes := m.recipesSection() != nil
-	keys := []string{"→ go"}
+	keys := []string{"↑↓ move", "→ go"}
 	if m.section != nil || m.list.filtered() {
 		keys = append(keys, "← back")
 	}
 	switch {
 	case m.list.filtering:
-		keys = append(keys, "/ stop filtering", "esc clear filter")
+		keys = append(keys, "/ stop filtering", "esc clear")
 	case m.list.filtered():
-		keys = append(keys, "/ edit filter", "esc clear filter")
+		keys = append(keys, "/ edit filter", "esc clear")
 	default:
 		keys = append(keys, "/ filter")
 	}
@@ -2959,7 +2961,7 @@ func (m *Model) barKeys() []string {
 			keys = append(keys, "1-9 add")
 		}
 		if len(m.recipe) > 0 { // only with a current recipe to go to
-			keys = append(keys, "r recipe")
+			keys = append(keys, "r recipe", "x clear recipe")
 		}
 	}
 	if inClingon {
@@ -3216,7 +3218,7 @@ func filterLine(p *picker, w int) string {
 	case p.filtering:
 		left = inputView(&p.filter, room)
 	case p.filtered(): // closed, and still applied: it should be plain that it is
-		left = ansi.Truncate(accentStyle.Render("❯ ")+p.query()+faintStyle.Render("  / to edit · esc to clear"), max(room, 1), "…")
+		left = ansi.Truncate(accentStyle.Render("❯ ")+p.query(), max(room, 1), "…") // the status bar says how to edit or clear it
 	default:
 		left = accentStyle.Render("❯ /") + faintStyle.Render(" to filter")
 	}
@@ -3268,7 +3270,7 @@ func (m *Model) fillView(w, h int) string {
 	if r := m.recipeStep(); r != "" {
 		step = r + " · " + step
 	}
-	label := cursorStyle.Render(a.Label()) + dimStyle.Italic(true).Render(" ("+inputHint(a)+")")
+	label := cursorStyle.Render(a.Label())
 	// How far along stands alone, like a list's filter; the blank and its answer
 	// go together.
 	head := []string{dimStyle.Render(ansi.Truncate(step, inner, "…")), "", label}
@@ -3291,17 +3293,6 @@ func (m *Model) fillView(w, h int) string {
 		lines = append(lines, errStyle.Render(ansi.Wrap(j.invalid, w, "")))
 	}
 	return strings.Join(lines, "\n")
-}
-
-// inputHint says how to answer a blank.
-func inputHint(a config.Arg) string {
-	switch a.Kind() {
-	case "choose":
-		return "↑↓ to choose"
-	case "flags":
-		return "space to select"
-	}
-	return "type"
 }
 
 // recipeStep says which command of the recipe this is, if it's part of one.
@@ -3377,7 +3368,7 @@ func (m *Model) confirmBody(w int) string {
 			out := ansi.Wrap(highlight(p.shown), w, "") + "\n\n" +
 				ansi.Wrap(dangerStyle.Render(dangerGlyph)+" It can't be undone. Type "+dangerStyle.Render(p.code)+" to go on:", w, "") + "\n\n" + panel([]string{inputView(&m.word, panelWidth(w))}, w)
 			if m.wrong {
-				out += "\n" + errStyle.Render("That wasn't the code: here's a new one. Or esc to go back.")
+				out += "\n" + errStyle.Render("That wasn't the code: here's a new one.")
 			}
 			return out
 		}
