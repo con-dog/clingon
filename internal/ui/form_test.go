@@ -687,7 +687,7 @@ func TestPackFormColoursAsTheMarkdown(t *testing.T) {
 	for key, want := range map[string]string{
 		"name":     "\x1b[1;38;5;212mDemo",
 		"0/0/name": "\x1b[1;38;5;212mSay hello",
-		"0/0/cmd":  "\x1b[38;5;212m<who>",
+		"0/0/cmd":  "\x1b[38;5;117m<who>",
 		"0/0/0/0":  "\x1b[38;5;180mone",
 		"logo":     fieldStyle.Render("rocket"), // plain in the file: the form's white
 	} {

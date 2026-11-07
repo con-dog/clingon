@@ -27,6 +27,7 @@ var (
 	orange = lipgloss.Color(orangeHex) // 215: cautions
 	red    = lipgloss.Color(redHex)    // 204: errors, danger; the prompt after a failure
 	green  = lipgloss.Color("#5fd7af") // 79: values, all's well
+	sky    = lipgloss.Color("#87d7ff") // 117: a command's blanks, waiting to be filled: apart from the pinks and purples (what you act on) and the flags' periwinkle
 	ink    = lipgloss.Color("#121212") // 233: dark text on bright bands
 )
 

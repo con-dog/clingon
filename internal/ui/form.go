@@ -70,11 +70,11 @@ type formRow struct {
 	label, value, hint, help string
 	note                     string // faint, after the value: what a folded part has in it
 	header                   bool
-	sub                      int  // how many levels it's set in under its command: a blank 1, a blank's own rows 2
+	sub                      int    // how many levels it's set in under its command: a blank 1, a blank's own rows 2
 	title                    bool   // a label with nothing of its own, over what's set in under it: the cursor passes it
 	fold                     string // "open" or "closed" on a blank's What row, which opens and collapses the blank
-	depth                    int  // 0 the pack's, 1 a module's, 2 a command's: how far in its tree guides go
-	branch                   bool // an add that ends its level, drawn on the tree's └─
+	depth                    int    // 0 the pack's, 1 a module's, 2 a command's: how far in its tree guides go
+	branch                   bool   // an add that ends its level, drawn on the tree's └─
 	icon, color              string
 	look                     func(string) string // the value coloured as it is in the Markdown, if it's coloured there
 	risk                     string
@@ -1392,7 +1392,7 @@ func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
 		}
 		open := on && f.choosing != nil
 		out = append(out, strings.Split(f.rowLine(r, on && !open, open, col, w), "\n")...) // wrapped over lines, a long value
-		if on && f.editing != nil { // typing: the line the cursor's on, in view
+		if on && f.editing != nil {                                                        // typing: the line the cursor's on, in view
 			at += f.input.Line()
 		}
 		if open {
@@ -1504,7 +1504,7 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 			label = dimStyle.Render(label)
 		}
 		rest += label + pad
-		room = max(w-col-2, 1) // and the ▾
+		room = max(w-col-2, 1)                                 // and the ▾
 		at = ansi.StringWidth(g+slot) + ansi.StringWidth(rest) // where the value starts, and its lines after the first
 		switch {
 		case f.editing != nil && f.editing.key == r.key:

@@ -27,7 +27,7 @@ rules:
     - error: "^> \\[!(NOTE|TIP|IMPORTANT)\\].*$"
 
     # The command: coloured as the menu colours it (internal/ui/highlight.go):
-    # programs green, flags periwinkle, strings tan, operators grey, blanks pink.
+    # programs green, flags periwinkle, strings tan, operators grey, blanks sky blue.
     - default:
         start: "^```[a-z]*"
         end: "^```"
@@ -38,7 +38,7 @@ rules:
             - identifier: "(^|\\s)--?[A-Za-z0-9_=.:,/-]*"
             - symbol: "\\|\\||&&|\\||;|>>?|<"
             - constant.string: "\"(\\\\.|[^\"\\\\])*\"|'[^']*'"
-            - special: "<[A-Za-z_][A-Za-z0-9_-]*>"
+            - special.blank: "<[A-Za-z_][A-Za-z0-9_-]*>"
             - identifier: "\\b(needs|when)="
 
     # Front matter: settings for the whole file, their values plain text.

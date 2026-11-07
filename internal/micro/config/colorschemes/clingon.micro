@@ -36,7 +36,7 @@ color-link color-column "default"
 # Packs (syntax/markdown.yaml): the menu's colours for what each line is.
 color-link special.heading "bold 212"
 color-link special.hash "60"
-color-link special.blank "79"
+color-link special.blank "117"
 color-link special.mark "147"
 color-link special.warning "bold 215"
 color-link special.caution "bold 204"

@@ -3196,7 +3196,7 @@ func preview(c *config.Command, vals map[string]string, step int, tentative stri
 		case i == step:
 			b.WriteString(pendingStyle.Render("<" + s.Arg + ">"))
 		default:
-			b.WriteString(accentStyle.Faint(true).Render("<" + s.Arg + ">"))
+			b.WriteString(lipgloss.NewStyle().Foreground(sky).Render("<" + s.Arg + ">")) // still to come: the one being asked is the pink one
 		}
 	}
 	return b.String()
