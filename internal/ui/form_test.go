@@ -114,10 +114,11 @@ func TestPackFormEditsThePack(t *testing.T) {
 	// A new module, on the same page, the cursor on its title.
 	f.onRow(t, "add-module")
 	press(f, kRight)
-	if r := f.selectedRow(); r == nil || r.key != "1/name" {
-		t.Fatalf("on %+v", r)
+	if r := f.selectedRow(); r == nil || r.key != "1/name" || f.editing == nil || f.input.Value() != "" {
+		t.Fatalf("typing its name straight away, in an empty box: on %+v", r)
 	}
-	typeIn(f, "Deploy")
+	f.input.SetValue("Deploy")
+	press(f, kEsc)
 	f.onRow(t, "1/0/name")
 	typeIn(f, "Ship it")
 	f.onRow(t, "1/0/risk")
@@ -132,6 +133,8 @@ func TestPackFormEditsThePack(t *testing.T) {
 	if r := f.selectedRow(); r == nil || r.key != "1/0/0/2/types" {
 		t.Fatalf("Add a choice should go to what the new choice types, on %+v", r)
 	}
+	f.input.SetValue("prod")
+	press(f, kEsc)
 	// The choice's label, its Desc; and picked to begin with.
 	f.onRow(t, "1/0/0/2/label")
 	typeIn(f, "Production")
@@ -192,7 +195,7 @@ func TestPackFormEditsThePack(t *testing.T) {
 	if ship == nil || ship.Risk != config.RiskWarn || ship.Cmd != "./ship.sh <env>" || ship.Args[0].Kind() != "choose" || len(ship.Args[0].Options) != 3 {
 		t.Fatalf("Ship it: %+v", ship)
 	}
-	if a := ship.Args[0]; !slices.Contains(a.Options, config.Option{Value: "choice", Label: "Production"}) || a.Default != "choice" {
+	if a := ship.Args[0]; !slices.Contains(a.Options, config.Option{Value: "prod", Label: "Production"}) || a.Default != "prod" {
 		t.Fatalf("the new choice: %+v", a)
 	}
 }
@@ -202,9 +205,11 @@ func TestPackFormRemoves(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "0/add")
 	press(f, kRight)
+	f.input.SetValue("Second")
+	press(f, kEsc)
 	f.onRow(t, "0/0/remove")
 	press(f, kRight, kDown, kRight) // Yes
-	if len(f.pack.Files[0].Group.Commands) != 1 || f.pack.Files[0].Group.Commands[0].Name != "New command" {
+	if len(f.pack.Files[0].Group.Commands) != 1 || f.pack.Files[0].Group.Commands[0].Name != "Second" {
 		t.Fatal("Yes should remove it")
 	}
 	if f.selectedRow() == nil || f.selectedRow().header {
@@ -926,5 +931,42 @@ func TestPackFormPreviewFollows(t *testing.T) {
 		if p := ansi.Strip(strings.Join(f.preview(60, 30), "\n")); !strings.Contains(p, "## Command 12") {
 			t.Errorf("%s: the cursor's command should be in view:\n%s", key, p)
 		}
+	}
+}
+
+// An add is a ghost of what it adds, where that will be: + COMMAND at the end
+// of its module, + MODULE after the last, + Opts after a blank's choices.
+// Taking one goes straight to naming what it added, in an empty box; left
+// with no name (or ctrl+c), it's not added after all.
+func TestPackFormGhostAdds(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "0/0/0/kind")
+	f.pick(t, "choose")
+	p := f.page()
+	for _, want := range []string{"+ COMMAND", "+ MODULE", "+ Opts"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("no %q in:\n%s", want, p)
+		}
+	}
+	if strings.Contains(p, "Add a") {
+		t.Errorf("the adds should be ghosts, not sentences:\n%s", p)
+	}
+	n := len(f.pack.Files[0].Group.Commands)
+	f.onRow(t, "0/add")
+	press(f, kRight)
+	if f.editing == nil || f.editing.key != fmt.Sprintf("0/%d/name", n) || len(f.pack.Files[0].Group.Commands) != n+1 {
+		t.Fatalf("naming the new command: %+v", f.editing)
+	}
+	press(f, kEsc)
+	if len(f.pack.Files[0].Group.Commands) != n || f.editing != nil {
+		t.Fatalf("left unnamed, it's not added: %d commands", len(f.pack.Files[0].Group.Commands))
+	}
+	if r := f.selectedRow(); r == nil || r.key != "0/add" {
+		t.Errorf("back on the add: %+v", r)
+	}
+	f.onRow(t, "add-module")
+	press(f, kRight, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if len(f.pack.Files) != 1 {
+		t.Errorf("ctrl+c takes the new module back too: %d modules", len(f.pack.Files))
 	}
 }
