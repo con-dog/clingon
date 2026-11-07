@@ -30,12 +30,22 @@ var sectionRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 var reservedSections = map[string]bool{"clingon": true, "this-project": true}
 
 // SectionName is what the menu calls a section: code is Code, and one of your
-// own, work-tools, is Work tools.
+// own, work-tools, is Work Tools.
 func SectionName(slug string) string {
 	if name, ok := sectionSlugs[slug]; ok {
 		return name
 	}
-	return sectionTitle(slug)
+	return TitleWords(slug)
+}
+
+// TitleWords is a lowercase name as the form shows it: each word, split at -
+// and spaces, starting with a capital: select many is Select Many.
+func TitleWords(s string) string {
+	words := strings.FieldsFunc(s, func(r rune) bool { return r == '-' || r == ' ' })
+	for i, w := range words {
+		words[i] = sectionTitle(w)
+	}
+	return strings.Join(words, " ")
 }
 
 // SectionSlugs lists the sections clingon suggests, in the menu's order.

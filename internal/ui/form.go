@@ -300,8 +300,8 @@ func openPart(key string) (sub, cmd int) {
 // fold opens or collapses the module or command whose heading r is, or the
 // blank whose What row it is.
 func (f *PackForm) fold(r *formRow, open bool) {
-	var at [3]int
-	n, _ := fmt.Sscanf(r.key, "%d/%d/%d/", &at[0], &at[1], &at[2])
+	var at [4]int // a blank's ("1/2/0/name") or a choice's ("1/2/0/3")
+	n, _ := fmt.Sscanf(r.key, "%d/%d/%d/%d", &at[0], &at[1], &at[2], &at[3])
 	if r.header {
 		at[0], at[1] = openPart(r.key)
 		n = 2
@@ -352,6 +352,10 @@ func (f *PackForm) reveal(key string) {
 	var b int
 	if n, _ := fmt.Sscanf(key, "%d/%d/%d/", &sub, &cmd, &b); n == 3 && !strings.HasSuffix(key, "/name") { // a blank's row, past its What
 		f.setOpen(true, sub, cmd, b)
+	}
+	var o int
+	if n, _ := fmt.Sscanf(key, "%d/%d/%d/%d/", &sub, &cmd, &b, &o); n == 4 && strings.Count(key, "/") == 4 { // a choice's row, past its Opts
+		f.setOpen(true, sub, cmd, b, o)
 	}
 }
 
@@ -498,6 +502,14 @@ var emptySGR = regexp.MustCompile(`\x1b\[[0-9;]*m\x1b\[0?m`)
 // frontLook colours a setting's value as it is in the front matter.
 func frontLook(key string) func(string) string { return mdLook("---\n"+key+": ", "\n---") }
 
+// capitalFirst is a hint as the form shows it, starting with a capital.
+func capitalFirst(s string) string {
+	for i, r := range s {
+		return strings.ToUpper(string(r)) + s[i+len(string(r)):]
+	}
+	return s
+}
+
 // iconGap is the space after an icon before its text: one after a glyph that
 // fills its cell, as the menu has after ⚠ and ☠; two after one of clingon's
 // font's logos and centred twins, drawn across two cells.
@@ -518,19 +530,19 @@ func (f *PackForm) packRows() []formRow {
 	// The sections clingon suggests, then your own, then one more.
 	var sections []config.Option
 	for _, s := range append(config.SectionSlugs(), config.YourSections()...) {
-		sections = append(sections, config.Option{Value: s})
+		sections = append(sections, config.Option{Value: s, Label: config.SectionName(s)})
 	}
 	if !slices.ContainsFunc(sections, func(o config.Option) bool { return o.Value == p.Section }) {
-		sections = append(sections, config.Option{Value: p.Section})
+		sections = append(sections, config.Option{Value: p.Section, Label: config.SectionName(p.Section)})
 	}
 	sections = append(sections, config.Option{Value: newSection, Label: "+ New menu"})
 	var logos []config.Option
 	for _, n := range config.PackLogos {
-		logos = append(logos, config.Option{Value: n, Icon: config.Logos[n]}) // all grey: a choice of shape, colour's the next row
+		logos = append(logos, config.Option{Value: n, Label: config.TitleWords(n), Icon: config.Logos[n]}) // all grey: a choice of shape, colour's the next row
 	}
 	var colours []config.Option
 	for _, c := range config.PackColors {
-		colours = append(colours, config.Option{Value: c.Name, Icon: config.Logos[p.Logo], Color: c.Hex})
+		colours = append(colours, config.Option{Value: c.Name, Label: config.TitleWords(c.Name), Icon: config.Logos[p.Logo], Color: c.Hex})
 	}
 	colour, colourHex := p.Color, f.logoColour()
 	for _, c := range config.PackColors { // with none set, the colour its logo has
@@ -542,7 +554,7 @@ func (f *PackForm) packRows() []formRow {
 		{label: "Pack", header: true},
 		{key: "name", label: "Name", value: p.Title, look: mdLook("# ", ""), help: "What the menu calls the pack.", text: func(v string) error { f.pack.Title = v; return nil }},
 		{key: "desc", label: "Desc", value: p.Description, hint: "one line on what's in it", help: "One line on what's in it, shown by clingon pack.", text: func(v string) error { f.pack.Description = v; return nil }},
-		{key: "menu", label: "Menu", value: p.Section, look: frontLook("menu"), help: "Where the menu shows it: one of these, or + New menu for one of your own.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil },
+		{key: "menu", label: "Menu", value: config.SectionName(p.Section), look: frontLook("menu"), help: "Where the menu shows it: one of these, or + New menu for one of your own.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil },
 			text: func(v string) error {
 				s, err := config.SectionSlug(v)
 				if err == nil {
@@ -550,8 +562,8 @@ func (f *PackForm) packRows() []formRow {
 				}
 				return err
 			}},
-		{key: "logo", label: "Logo", value: p.Logo, look: frontLook("logo"), icon: config.Logos[p.Logo], color: f.logoColour(), help: "Its icon in the menu.", options: logos, pick: func(v string) error { f.pack.Logo = v; return nil }},
-		{key: "tint", label: "Tint", value: colour, look: frontLook("tint"), icon: slotIcon("●"), color: colourHex, help: "The logo's colour.", options: colours, pick: func(v string) error { f.pack.Color = v; return nil }},
+		{key: "logo", label: "Logo", value: config.TitleWords(p.Logo), look: frontLook("logo"), icon: config.Logos[p.Logo], color: f.logoColour(), help: "Its icon in the menu.", options: logos, pick: func(v string) error { f.pack.Logo = v; return nil }},
+		{key: "tint", label: "Tint", value: config.TitleWords(colour), look: frontLook("tint"), icon: slotIcon("●"), color: colourHex, help: "The logo's colour.", options: colours, pick: func(v string) error { f.pack.Color = v; return nil }},
 		{key: "needs", label: "Need", value: joined(p.Needs), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs the pack needs, separated by commas: the status bar warns you while one's missing.", text: func(v string) error { f.pack.Needs = splitComma(v); return nil }},
 	}
 	if f.folded(-1, -1) {
@@ -600,11 +612,11 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 	k := func(s string) string { return fmt.Sprintf("%d/%d/%s", i, j, s) }
 	// Each with the glyph the menu marks it with; none with a grey dot.
 	risks := []config.Option{
-		{Value: "", Label: "none", Icon: "●", Color: greyHex}, // one cell, as ⚠ and ☠ are: not the logos' centred twin
-		{Value: config.RiskWarn, Label: "warning", Icon: warnGlyph, Color: orangeHex},
-		{Value: config.RiskDanger, Label: "dangerous", Icon: dangerGlyph, Color: redHex},
+		{Value: "", Label: "None", Icon: "●", Color: greyHex}, // one cell, as ⚠ and ☠ are: not the logos' centred twin
+		{Value: config.RiskWarn, Label: "Warning", Icon: warnGlyph, Color: orangeHex},
+		{Value: config.RiskDanger, Label: "Dangerous", Icon: dangerGlyph, Color: redHex},
 	}
-	risk := map[string]string{"": "none", config.RiskWarn: "warning", config.RiskDanger: "dangerous"}[c.Risk]
+	risk := map[string]string{"": "None", config.RiskWarn: "Warning", config.RiskDanger: "Dangerous"}[c.Risk]
 	var descLook func(string) string // in a callout's > lines when it has a risk
 	if c.Risk != "" {
 		descLook = mdLook("> ", "")
@@ -647,8 +659,8 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 	a := f.blank(i, j, b)
 	k := func(s string) string { return fmt.Sprintf("%d/%d/%d/%s", i, j, b, s) }
 	name := "<" + a.Name + ">"
-	kinds := []config.Option{{Value: "text", Label: "text"}, {Value: "choose", Label: "select one"}, {Value: "flags", Label: "select many"}}
-	kind := map[string]string{"text": "text", "secret": "text, hidden", "choose": "select one", "flags": "select many"}[a.Kind()]
+	kinds := []config.Option{{Value: "text", Label: "Text"}, {Value: "choose", Label: "Select One"}, {Value: "flags", Label: "Select Many"}}
+	kind := map[string]string{"text": "Text", "secret": "Text, Hidden", "choose": "Select One", "flags": "Select Many"}[a.Kind()]
 	rows := []formRow{
 		{key: k("name"), fold: "open", label: "What", value: name, look: mdLook("- `", "`"), help: "The blank: where it is in the command. Renaming it renames it there too.", text: func(v string) error {
 			return config.RenameBlank(f.command(i, j), f.blank(i, j, b).Name, v)
@@ -676,13 +688,13 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 		rows = append(rows, formRow{key: k("start"), label: "Base", value: a.Default, look: mdLook("  - (x) `", "`"), hint: "none", help: "What's filled in for " + name + " until you change it.", text: func(v string) error { f.blank(i, j, b).Default = v; return nil }})
 	} else {
 		for o := range a.Options {
-			rows = append(rows, f.choiceRow(i, j, b, o))
+			rows = append(rows, f.choiceRows(i, j, b, o)...)
 		}
 		rows = append(rows, formRow{key: k("add"), label: "Add a choice", help: "Another answer to offer for " + name + ".", do: func() error {
 			a := f.blank(i, j, b)
 			a.Options = append(a.Options, config.Option{Value: uniqueName("choice", func(n string) bool { return a.HasOption(n) })})
 			return nil
-		}, then: fmt.Sprintf("%d/%d/%d/%d", i, j, b, len(a.Options))})
+		}, then: fmt.Sprintf("%d/%d/%d/%d/types", i, j, b, len(a.Options))}) // on to what it types, opened
 	}
 	if f.filter.Value() == "" && !f.noFold && !f.isOpen(i, j, b) { // collapsed to its What row, and what it is
 		note := kind
@@ -700,98 +712,96 @@ func pickedFirst(a *config.Arg, v string) bool {
 	return a.Kind() == "flags" && slices.Contains(a.Ticked(a.Default), v) || a.Kind() == "choose" && a.Default == v
 }
 
-// choiceRow is one of a blank's choices, on one row: what it types, its label,
-// and whether it's a default. Enter lists what can be done to it.
-func (f *PackForm) choiceRow(i, j, b, o int) formRow {
+// choiceRows are one of a blank's choices: its Opts row, opening and
+// collapsing it as a blank's What row does, with what it types; and open, what
+// it types (Runs), its label (Desc), whether it's picked to begin with (Pick),
+// and removing it. They start collapsed: a line saying it all.
+func (f *PackForm) choiceRows(i, j, b, o int) []formRow {
 	a := f.blank(i, j, b)
 	opt := a.Options[o]
-	v := opt.Value
-	if opt.Label != "" {
-		v += "  " + opt.Label
-	}
-	first, notFirst := "Make it the default", "Not the default"
-	if a.Kind() == "flags" { // any number can be: selected by default
-		first, notFirst = "Selected by default", "Not selected by default"
-	}
+	key := fmt.Sprintf("%d/%d/%d/%d", i, j, b, o)
+	k := func(s string) string { return key + "/" + s }
+	types := mdLook("  - ( ) `", "`")
+	picked := "No"
 	if pickedFirst(a, opt.Value) {
-		v += "  · default"
-		first = notFirst
+		picked = "Yes"
 	}
-	look := func(string) string { // what it types as in the file, its label plain, and a faint note
-		s := mdLook("  - ( ) `", "`")(opt.Value)
+	head := formRow{key: key, fold: "open", label: "Opts", value: opt.Value, look: types, help: "One of the answers offered for <" + a.Name + ">: → opens it, ← collapses it."}
+	if !f.optOpen(i, j, b, o) && f.filter.Value() == "" && !f.noFold {
+		var note []string
 		if opt.Label != "" {
-			s += "  " + fieldStyle.Render(opt.Label)
+			note = append(note, opt.Label)
 		}
-		if pickedFirst(a, opt.Value) {
-			s += faintStyle.Render("  · default")
+		if picked == "Yes" {
+			note = append(note, "Picked")
 		}
-		return s
+		head.fold, head.note = "closed", strings.Join(note, " · ")
+		return []formRow{head}
 	}
-	return formRow{key: fmt.Sprintf("%d/%d/%d/%d", i, j, b, o), label: "Opts", value: v, look: look,
-		help:    "One of the answers offered: what it types, then its label.",
-		options: []config.Option{{Value: "types", Label: "Change what it types"}, {Value: "label", Label: "Change its label"}, {Value: "first", Label: first}, {Value: "remove", Label: "Remove it"}},
-		pick: func(what string) error {
+	pickHelp := "Whether it's picked to begin with: one choice can be."
+	if a.Kind() == "flags" {
+		pickHelp = "Whether it's picked to begin with: any number can be."
+	}
+	return []formRow{head,
+		{key: k("types"), label: "Runs", value: opt.Value, look: types, help: "What it types into the command, picked.", text: func(v string) error {
+			a := f.blank(i, j, b)
+			op := &a.Options[o]
+			switch {
+			case v == "":
+				return fmt.Errorf("a choice types something")
+			case a.Kind() == "flags":
+				on := a.Ticked(a.Default)
+				if n := slices.Index(on, op.Value); n >= 0 {
+					on[n] = v
+					a.Default = strings.Join(on, a.Separator())
+				}
+			case a.Default == op.Value:
+				a.Default = v
+			}
+			op.Value = v
+			return nil
+		}},
+		{key: k("label"), label: "Desc", value: opt.Label, hint: "what it means, if it needs saying", help: "Its label, shown beside it in the list.", text: func(v string) error {
+			f.blank(i, j, b).Options[o].Label = v
+			return nil
+		}},
+		{key: k("pick"), label: "Pick", value: picked, help: pickHelp, options: []config.Option{{Value: "yes", Label: "Yes"}, {Value: "no", Label: "No"}}, pick: func(v string) error {
 			a := f.blank(i, j, b)
 			opt := a.Options[o]
-			switch what {
-			case "first":
-				if a.Kind() == "choose" {
-					if a.Default == opt.Value {
-						a.Default = ""
-					} else {
-						a.Default = opt.Value
-					}
-					return nil
-				}
-				on := slices.DeleteFunc(a.Ticked(a.Default), func(s string) bool { return s == opt.Value })
-				if !pickedFirst(a, opt.Value) {
-					on = append(on, opt.Value)
-				}
-				a.Default = strings.Join(on, a.Separator())
-			case "remove":
-				if a.Kind() == "flags" {
-					a.Default = strings.Join(slices.DeleteFunc(a.Ticked(a.Default), func(s string) bool { return s == opt.Value }), a.Separator())
-				} else if a.Default == opt.Value {
+			if (v == "yes") == pickedFirst(a, opt.Value) {
+				return nil
+			}
+			if a.Kind() == "choose" {
+				if v == "yes" {
+					a.Default = opt.Value
+				} else {
 					a.Default = ""
 				}
-				a.Options = slices.Delete(a.Options, o, o+1)
+				return nil
 			}
+			on := slices.DeleteFunc(a.Ticked(a.Default), func(s string) bool { return s == opt.Value })
+			if v == "yes" {
+				on = append(on, opt.Value)
+			}
+			a.Default = strings.Join(on, a.Separator())
 			return nil
-		}}
+		}},
+		{key: k("remove"), label: "Remove this choice", risk: config.RiskWarn, help: "Removes the choice.", confirm: "Yes, remove it", do: func() error {
+			a := f.blank(i, j, b)
+			opt := a.Options[o]
+			if a.Kind() == "flags" {
+				a.Default = strings.Join(slices.DeleteFunc(a.Ticked(a.Default), func(s string) bool { return s == opt.Value }), a.Separator())
+			} else if a.Default == opt.Value {
+				a.Default = ""
+			}
+			a.Options = slices.Delete(a.Options, o, o+1)
+			return nil
+		}},
+	}
 }
 
-// choiceText is the field for changing a choice's value (what "types") or its
-// label, typed on the choice's own row.
-func (f *PackForm) choiceText(r *formRow, what string) (*formRow, string) {
-	var i, j, b, o int
-	_, _ = fmt.Sscanf(r.key, "%d/%d/%d/%d", &i, &j, &b, &o)
-	field := *r
-	field.text = func(s string) error {
-		a := f.blank(i, j, b)
-		op := &a.Options[o]
-		if what == "label" {
-			op.Label = s
-			return nil
-		}
-		switch {
-		case a.Kind() == "flags":
-			on := a.Ticked(a.Default)
-			if k := slices.Index(on, op.Value); k >= 0 {
-				on[k] = s
-				a.Default = strings.Join(on, a.Separator())
-			}
-		case a.Default == op.Value:
-			a.Default = s
-		}
-		op.Value = s
-		return nil
-	}
-	opt := f.blank(i, j, b).Options[o]
-	if what == "label" {
-		return &field, opt.Label
-	}
-	return &field, opt.Value
-}
+// optOpen says whether a choice is open: they start collapsed.
+func (f *PackForm) optOpen(i, j, b, o int) bool { return f.toggled[partKey(i, j, b, o)] }
 
 // selectedRow is the row under the cursor.
 func (f *PackForm) selectedRow() *formRow {
@@ -1071,9 +1081,6 @@ func (f *PackForm) chose() tea.Cmd {
 		}
 		f.refresh("")
 		return nil
-	case v == "types" || v == "label": // a choice's, typed on its row
-		field, now := f.choiceText(r, v)
-		return f.edit(field, now)
 	case v == newSection: // typed on its row, starting empty
 		return f.edit(r, "")
 	}
@@ -1529,7 +1536,7 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 			lines := wrapAsTyped(r.value, v, room) // typed: wrapped, as it's typed in
 			rest, more = rest+lines[0], lines[1:]
 		case r.hint != "" && on: // only where you are: elsewhere they'd fill the form with what isn't yours
-			rest += dimStyle.Italic(true).Render(ansi.Truncate(r.hint, room, "…"))
+			rest += dimStyle.Italic(true).Render(ansi.Truncate(capitalFirst(r.hint), room, "…"))
 		case r.text != nil:
 			rest += faintStyle.Render("—")
 		}
@@ -1802,6 +1809,12 @@ func marked(key string, lines []string) map[int]bool {
 			subEnd++
 		}
 		var o int
+		if len(parts) == 5 { // one of a choice's own rows: its line
+			if _, err := fmt.Sscanf(parts[3], "%d", &o); err == nil {
+				mark(item+1+o, item+1+o)
+			}
+			return on
+		}
 		switch _, err := fmt.Sscanf(field, "%d", &o); {
 		case err == nil: // a choice
 			mark(item+1+o, item+1+o)

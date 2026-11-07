@@ -104,7 +104,7 @@ func TestPackFormEditsThePack(t *testing.T) {
 	// A section, picked from the list dropped down under it.
 	f.onRow(t, "menu")
 	press(f, kRight)
-	if !strings.Contains(f.screen(), "infrastructure") {
+	if !strings.Contains(f.screen(), "Infrastructure") {
 		t.Fatalf("the list should be under the row:\n%s", f.screen())
 	}
 	press(f, kLeft)
@@ -128,15 +128,14 @@ func TestPackFormEditsThePack(t *testing.T) {
 	f.pick(t, "choose")
 	f.onRow(t, "1/0/0/add")
 	press(f, kRight)
-	if r := f.selectedRow(); r == nil || r.key != "1/0/0/2" {
-		t.Fatalf("Add a choice should go to the new choice, on %+v", r)
+	if r := f.selectedRow(); r == nil || r.key != "1/0/0/2/types" {
+		t.Fatalf("Add a choice should go to what the new choice types, on %+v", r)
 	}
-	// The choice's label, typed on its row; and made the default.
-	f.pick(t, "label")
-	f.input.SetValue("Production")
-	press(f, kEsc)
-	f.onRow(t, "1/0/0/2")
-	f.pick(t, "first")
+	// The choice's label, its Desc; and picked to begin with.
+	f.onRow(t, "1/0/0/2/label")
+	typeIn(f, "Production")
+	f.onRow(t, "1/0/0/2/pick")
+	f.pick(t, "yes")
 	if page := f.page(); !strings.Contains(page, "MODULE") || !strings.Contains(page, "COMMAND") {
 		t.Fatalf("cards should be titled with what they are:\n%s", page)
 	}
@@ -539,11 +538,11 @@ func TestPackFormCollapses(t *testing.T) {
 func TestPackFormHintsWhereYouAre(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "name")
-	if p := f.page(); strings.Contains(p, "programs, separated by commas") {
+	if p := f.page(); strings.Contains(p, "Programs, separated by commas") {
 		t.Errorf("a hint away from the cursor:\n%s", p)
 	}
 	f.onRow(t, "needs")
-	if p := f.page(); !strings.Contains(p, "programs, separated by commas") {
+	if p := f.page(); !strings.Contains(p, "Programs, separated by commas") {
 		t.Errorf("no hint on the cursor's row:\n%s", p)
 	}
 }
@@ -656,23 +655,23 @@ func TestPackFormSectionOfYourOwn(t *testing.T) {
 	}
 }
 
-// Any number of a tick-any blank's choices can be ticked by default, even
-// ones with a space in them.
+// Any number of a select-many blank's choices can be picked to begin with,
+// even ones with a space in them.
 func TestPackFormTicksSeveral(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "0/0/0/kind")
 	f.pick(t, "flags")
 	a := &f.pack.Files[0].Group.Commands[0].Args[0]
 	a.Options[0].Value = "-n 5"
-	for _, o := range []string{"0/0/0/0", "0/0/0/1"} {
+	for _, o := range []string{"0/0/0/0/pick", "0/0/0/1/pick"} {
 		f.onRow(t, o)
-		f.pick(t, "first")
+		f.pick(t, "yes")
 	}
 	if md := f.pack.Markdown()["examples.md"]; !strings.Contains(md, "  - [x] `-n 5`\n  - [x] `two`\n") {
 		t.Fatalf("both ticked:\n%s", md)
 	}
-	f.onRow(t, "0/0/0/0")
-	f.pick(t, "first")
+	f.onRow(t, "0/0/0/0/pick")
+	f.pick(t, "no")
 	if a.Default != "two" {
 		t.Errorf("unticked: %q", a.Default)
 	}
@@ -689,7 +688,7 @@ func TestPackFormColoursAsTheMarkdown(t *testing.T) {
 		"0/0/name": "\x1b[1;38;5;212mSay hello",
 		"0/0/cmd":  "\x1b[38;5;117m<who>",
 		"0/0/0/0":  "\x1b[38;5;180mone",
-		"logo":     fieldStyle.Render("rocket"), // plain in the file: the form's white
+		"logo":     fieldStyle.Render("Rocket"), // plain in the file: the form's white
 	} {
 		f.onRow(t, key)
 		r := f.selectedRow()
@@ -720,7 +719,7 @@ func TestPackFormArgs(t *testing.T) {
 		t.Fatalf("What, with its arrow, then its rows, all in line with Runs:\n%s", page)
 	}
 	press(f, kLeft)
-	if p := f.page(); !strings.Contains(p, "▸ What") || !strings.Contains(p, "<who>  · select one, 2 opts") || strings.Contains(p, "Who to greet") {
+	if p := f.page(); !strings.Contains(p, "▸ What") || !strings.Contains(p, "<who>  · Select One, 2 opts") || strings.Contains(p, "Who to greet") {
 		t.Fatalf("← collapses it:\n%s", p)
 	}
 	press(f, kRight)
@@ -872,5 +871,40 @@ func TestPackFormArrowsLeaveTheText(t *testing.T) {
 	press(f, kRight)
 	if f.editing != nil || f.pack.Files[0].Group.Commands[0].Name != "Hello" {
 		t.Errorf("→ past its end leaves, keeping it: %q", f.pack.Files[0].Group.Commands[0].Name)
+	}
+}
+
+// A choice is an Opts row, collapsed to start with, saying what it types, its
+// label and whether it's picked; → opens it to its Runs, Desc and Pick rows,
+// and ← collapses it again, as a blank's What row does.
+func TestPackFormOpts(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "0/0/0/kind")
+	f.pick(t, "choose")
+	a := &f.pack.Files[0].Group.Commands[0].Args[0]
+	a.Options[0].Label, a.Default = "the first", "one"
+	f.refresh("0/0/0/0")
+	if p := f.page(); !strings.Contains(p, "▸ Opts  one  · the first · Picked") || strings.Contains(p, "Pick  ") {
+		t.Fatalf("collapsed, a line saying it all:\n%s", p)
+	}
+	press(f, kRight)
+	p := f.page()
+	if !strings.Contains(p, "▾ Opts  one") || !strings.Contains(p, "Runs  one") || !strings.Contains(p, "Desc  the first") || !strings.Contains(p, "Pick  Yes") {
+		t.Fatalf("→ opens it:\n%s", p)
+	}
+	f.onRow(t, "0/0/0/0/types")
+	typeIn(f, "uno")
+	if a.Options[0].Value != "uno" || a.Default != "uno" {
+		t.Errorf("what it types, and picked still: %+v %q", a.Options[0], a.Default)
+	}
+	f.onRow(t, "0/0/0/0")
+	press(f, kLeft)
+	if p := f.page(); !strings.Contains(p, "▸ Opts  uno") || strings.Contains(p, "Runs  uno") {
+		t.Errorf("← collapses it:\n%s", p)
+	}
+	f.onRow(t, "0/0/0/1/remove")
+	press(f, kRight, kDown, kRight) // Yes
+	if len(a.Options) != 1 {
+		t.Errorf("removed: %+v", a.Options)
 	}
 }

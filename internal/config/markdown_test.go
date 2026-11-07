@@ -149,22 +149,27 @@ func TestPackSection(t *testing.T) {
 		t.Errorf("other: %q", c.Sections[0].Category)
 	}
 	part, err = parsePackFile(PackInfoFile, []byte("---\nmenu: work-tools\n---\n# Mine\n"))
-	if err != nil || part.info.Section != "work-tools" || part.info.Category != "Work tools" {
+	if err != nil || part.info.Section != "work-tools" || part.info.Category != "Work Tools" {
 		t.Errorf("a section of your own: %v %+v", err, part.info)
 	}
 	for src, want := range map[string]string{
-		"---\nlogo: rocket\nmenu: Work Tools\n---\n# X\n": ":3: a menu name is lowercase letters, digits and -, like work-tools",
-		"---\nmenu: clingon\n---\n# X\n":                  "Clingon is clingon's own heading",
+		"---\nlogo: rocket\nmenu: ***\n---\n# X\n": ":3: menu: needs a name",
+		"---\nmenu: clingon\n---\n# X\n":           "Clingon is clingon's own heading",
 	} {
 		if _, err := parsePackFile(PackInfoFile, []byte(src)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: want %q, got %v", src, want, err)
 		}
 	}
+	// In any case: the file's values are lowercase, but Work Tools, Grey and
+	// Rocket are read as the form shows them.
+	if p, err := parsePackFile(PackInfoFile, []byte("---\nmenu: Command Line\nlogo: Rocket\ntint: Grey\n---\n# X\n")); err != nil || p.info.Section != "command-line" || p.info.Logo != "rocket" || p.info.Color != colorHex("grey") {
+		t.Errorf("any case: %v %+v", err, p.info)
+	}
 	if s, err := SectionSlug("  Work Tools "); s != "work-tools" || err != nil {
 		t.Errorf("typed: %q %v", s, err)
 	}
-	cats := MenuCategories([]Section{{Category: "Work tools"}, {Category: Other}, {Category: "Code"}})
-	if strings.Join(cats, ",") != "AI,Code,Command Line,Databases,Infrastructure,System,Work tools,Other" {
+	cats := MenuCategories([]Section{{Category: "Work Tools"}, {Category: Other}, {Category: "Code"}})
+	if strings.Join(cats, ",") != "AI,Code,Command Line,Databases,Infrastructure,System,Work Tools,Other" {
 		t.Errorf("headings: %v", cats)
 	}
 	if _, err := parsePackFile("s.md", []byte("---\nmenu: code\n---\n# S\n")); err == nil {

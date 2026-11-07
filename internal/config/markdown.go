@@ -230,12 +230,13 @@ func parsePack(path string, data []byte) (*packInfo, error) {
 	if s == "" {
 		return nil, m.errf(0, "_pack.md says where in the menu the pack goes, in its front matter: menu: and one of %s, or one of your own", strings.Join(SectionSlugs(), ", "))
 	}
-	if err := checkSection(s); err != nil {
+	s, err = SectionSlug(s) // in any case: Command Line is command-line
+	if err != nil {
 		return nil, m.errf(keyAt("menu"), "%s", err)
 	}
 	hex := ""
 	if c := fm["tint"]; c != "" {
-		if hex = colorHex(c); hex == "" {
+		if hex = colorHex(strings.ToLower(c)); hex == "" {
 			return nil, m.errf(keyAt("tint"), "there's no tint called %s: use one of %s", c, colorNames())
 		}
 	}
@@ -248,7 +249,7 @@ func parsePack(path string, data []byte) (*packInfo, error) {
 			return nil, m.errf(m.at, "_pack.md has a # Name and a description; commands go in a module file next to it")
 		}
 	}
-	return &packInfo{Name: name, Description: desc, Logo: fm["logo"], Color: hex, Section: s, Category: SectionName(s), Requires: splitList(fm["needs"])}, nil
+	return &packInfo{Name: name, Description: desc, Logo: strings.ToLower(fm["logo"]), Color: hex, Section: s, Category: SectionName(s), Requires: splitList(fm["needs"])}, nil
 }
 
 // parseModule reads a module's file: its commands.

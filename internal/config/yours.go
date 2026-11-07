@@ -263,6 +263,7 @@ func NewPack(name string) error { return NewPackWithLogo(name, "", "") }
 // NewPackWithLogo is NewPack with one of clingon's logos ("" for the default)
 // in one of PackColors ("" for the logo's own).
 func NewPackWithLogo(name, logo, color string) error {
+	logo, color = strings.ToLower(logo), strings.ToLower(color) // in any case, as in _pack.md
 	if logo == "" {
 		logo = DefaultPackLogo
 	}
