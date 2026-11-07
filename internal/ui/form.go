@@ -159,7 +159,7 @@ func (f *PackForm) done() tea.Cmd {
 
 // saveChoices are the answers to "save the changes?": saving first, the
 // usual answer; throwing them away last.
-var saveChoices = []string{"Save", "Keep editing", "Throw them away"}
+var saveChoices = []string{"Save changes", "Keep editing", "Discard changes"}
 
 // saveKey answers "save the changes?": ↑↓ choose, → or enter take it, and ←
 // or esc go back to the form, as Keep editing does.
@@ -174,7 +174,7 @@ func (f *PackForm) saveKey(k string) tea.Cmd {
 	case "right", "enter":
 		f.saving = false
 		switch saveChoices[f.saveOpt] {
-		case "Save":
+		case "Save changes":
 			if f.pack.IsNew() {
 				f.pack.Folder = f.pack.NewFolder()
 			}
@@ -185,7 +185,7 @@ func (f *PackForm) saveKey(k string) tea.Cmd {
 			_ = config.RemoveDraft()
 			f.Left = "saved"
 			return tea.Quit
-		case "Throw them away":
+		case "Discard changes":
 			if d, _ := config.ReadDraft(); f.pack.SameAs(d) {
 				_ = config.RemoveDraft()
 			}
@@ -196,13 +196,21 @@ func (f *PackForm) saveKey(k string) tea.Cmd {
 	return nil
 }
 
-// saveLines is the question, at the foot of the form: its answers with the
-// form's cursor, Throw them away red under it.
+// saveLines is the question, under the form's foot rule, level with the
+// menu's EDITING: always there, greyed out until esc asks it, then its
+// answers with the form's cursor, Discard changes red under it.
 func (f *PackForm) saveLines(w int) []string {
-	out := []string{"", headerStyle.Render(ansi.Truncate(strings.ToUpper("Save the changes to "+f.pack.Title+"?"), w, "…"))}
+	if !f.saving {
+		out := []string{faintStyle.Render("SAVE")}
+		for _, c := range saveChoices {
+			out = append(out, "  "+faintStyle.Render(c))
+		}
+		return out
+	}
+	out := []string{labelStyle.Render("SAVE")}
 	for i, c := range saveChoices {
 		switch {
-		case i == f.saveOpt && c == "Throw them away":
+		case i == f.saveOpt && c == "Discard changes":
 			out = append(out, onBg(cursorBar(cursorStyle)+" "+dangerStyle.Render(c), formCursorBg, w))
 		case i == f.saveOpt:
 			out = append(out, onBg(cursorBar(cursorStyle)+" "+cursorStyle.Render(c), formCursorBg, w))
@@ -1128,7 +1136,7 @@ func (f *PackForm) view() string {
 	// its list; the help and keys at the bottom, a row from the edge.
 	top := []string{"", "", f.crumb(inner), "", f.filterLine(inner), ""}
 	// Its foot, under a rule level with the menu's info pane's, stays put.
-	panel := []string{faintStyle.Render(strings.Repeat("─", inner))}
+	panel := append([]string{faintStyle.Render(strings.Repeat("─", inner))}, f.saveLines(inner)...)
 	room := max(f.h-len(top)-len(foot)-infoTop(f.h), 1)
 	body, at, row, heads := f.cards(inner)
 	if f.help {
@@ -1910,9 +1918,6 @@ func (f *PackForm) footer(w int) []string {
 	var out []string
 	if f.issue != "" {
 		out = append(out, issueChip(f.issue, w))
-	}
-	if f.saving {
-		out = append(out, f.saveLines(w)...)
 	}
 	return out
 }

@@ -2461,8 +2461,8 @@ func (m *Model) editingAway() bool { return m.blurred && m.busy != "" && m.editi
 // editingInfo is the info pane while you're editing in the shell: what, and
 // how you're done.
 func (m *Model) editingInfo(w int) []string {
-	what, how, _ := strings.Cut(m.editing, " · ")
-	lines := []string{crumbStyle.Render(ansi.Truncate(upperFirst(what), w, "…"))}
+	_, how, _ := strings.Cut(m.editing, " · ")
+	var lines []string
 	say := upperFirst(how) + " in the shell, on the right."
 	if m.form != nil {
 		say = upperFirst(how) + " in the form, on the right: it asks then whether to save your changes."

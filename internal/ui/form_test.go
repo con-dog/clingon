@@ -433,10 +433,13 @@ func TestPackFormAsksToSave(t *testing.T) {
 	}
 
 	f = newTestForm(t)
+	if s := f.screen(); !strings.Contains(s, "SAVE") || !strings.Contains(s, "Save changes") || strings.Contains(f.view(), cursorBar(cursorStyle)+" "+cursorStyle.Render("Save changes")) {
+		t.Fatalf("the question's always there, greyed out:\n%s", s)
+	}
 	f.onRow(t, "desc")
 	typeIn(f, "Thrown away")
 	f.Update(kEsc)
-	if s := f.screen(); !f.saving || !strings.Contains(s, "SAVE THE CHANGES TO DEMO?") || !strings.Contains(s, "Keep editing") || !strings.Contains(s, "Throw them away") {
+	if s := f.screen(); !f.saving || !strings.Contains(s, "Save changes") || !strings.Contains(s, "Keep editing") || !strings.Contains(s, "Discard changes") {
 		t.Fatalf("should ask:\n%s", s)
 	}
 	f.Update(kEsc)
