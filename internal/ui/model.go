@@ -2472,7 +2472,7 @@ func (m *Model) noCurrentRecipeInfo(w, n int) string {
 		}
 		label, text = "Saved recipes:", strings.Join(names, ", ")
 	}
-	return fit(wrapSpaces(words(crumbStyle, label)+" "+words(dimStyle, text), w), w, n, false)
+	return fit(hang(words(groupLabelStyle, label)+" "+words(dimStyle, text), w), w, n, false)
 }
 
 // onEmptyRecipe says whether the Recipes screen has nothing to describe: no
@@ -2805,9 +2805,9 @@ func (m *Model) sectionInfo(s *config.Section, w, n int) string {
 		}
 		line := words(dimStyle, strings.Join(names, ", "))
 		if group != "" {
-			line = words(crumbStyle, group+":") + " " + line
+			line = words(groupLabelStyle, group+":") + " " + line
 		}
-		lines = append(lines, wrapSpaces(line, w)...)
+		lines = append(lines, hang(line, w)...)
 	}
 	if len(s.Commands) > 0 {
 		group := ""
@@ -2820,6 +2820,21 @@ func (m *Model) sectionInfo(s *config.Section, w, n int) string {
 		add(g.Name, g.Commands)
 	}
 	return fit(lines, w, n, false)
+}
+
+// hang wraps a labelled line to w wide with its later lines set in two, so
+// each label starts a paragraph of its own and a long group doesn't run
+// into the next.
+func hang(line string, w int) []string {
+	lines := wrapSpaces(line, w)
+	if len(lines) > 1 {
+		rest := wrapSpaces(strings.Join(lines[1:], " "), max(w-2, 1))
+		lines = lines[:1]
+		for _, l := range rest {
+			lines = append(lines, "  "+l)
+		}
+	}
+	return lines
 }
 
 // words styles each word of s on its own, so it keeps its colour however
@@ -2978,7 +2993,8 @@ func (m *Model) statusBar(w int) string {
 	}
 	version := ""
 	if m.opt.Version != "" {
-		version = chip.Render(m.opt.Version)
+		// Faint on the bar, not a chip: worth finding, not worth looking at.
+		version = lipgloss.NewStyle().Background(raised).Foreground(faint).Padding(0, 1).Render(m.opt.Version)
 	}
 	vw := ansi.StringWidth(version)
 	if w-nw-vw < minBarBody {

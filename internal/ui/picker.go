@@ -754,8 +754,6 @@ func (p *picker) row(it item, active bool, width int) string {
 	switch {
 	case it.disabled:
 		title = faintStyle.Render(title)
-	case it.risk == config.RiskDanger: // the whole row in red, highlighted or not
-		title = dangerStyle.Render(title)
 	case active && p.blurred: // the bar dims with focus; the name stays readable
 	case active, it.accent:
 		title = cur.Render(title)

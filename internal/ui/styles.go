@@ -58,9 +58,12 @@ var (
 	warnStyle    = lipgloss.NewStyle().Foreground(orange)
 	errStyle     = lipgloss.NewStyle().Foreground(red)
 	dangerStyle  = lipgloss.NewStyle().Foreground(red).Bold(true)
-	valueStyle   = lipgloss.NewStyle().Foreground(green)
-	pendingStyle = lipgloss.NewStyle().Foreground(accent).Underline(true)
-	stepStyle    = lipgloss.NewStyle().Foreground(ink).Background(accent).Bold(true) // a command's place in the recipe
+	// groupLabelStyle starts each group's line in a section's summary, in the
+	// headings' purple so the groups stand apart from their commands.
+	groupLabelStyle = headerStyle
+	valueStyle      = lipgloss.NewStyle().Foreground(green)
+	pendingStyle    = lipgloss.NewStyle().Foreground(accent).Underline(true)
+	stepStyle       = lipgloss.NewStyle().Foreground(ink).Background(accent).Bold(true) // a command's place in the recipe
 )
 
 const (
