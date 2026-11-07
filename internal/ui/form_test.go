@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -906,5 +907,23 @@ func TestPackFormOpts(t *testing.T) {
 	press(f, kRight, kDown, kRight) // Yes
 	if len(a.Options) != 1 {
 		t.Errorf("removed: %+v", a.Options)
+	}
+}
+
+// With more commands than the preview has room for, it shows the one the
+// cursor's in, even on a row that writes nothing there yet (no risk, no
+// description): scrolled to its heading.
+func TestPackFormPreviewFollows(t *testing.T) {
+	f := newTestForm(t)
+	g := &f.pack.Files[0].Group
+	for n := 2; n <= 12; n++ {
+		g.Commands = append(g.Commands, config.Command{Name: fmt.Sprintf("Command %d", n), Cmd: "echo hello"})
+	}
+	f.refresh("0/11/risk")
+	for _, key := range []string{"0/11/risk", "0/11/desc", "0/11/name"} {
+		f.onRow(t, key)
+		if p := ansi.Strip(strings.Join(f.preview(60, 30), "\n")); !strings.Contains(p, "## Command 12") {
+			t.Errorf("%s: the cursor's command should be in view:\n%s", key, p)
+		}
 	}
 }

@@ -1628,17 +1628,17 @@ func (f *PackForm) preview(w, h int) []string {
 	if sub == -1 {
 		on = marked(key, lines(config.PackInfoFile))
 	}
-	out := filePreview(config.PackInfoFile, md[config.PackInfoFile], on, w, max(h/2, 1))
+	out := filePreview(config.PackInfoFile, md[config.PackInfoFile], on, -1, w, max(h/2, 1))
 	if f.lastSub < 0 {
 		return out
 	}
 	// Under it, the module you're in, or were last in, in what's left.
 	file := f.pack.Files[f.lastSub].Slug + ".md"
-	on = nil
+	on, near := nil, -1
 	if sub == f.lastSub {
-		on = marked(key, lines(file))
+		on, near = marked(key, lines(file)), partLine(key, lines(file))
 	}
-	return append(append(out, ""), filePreview(file, md[file], on, w, max(h-len(out)-1, 3))...)
+	return append(append(out, ""), filePreview(file, md[file], on, near, w, max(h-len(out)-1, 3))...)
 }
 
 func fit2(lines []string, h int) []string {
@@ -1652,7 +1652,7 @@ func fit2(lines []string, h int) []string {
 // lines in on marked, each with a bar in the gutter on a band of the
 // window's own colour, scrolled into view. Every line has the panel's
 // padding at its left, the gutter the bar's in.
-func filePreview(name, text string, on map[int]bool, w, h int) []string {
+func filePreview(name, text string, on map[int]bool, near, w, h int) []string {
 	pad := strings.Repeat(" ", panelPad)
 	rule := pad + faintStyle.Render(strings.Repeat("─", w))
 	head := []string{pad + labelStyle.Render(ansi.Truncate(strings.ToUpper(name), w, "…")), rule}
@@ -1671,6 +1671,9 @@ func filePreview(name, text string, on map[int]bool, w, h int) []string {
 	}
 	body = append(body, rule)
 	room := max(h-len(head), 1)
+	if first < 0 { // nothing of the row's in the file yet (no risk, say): where it goes, in view
+		first = near
+	}
 	if len(body) > room { // the marked lines in view, a little way down
 		start := 0
 		if first >= 0 {
@@ -1679,6 +1682,27 @@ func filePreview(name, text string, on map[int]bool, w, h int) []string {
 		body = body[start : start+room]
 	}
 	return append(head, body...)
+}
+
+// partLine is the line of a module's file the row keyed key is part of, for
+// the preview to show even when the row writes nothing there yet: its blank's
+// list item, or its command's heading; -1 for the module's own rows.
+func partLine(key string, lines []string) int {
+	parts := strings.Split(key, "/")
+	var on map[int]bool
+	switch {
+	case len(parts) >= 4:
+		on = marked(strings.Join(parts[:3], "/")+"/q", lines)
+	case len(parts) == 3:
+		on = marked(strings.Join(parts[:2], "/")+"/name", lines)
+	}
+	first := -1
+	for i := range on {
+		if first < 0 || i < first {
+			first = i
+		}
+	}
+	return first
 }
 
 // marked1 is a marked line: a pink bar in the gutter, and the line on a
