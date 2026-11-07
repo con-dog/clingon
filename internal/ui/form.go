@@ -52,11 +52,9 @@ type PackForm struct {
 
 	// The part the cursor's in, shown whole; the others are folded to
 	// their heading and name. -1 is the pack, -2 nothing (Add a module).
-	lastSub int                  // the module the cursor was last in, for the preview to show under _pack.md
-	undoAdd *config.EditablePack // the pack before what's being named was added: left unnamed, it's put back
-	addKey  string               // the add's own row, to go back to then
-	toggled map[string]bool      // modules ("1") and commands ("1/2") opened or collapsed by hand; open unless said
-	noFold  bool                 // building every row, to measure them
+	lastSub int             // the module the cursor was last in, for the preview to show under _pack.md
+	toggled map[string]bool // modules ("1") and commands ("1/2") opened or collapsed by hand; open unless said
+	noFold  bool            // building every row, to measure them
 
 	named string // the pack's name as last told to the menu
 
@@ -837,14 +835,6 @@ func (f *PackForm) edit(r *formRow, value string) tea.Cmd {
 	return f.input.Focus()
 }
 
-// unAdd takes back what was just added, left without a name: the pack as it
-// was, the cursor back on the add.
-func (f *PackForm) unAdd() {
-	f.pack, f.undoAdd = f.undoAdd, nil
-	f.editing, f.input, f.issue = nil, nil, ""
-	f.refresh(f.addKey)
-}
-
 // inputAt says whether the cursor's at the end of what's typed (or, with end
 // false, its start): where → (or ←) leaves the field, as the arrows always
 // move you on.
@@ -929,11 +919,7 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	if k == "ctrl+c" {
 		switch {
-		case f.editing != nil: // cancel what you're doing, and what was just added for it
-			if f.undoAdd != nil {
-				f.unAdd()
-				return nil
-			}
+		case f.editing != nil: // cancel what you're doing
 			f.editing, f.input, f.issue = nil, nil, ""
 			return nil
 		case f.choosing != nil:
@@ -955,11 +941,6 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			fallthrough
 		case k == "enter" || k == "esc": // done: what's typed is kept (ctrl+c throws it away)
 			v := typedIn(f.input.Value())
-			if v == "" && f.undoAdd != nil { // nothing named: no new one after all
-				f.unAdd()
-				return nil
-			}
-			f.undoAdd = nil
 			r := f.editing
 			if err := f.change(func() error { return r.text(v) }); err != nil {
 				f.issue = err.Error()
@@ -1075,17 +1056,12 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			f.choosing, f.opt = r, 0
 			f.options = []config.Option{{Value: "no", Label: "No, keep it"}, {Value: "yes", Label: r.confirm}}
 		case r.do != nil:
-			before := clonePack(f.pack)
 			if err := f.change(r.do); err != nil {
 				f.issue = err.Error()
 				f.refresh("")
 				return nil
 			}
-			f.refresh(r.then) // on to what was added, typing its name in an empty box
-			if n := f.selectedRow(); n != nil && n.key == r.then && n.text != nil {
-				f.undoAdd, f.addKey = before, r.key
-				return f.edit(n, "")
-			}
+			f.refresh(r.then) // on to what was added, named already: → renames it
 		}
 	}
 	return nil

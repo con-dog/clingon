@@ -114,11 +114,10 @@ func TestPackFormEditsThePack(t *testing.T) {
 	// A new module, on the same page, the cursor on its title.
 	f.onRow(t, "add-module")
 	press(f, kRight)
-	if r := f.selectedRow(); r == nil || r.key != "1/name" || f.editing == nil || f.input.Value() != "" {
-		t.Fatalf("typing its name straight away, in an empty box: on %+v", r)
+	if r := f.selectedRow(); r == nil || r.key != "1/name" || f.editing != nil || r.value != "New module" {
+		t.Fatalf("on its name, named already, not typing: on %+v", r)
 	}
-	f.input.SetValue("Deploy")
-	press(f, kEsc)
+	typeIn(f, "Deploy")
 	f.onRow(t, "1/0/name")
 	typeIn(f, "Ship it")
 	f.onRow(t, "1/0/risk")
@@ -133,8 +132,7 @@ func TestPackFormEditsThePack(t *testing.T) {
 	if r := f.selectedRow(); r == nil || r.key != "1/0/0/2/types" {
 		t.Fatalf("Add a choice should go to what the new choice types, on %+v", r)
 	}
-	f.input.SetValue("prod")
-	press(f, kEsc)
+	typeIn(f, "prod")
 	// The choice's label, its Desc; and picked to begin with.
 	f.onRow(t, "1/0/0/2/label")
 	typeIn(f, "Production")
@@ -205,8 +203,7 @@ func TestPackFormRemoves(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "0/add")
 	press(f, kRight)
-	f.input.SetValue("Second")
-	press(f, kEsc)
+	typeIn(f, "Second")
 	f.onRow(t, "0/0/remove")
 	press(f, kRight, kDown, kRight) // Yes
 	if len(f.pack.Files[0].Group.Commands) != 1 || f.pack.Files[0].Group.Commands[0].Name != "Second" {
@@ -936,8 +933,7 @@ func TestPackFormPreviewFollows(t *testing.T) {
 
 // An add is a ghost of what it adds, where that will be: + COMMAND at the end
 // of its module, + MODULE after the last, + Opts after a blank's choices.
-// Taking one goes straight to naming what it added, in an empty box; left
-// with no name (or ctrl+c), it's not added after all.
+// Taking one adds it, named already, the cursor on its name, not typing.
 func TestPackFormGhostAdds(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "0/0/0/kind")
@@ -954,19 +950,8 @@ func TestPackFormGhostAdds(t *testing.T) {
 	n := len(f.pack.Files[0].Group.Commands)
 	f.onRow(t, "0/add")
 	press(f, kRight)
-	if f.editing == nil || f.editing.key != fmt.Sprintf("0/%d/name", n) || len(f.pack.Files[0].Group.Commands) != n+1 {
-		t.Fatalf("naming the new command: %+v", f.editing)
-	}
-	press(f, kEsc)
-	if len(f.pack.Files[0].Group.Commands) != n || f.editing != nil {
-		t.Fatalf("left unnamed, it's not added: %d commands", len(f.pack.Files[0].Group.Commands))
-	}
-	if r := f.selectedRow(); r == nil || r.key != "0/add" {
-		t.Errorf("back on the add: %+v", r)
-	}
-	f.onRow(t, "add-module")
-	press(f, kRight, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	if len(f.pack.Files) != 1 {
-		t.Errorf("ctrl+c takes the new module back too: %d modules", len(f.pack.Files))
+	r := f.selectedRow()
+	if len(f.pack.Files[0].Group.Commands) != n+1 || r == nil || r.key != fmt.Sprintf("0/%d/name", n) || r.value != "New command" || f.editing != nil {
+		t.Fatalf("added and named, on its name, not typing: %+v, editing %v", r, f.editing != nil)
 	}
 }
