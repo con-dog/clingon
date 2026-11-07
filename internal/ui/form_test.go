@@ -168,17 +168,14 @@ func TestPackFormEditsThePack(t *testing.T) {
 		t.Fatal("No should keep it")
 	}
 
-	// ← leaves, with the changes kept as a draft for the menu; saving the
-	// draft saves them all, and it loads.
+	// Esc asks first; Save saves them all, and it loads.
 	press(f, kEsc)
-	if f.Left != "draft" {
+	if p, _ := config.LoadEditable("demo"); !f.saving || p.Description == "Deploying our services" {
+		t.Fatal("esc shouldn't save: it asks first")
+	}
+	press(f, kRight) // Save
+	if f.Left != "saved" {
 		t.Fatalf("left %q", f.Left)
-	}
-	if p, _ := config.LoadEditable("demo"); p.Description == "Deploying our services" {
-		t.Fatal("leaving shouldn't save: the menu asks first")
-	}
-	if _, err := config.SaveDraft(); err != nil {
-		t.Fatal(err)
 	}
 	cfg, _, err := config.Load()
 	if err != nil {
@@ -218,34 +215,24 @@ func TestPackFormRemoves(t *testing.T) {
 	}
 }
 
-// Left with nothing changed, there's nothing to ask about. Opened again, the
-// form carries on from a draft of the pack; and opened outside the menu, ←
-// saves.
+// Left with nothing changed, there's nothing to ask about, and nothing's
+// kept; outside the menu, the form asks just the same.
 func TestPackFormDrafts(t *testing.T) {
 	f := newTestForm(t)
 	press(f, kEsc)
-	if f.Left != "" {
+	if f.Left != "" || f.saving {
 		t.Fatalf("nothing changed, but left %q", f.Left)
 	}
 	if d, _ := config.ReadDraft(); d != nil {
 		t.Fatal("no draft without changes")
 	}
-	f, _ = NewPackForm("demo", true)
-	f.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
-	f.onRow(t, "desc")
-	typeIn(f, "Half done")
-	press(f, kEsc)
-	again, err := NewPackForm("demo", true)
-	if err != nil || again.pack.Description != "Half done" {
-		t.Fatalf("should carry on from the draft: %v %+v", err, again.pack)
-	}
 	outside, _ := NewPackForm("demo", false)
 	outside.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
 	outside.onRow(t, "desc")
 	typeIn(outside, "Done")
-	press(outside, kEsc)
+	press(outside, kEsc, kRight) // Save
 	if p, _ := config.LoadEditable("demo"); outside.Left != "saved" || p.Description != "Done" {
-		t.Fatalf("outside the menu, leaving saves: %q %q", outside.Left, p.Description)
+		t.Fatalf("outside the menu, Save saves: %q %q", outside.Left, p.Description)
 	}
 }
 
@@ -264,11 +251,12 @@ func TestPackFormNewPack(t *testing.T) {
 	f.onRow(t, "name")
 	typeIn(f, "Deploy tools")
 	press(f, kEsc)
-	if f.Left != "draft" {
-		t.Fatalf("a new pack always asks: left %q", f.Left)
+	if !f.saving {
+		t.Fatal("a new pack always asks")
 	}
-	if name, err := config.SaveDraft(); err != nil || name != "Deploy tools" {
-		t.Fatalf("%q %v", name, err)
+	press(f, kRight) // Save
+	if f.Left != "saved" {
+		t.Fatalf("left %q", f.Left)
 	}
 	p, err := config.LoadEditable("deploy-tools")
 	if err != nil || p.Title != "Deploy tools" {
@@ -431,49 +419,57 @@ func TestPackFormHeadingsStick(t *testing.T) {
 	}
 }
 
-// From the menu, esc with changes goes to the menu with the form left open,
-// and the menu asks about them; once it's answered the form closes. ← at the
-// form's top does nothing. ← in the menu's question goes back to the form.
-func TestPackFormStaysOpenWhileTheMenuAsks(t *testing.T) {
+// Esc with changes asks, at the foot of the form, whether to save them:
+// Save (first) saves and closes, Keep editing (or ←, or esc) goes back to the
+// form, and Throw them away closes without them. Without changes, esc just
+// closes; ← at the form's top does nothing; ctrl+c asks too.
+func TestPackFormAsksToSave(t *testing.T) {
 	f := newTestForm(t)
-	focused := 0
-	f.FocusMenu = func() { focused++ }
-	if _, cmd := f.Update(kLeft); cmd != nil || focused != 0 || f.asking {
+	if _, cmd := f.Update(kLeft); cmd != nil || f.saving {
 		t.Fatal("← at the top does nothing: only esc leaves")
 	}
+	if _, cmd := f.Update(kEsc); cmd == nil || f.saving {
+		t.Fatal("no changes: esc closes")
+	}
+
+	f = newTestForm(t)
 	f.onRow(t, "desc")
-	typeIn(f, "Asked about")
-	_, cmd := f.Update(kEsc)
-	if focused != 1 || !f.asking || !config.Asking() || cmd == nil {
-		t.Fatal("changes: to the menu, which asks")
+	typeIn(f, "Thrown away")
+	f.Update(kEsc)
+	if s := f.screen(); !f.saving || !strings.Contains(s, "SAVE THE CHANGES TO DEMO?") || !strings.Contains(s, "Keep editing") || !strings.Contains(s, "Throw them away") {
+		t.Fatalf("should ask:\n%s", s)
+	}
+	f.Update(kEsc)
+	if f.saving {
+		t.Fatal("esc goes back to the form")
+	}
+	f.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !f.saving {
+		t.Fatal("ctrl+c asks too")
+	}
+	press(f, kDown, kRight) // Keep editing
+	if f.saving || f.Left != "" {
+		t.Fatal("Keep editing goes back to the form")
+	}
+	f.Update(kEsc)
+	press(f, kDown, kDown)
+	if _, cmd := f.Update(kRight); cmd == nil || f.Left != "discarded" {
+		t.Fatal("Throw them away closes")
+	}
+	if p, _ := config.LoadEditable("demo"); p.Description == "Thrown away" {
+		t.Fatal("thrown away, not saved")
 	}
 
-	m := New(Options{Config: &config.Config{}, Send: func(string) error { return nil }, Shell: func() ShellState { return ShellState{Busy: "clingon"} }})
-	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
-	m.busy = "Edit a pack"
-	backToForm := 0
-	m.opt.FocusShell = func() { backToForm++ }
-	m.Update(tea.FocusMsg{})
-	if m.mode != modeSavePack {
-		t.Fatalf("the menu should ask:\n%s", ansi.Strip(m.view()))
+	f, _ = NewPackForm("demo", true)
+	f.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
+	f.onRow(t, "desc")
+	typeIn(f, "Kept")
+	f.Update(kEsc)
+	if _, cmd := f.Update(kEnter); cmd == nil || f.Left != "saved" {
+		t.Fatal("Save closes")
 	}
-	m.Update(kLeft) // back to the form, still open
-	if backToForm != 1 || config.Asking() || m.mode == modeSavePack {
-		t.Fatal("← should go back to the form")
-	}
-	if f.answered(); f.asking {
-		t.Fatal("the form should carry on")
-	}
-
-	f.Update(kEsc) // and to the menu again
-	m.Update(tea.FocusMsg{})
-	m.Update(kDown)
-	m.Update(kEnter) // Yes
-	if p, _ := config.LoadEditable("demo"); p.Description != "Asked about" {
-		t.Fatalf("Yes should save: %q", p.Description)
-	}
-	if cmd := f.answered(); cmd == nil || f.Left != "answered" {
-		t.Fatal("answered, the form closes")
+	if p, _ := config.LoadEditable("demo"); p.Description != "Kept" {
+		t.Fatalf("Save should save: %q", p.Description)
 	}
 }
 
@@ -957,5 +953,40 @@ func TestPackFormGhostAdds(t *testing.T) {
 	r := f.selectedRow()
 	if len(f.pack.Files[0].Group.Commands) != n+1 || r == nil || r.key != fmt.Sprintf("0/%d/name", n) || r.value != "New command" || f.editing != nil {
 		t.Fatalf("added and named, on its name, not typing: %+v, editing %v", r, f.editing != nil)
+	}
+}
+
+// A long list shows ten of its options at a time, following the cursor, and
+// says how many more there are, as the menu's lists do.
+func TestPackFormLongList(t *testing.T) {
+	f := newTestForm(t)
+	f.Update(tea.WindowSizeMsg{Width: 70, Height: 60})
+	f.onRow(t, "logo")
+	press(f, kRight)
+	count := func(p string) int {
+		n := 0
+		for _, l := range config.PackLogos {
+			if strings.Contains(p, " "+config.TitleWords(l)+"\n") || strings.HasSuffix(strings.TrimRight(p, " "), config.TitleWords(l)) {
+				n++
+			}
+		}
+		return n
+	}
+	lines := func() string {
+		var out []string
+		for _, l := range strings.Split(f.page(), "\n") {
+			out = append(out, strings.TrimRight(l, " "))
+		}
+		return strings.Join(out, "\n")
+	}
+	p := lines()
+	if n := count(p); n != 10 || !strings.Contains(p, fmt.Sprintf("↓ %d more", len(config.PackLogos)-10)) {
+		t.Fatalf("ten at a time, %d shown:\n%s", n, p)
+	}
+	for range len(config.PackLogos) {
+		press(f, kDown)
+	}
+	if p := lines(); !strings.Contains(p, "↑ ") || !strings.Contains(p, config.TitleWords(config.PackLogos[len(config.PackLogos)-1])) {
+		t.Errorf("at its end, the last in view, and what's above:\n%s", p)
 	}
 }

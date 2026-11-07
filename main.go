@@ -381,11 +381,10 @@ func newPackForm(menu bool) error {
 	return runForm(form, "created")
 }
 
-// runForm runs the pack form, then says what came of it. Left with a draft,
-// the menu says: it asks whether to save it.
+// runForm runs the pack form, then says what came of it: saved, it says
+// where, and whether it loads.
 func runForm(form *ui.PackForm, done string) error {
 	flushSaid() // the form takes over the terminal
-	form.FocusMenu = tmux.FocusMenu
 	_, err := tea.NewProgram(form).Run()
 	config.RemoveFormName() // closed: the menu stops saying it's open
 	if err != nil {

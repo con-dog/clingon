@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -23,8 +22,8 @@ import (
 // through every row, the page scrolling to follow, → or enter edits the row in
 // place (a list drops down under it), ← closes what's open, and esc is done. A change that
 // would break the pack is refused, saying why, so what you leave with can
-// always be saved. Opened from the menu, leaving keeps your changes as a
-// draft for the menu to ask whether to save; otherwise leaving saves them.
+// always be saved. Leaving with changes, it asks at its foot whether to
+// save them, keep editing, or throw them away.
 type PackForm struct {
 	pack *config.EditablePack
 	rows []formRow
@@ -38,6 +37,7 @@ type PackForm struct {
 	choosing *formRow
 	options  []config.Option
 	opt      int
+	optTop   int // the first of the list's options in view: a long list shows listRows at a time
 
 	// The filter, at the top as on the menu's lists: / opens it.
 	filter    textinput.Model
@@ -46,7 +46,8 @@ type PackForm struct {
 	issue string // why the last change wasn't made
 
 	menu     bool // opened from the menu: leaving keeps a draft for it to ask about
-	asking   bool // the menu's asking whether to save the draft; the form stays open meanwhile
+	saving   bool // asking, at its foot, whether to save the changes
+	saveOpt  int  // the answer the cursor's on
 	help     bool // the keys, in place of the form
 	pageSize int  // rows a page up or down moves
 
@@ -58,8 +59,6 @@ type PackForm struct {
 
 	named string // the pack's name as last told to the menu
 
-	// FocusMenu moves focus to the menu, beside the form.
-	FocusMenu func()
 
 	Left string // how it was left: "draft", "saved", "answered" (by the menu) or "" (nothing changed)
 }
@@ -149,55 +148,70 @@ func (f *PackForm) leave() tea.Cmd {
 	return tea.Quit
 }
 
-// done closes the form: with changes, after the menu has asked about them.
+// done closes the form: with changes, after asking whether to save them,
+// at the foot of the form.
 func (f *PackForm) done() tea.Cmd {
-	if f.menu && f.FocusMenu != nil && f.pack.Changed() {
-		return f.ask()
+	if !f.pack.Changed() {
+		return f.leave()
 	}
-	return f.leave()
+	f.saving, f.saveOpt, f.editing, f.input, f.choosing = true, 0, nil, nil, nil
+	return nil
 }
 
-// ask keeps the changes as a draft and has the menu ask whether to save
-// them, the form staying open beside it until it's answered.
-func (f *PackForm) ask() tea.Cmd {
-	if err := f.pack.WriteDraft(); err != nil {
-		f.issue = err.Error()
-		return nil
+// saveChoices are the answers to "save the changes?": saving first, the
+// usual answer; throwing them away last.
+var saveChoices = []string{"Save", "Keep editing", "Throw them away"}
+
+// saveKey answers "save the changes?": ↑↓ choose, → or enter take it, and ←
+// or esc go back to the form, as Keep editing does.
+func (f *PackForm) saveKey(k string) tea.Cmd {
+	switch k {
+	case "up":
+		f.saveOpt = max(f.saveOpt-1, 0)
+	case "down":
+		f.saveOpt = min(f.saveOpt+1, len(saveChoices)-1)
+	case "left", "esc", "ctrl+c":
+		f.saving = false
+	case "right", "enter":
+		f.saving = false
+		switch saveChoices[f.saveOpt] {
+		case "Save":
+			if f.pack.IsNew() {
+				f.pack.Folder = f.pack.NewFolder()
+			}
+			if err := f.pack.Save(); err != nil {
+				f.issue = "Not saved: " + err.Error()
+				return nil
+			}
+			_ = config.RemoveDraft()
+			f.Left = "saved"
+			return tea.Quit
+		case "Throw them away":
+			if d, _ := config.ReadDraft(); f.pack.SameAs(d) {
+				_ = config.RemoveDraft()
+			}
+			f.Left = "discarded"
+			return tea.Quit
+		}
 	}
-	if err := config.Ask(); err != nil {
-		f.issue = err.Error()
-		return nil
-	}
-	f.asking = true
-	f.FocusMenu()
-	return askTick()
+	return nil
 }
 
-// askTickMsg is a look at whether the menu has answered.
-type askTickMsg struct{}
-
-func askTick() tea.Cmd {
-	return tea.Tick(askEvery, func(time.Time) tea.Msg { return askTickMsg{} })
-}
-
-const askEvery = 200 * time.Millisecond
-
-// answered sees whether the menu has answered: the draft gone (saved, or
-// thrown away) closes the form; still there, and no longer asked about, is
-// back to the form.
-func (f *PackForm) answered() tea.Cmd {
-	if !f.asking {
-		return nil
+// saveLines is the question, at the foot of the form: its answers with the
+// form's cursor, Throw them away red under it.
+func (f *PackForm) saveLines(w int) []string {
+	out := []string{"", headerStyle.Render(ansi.Truncate(strings.ToUpper("Save the changes to "+f.pack.Title+"?"), w, "…"))}
+	for i, c := range saveChoices {
+		switch {
+		case i == f.saveOpt && c == "Throw them away":
+			out = append(out, onBg(cursorBar(cursorStyle)+" "+dangerStyle.Render(c), formCursorBg, w))
+		case i == f.saveOpt:
+			out = append(out, onBg(cursorBar(cursorStyle)+" "+cursorStyle.Render(c), formCursorBg, w))
+		default:
+			out = append(out, "  "+fieldStyle.Render(c))
+		}
 	}
-	if d, _ := config.ReadDraft(); d == nil {
-		f.asking, f.Left = false, "answered"
-		return tea.Quit
-	}
-	if !config.Asking() {
-		f.asking = false
-		return nil
-	}
-	return askTick()
+	return out
 }
 
 // jump moves to the first row of the part before (or after) the one the
@@ -817,8 +831,6 @@ func (f *PackForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		f.w, f.h = msg.Width, msg.Height
 		f.pageSize = max(f.h-10, 1)
 		return f, nil
-	case askTickMsg:
-		return f, f.answered()
 	case tea.KeyPressMsg:
 		return f, f.key(msg)
 	}
@@ -899,9 +911,8 @@ func typedIn(v string) string { return strings.Join(strings.Fields(v), " ") }
 
 func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 	k := keyName(msg)
-	if f.asking { // back from the menu's question by itself: carry on
-		f.asking = false
-		config.StopAsking()
+	if f.saving {
+		return f.saveKey(keyName(msg))
 	}
 	if f.help { // any key closes it, and does nothing else
 		f.help = false
@@ -932,7 +943,7 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			f.refresh("")
 			return nil
 		}
-		return f.leave() // out of the form, changes kept for the menu to ask about
+		return f.done() // out of the form: asking first, with changes
 	}
 	switch {
 	case f.editing != nil:
@@ -1049,11 +1060,11 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		switch {
 		case r.pick != nil: // a list, even if it can also be typed (from the list): from the top
-			f.choosing, f.options, f.opt = r, r.options, 0
+			f.choosing, f.options, f.opt, f.optTop = r, r.options, 0, 0
 		case r.text != nil:
 			return f.edit(r, r.value)
 		case r.confirm != "":
-			f.choosing, f.opt = r, 0
+			f.choosing, f.opt, f.optTop = r, 0, 0
 			f.options = []config.Option{{Value: "no", Label: "No"}, {Value: "drop", Label: r.confirm}}
 		case r.do != nil:
 			if err := f.change(r.do); err != nil {
@@ -1261,7 +1272,7 @@ func (f *PackForm) keys(w int) []string {
 		lines = append(lines, ansi.Truncate(cursorStyle.Render(fmt.Sprintf("%-13s", k[0]))+" "+k[1], w, "…"))
 	}
 	lines = append(lines, "")
-	lines = append(lines, wrapSpaces(dimStyle.Render("Leaving with changes, the menu asks whether to save them; the form stays open until it's answered."), w)...)
+	lines = append(lines, wrapSpaces(dimStyle.Render("Leaving with changes, the form asks whether to save them, keep editing, or throw them away."), w)...)
 	return lines
 }
 
@@ -1402,12 +1413,25 @@ func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
 		if on && f.editing != nil {                                                        // typing: the line the cursor's on, in view
 			at += f.input.Line()
 		}
-		if open {
-			for o, opt := range f.options { // the row's list, dropped down under it, with the cursor
+		if open { // the row's list, dropped down under it, with the cursor; a long one listRows at a time
+			f.optTop = min(f.optTop, f.opt)
+			f.optTop = max(f.optTop, f.opt-listRows+1)
+			end := min(f.optTop+listRows, len(f.options))
+			for o := f.optTop; o < end; o++ {
 				if o == f.opt {
 					at = len(out) // the list's cursor, to keep in view
 				}
-				out = append(out, f.optionLine(r, opt, o == f.opt, col, w))
+				out = append(out, f.optionLine(r, f.options[o], o == f.opt, col, w))
+			}
+			if len(f.options) > listRows { // what's out of view, as the menu's lists say it
+				more := ""
+				switch {
+				case end < len(f.options):
+					more = fmt.Sprintf("↓ %d more", len(f.options)-end)
+				case f.optTop > 0:
+					more = fmt.Sprintf("↑ %d more", f.optTop)
+				}
+				out = append(out, faintStyle.Render(guide(r)+strings.Repeat(" ", max(col-ansi.StringWidth(guide(r)), 1))+more))
 			}
 		}
 	}
@@ -1580,6 +1604,9 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// listRows is how many of a list's options are in view at once.
+const listRows = 10
 
 // optionLine is one of the options in the list dropped down under row r, set
 // in under its value. The list's cursor is the form's, as on every row: the
@@ -1879,10 +1906,14 @@ func marked(key string, lines []string) map[int]bool {
 // footer is only there for a change that couldn't be saved: why, as an
 // orange chip like the status bar's.
 func (f *PackForm) footer(w int) []string {
-	if f.issue == "" {
-		return nil
+	var out []string
+	if f.issue != "" {
+		out = append(out, issueChip(f.issue, w))
 	}
-	return []string{issueChip(f.issue, w)}
+	if f.saving {
+		out = append(out, f.saveLines(w)...)
+	}
+	return out
 }
 
 // issueChip is a problem as an orange chip, like the status bar and micro's.

@@ -3890,7 +3890,7 @@ func TestMenuStepsBackWhileEditing(t *testing.T) {
 	m.showSection(&m.opt.Config.Sections[0])
 	m.busy, m.editing, m.form, m.blurred = "Edit a pack", "Demo · esc when done", &pending{}, true
 	v := m.view()
-	if s := strings.Join(strings.Fields(ansi.Strip(v)), " "); !strings.Contains(s, "EDITING Demo Esc when done in the form, on the right.") {
+	if s := strings.Join(strings.Fields(ansi.Strip(v)), " "); !strings.Contains(s, "EDITING Demo Esc when done in the form, on the right: it asks then whether to save your changes.") {
 		t.Errorf("the info pane:\n%s", ansi.Strip(v))
 	}
 	if strings.Contains(ansi.Strip(v), "DESCRIPTION") {

@@ -2451,7 +2451,7 @@ func (m *Model) editingInfo(w int) []string {
 	lines := []string{crumbStyle.Render(ansi.Truncate(upperFirst(what), w, "…"))}
 	say := upperFirst(how) + " in the shell, on the right."
 	if m.form != nil {
-		say = upperFirst(how) + " in the form, on the right. Your changes are kept until then, and the menu asks whether to save them."
+		say = upperFirst(how) + " in the form, on the right: it asks then whether to save your changes."
 	}
 	return append(lines, wrapSpaces(dimStyle.Render(say), w)...)
 }
