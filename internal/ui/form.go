@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -19,7 +20,7 @@ import (
 // one flat page, read top to bottom like a paper form: the pack's card, then
 // each module's card with its commands' cards under it, each command's blanks
 // and choices as rows of its card. Nothing opens onto another screen: ↑↓ move
-// through every row, the page scrolling to follow, → or enter edit the row in
+// through every row, the page scrolling to follow, → edits the row in
 // place (a list drops down under it), ← closes what's open, and esc is done. A change that
 // would break the pack is refused, saying why, so what you leave with can
 // always be saved. Opened from the menu, leaving keeps your changes as a
@@ -32,7 +33,7 @@ type PackForm struct {
 
 	// One of these at a time: a field being typed, or a list being picked
 	// from (a field's options, a choice's actions, a remove's No/Yes).
-	input    *textinput.Model
+	input    *textarea.Model
 	editing  *formRow
 	choosing *formRow
 	options  []config.Option
@@ -72,6 +73,7 @@ type formRow struct {
 	sub                      int  // how many levels it's set in under its command: a blank 1, a blank's own rows 2
 	title                    bool   // a label with nothing of its own, over what's set in under it: the cursor passes it
 	fold                     string // "open" or "closed" on a blank's What row, which opens and collapses the blank
+	lines                    bool   // typed over lines: enter starts a new one
 	depth                    int  // 0 the pack's, 1 a module's, 2 a command's: how far in its tree guides go
 	branch                   bool // an add that ends its level, drawn on the tree's └─
 	icon, color              string
@@ -472,15 +474,22 @@ func (f *PackForm) pageRows() []formRow {
 	)
 }
 
-// mdLook colours a value as the preview colours it: the line it's on in the
+// mdLook colours a value as the preview colours it: the lines it's on in the
 // Markdown, before and after being what's around it there, coloured as micro
-// colours the file, cut down to the value.
+// colours the file, cut down to the value. A value over lines has each line
+// after the first set in as the first is (> for a callout's).
 func mdLook(before, after string) func(string) string {
+	lead := before[strings.LastIndex(before, "\n")+1:]
 	return func(v string) string {
-		lines := strings.Split(micro.Markdown(before+v+after), "\n")
-		pre := ansi.StringWidth(before[strings.LastIndex(before, "\n")+1:])
-		cut := ansi.Cut(lines[strings.Count(before, "\n")], pre, pre+ansi.StringWidth(v))
-		return emptySGR.ReplaceAllString(cut, "") // what's left of the colour of what was cut away
+		vs := strings.Split(v, "\n")
+		lines := strings.Split(micro.Markdown(before+strings.Join(vs, "\n"+lead)+after), "\n")
+		first, pre := strings.Count(before, "\n"), ansi.StringWidth(lead)
+		out := make([]string, len(vs))
+		for i, l := range vs {
+			cut := ansi.Cut(lines[first+i], pre, pre+ansi.StringWidth(l))
+			out[i] = emptySGR.ReplaceAllString(cut, "") // what's left of the colour of what was cut away
+		}
+		return strings.Join(out, "\n")
 	}
 }
 
@@ -533,7 +542,7 @@ func (f *PackForm) packRows() []formRow {
 	rows := []formRow{
 		{label: "Pack", header: true},
 		{key: "name", label: "Name", value: p.Title, look: mdLook("# ", ""), help: "What the menu calls the pack.", text: func(v string) error { f.pack.Title = v; return nil }},
-		{key: "desc", label: "Desc", value: p.Description, hint: "one line on what's in it", help: "One line on what's in it, shown by clingon pack.", text: func(v string) error { f.pack.Description = v; return nil }},
+		{key: "desc", lines: true, label: "Desc", value: p.Description, hint: "one line on what's in it", help: "One line on what's in it, shown by clingon pack.", text: func(v string) error { f.pack.Description = v; return nil }},
 		{key: "menu", label: "Menu", value: p.Section, look: frontLook("menu"), help: "Where the menu shows it: one of these, or + New menu for one of your own.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil },
 			text: func(v string) error {
 				s, err := config.SectionSlug(v)
@@ -558,7 +567,7 @@ func (f *PackForm) moduleRows(i int) []formRow {
 	rows := []formRow{
 		{key: k("head"), label: "Module", header: true},
 		{key: k("name"), label: "Name", value: g.Name, look: mdLook("# ", ""), help: "What the menu calls the module.", text: func(v string) error { f.group(i).Name = v; return nil }},
-		{key: k("desc"), label: "Desc", value: g.Description, hint: "what's in it", help: "What's in the module.", text: func(v string) error { f.group(i).Description = v; return nil }},
+		{key: k("desc"), lines: true, label: "Desc", value: g.Description, hint: "what's in it", help: "What's in the module.", text: func(v string) error { f.group(i).Description = v; return nil }},
 		{key: k("needs"), label: "Need", value: joined(g.Requires), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
 		{key: k("when"), label: "When", value: joined(g.When), look: frontLook("when"), hint: "files, like .git", help: "Files that must be here or in a folder above for these commands, like .git; ./Dockerfile means this folder only.", text: func(v string) error { f.group(i).When = splitComma(v); return nil }},
 		{key: k("remove"), label: "Remove this module", risk: config.RiskWarn, help: "Removes the module and every command in it.", confirm: "Yes, remove it", do: func() error {
@@ -606,10 +615,10 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 		{key: k("head"), label: "Command", header: true},
 		{key: k("name"), label: "Name", value: c.Name, look: mdLook("## ", ""), help: "What the menu calls it: letters, digits, spaces and ( ).", text: func(v string) error { f.command(i, j).Name = v; return nil }},
 		{key: k("risk"), label: "Risk", value: risk, icon: riskIcon.Icon, color: riskIcon.Color, help: "Whether clingon asks before it runs: warning asks first; dangerous has you type a short code, then asks.", options: risks, pick: func(v string) error { f.command(i, j).Risk = v; return nil }},
-		{key: k("desc"), label: "Desc", value: c.Desc, look: descLook, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
+		{key: k("desc"), lines: true, label: "Desc", value: c.Desc, look: descLook, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
 		{key: k("needs"), label: "Need", value: joined(c.Requires), hint: "programs, separated by commas", help: "Programs this command needs, separated by commas.", text: func(v string) error { f.command(i, j).Requires = splitComma(v); return nil }},
 		{key: k("when"), label: "When", value: joined(c.When), hint: "files, like .git", help: "Files that must be here or in a folder above, like .git.", text: func(v string) error { f.command(i, j).When = splitComma(v); return nil }},
-		{key: k("cmd"), label: "Runs", value: c.Cmd, look: mdLook("```sh\n", "\n```"), help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
+		{key: k("cmd"), lines: true, label: "Runs", value: c.Cmd, look: mdLook("```sh\n", "\n```"), help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
 			c := f.command(i, j)
 			c.Cmd = v
 			config.SyncBlanks(c)
@@ -809,12 +818,81 @@ func (f *PackForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // edit starts typing into a row's field, in place.
 func (f *PackForm) edit(r *formRow, value string) tea.Cmd {
-	in := newInput(accentStyle, "")
-	in.Prompt = ""
+	in := newEditor()
+	in.SetWidth(max(f.w/2, 20))
 	in.SetValue(value)
-	in.CursorEnd()
+	in.MoveToEnd()
 	f.input, f.editing = &in, r
 	return f.input.Focus()
+}
+
+// newEditor is a field being typed in: plain, no prompt or line numbers,
+// as tall as what's typed, wrapped.
+func newEditor() textarea.Model {
+	in := textarea.New()
+	in.Prompt, in.ShowLineNumbers, in.Placeholder = "", false, ""
+	in.DynamicHeight, in.MinHeight, in.MaxHeight = true, 1, 0
+	st := in.Styles()
+	for _, s := range []*textarea.StyleState{&st.Focused, &st.Blurred} {
+		s.Base, s.CursorLine, s.EndOfBuffer = lipgloss.NewStyle(), lipgloss.NewStyle(), lipgloss.NewStyle()
+		s.Text = fieldStyle
+	}
+	st.Cursor.Color = accentStyle.GetForeground()
+	in.SetStyles(st)
+	return in
+}
+
+// wrapAsTyped wraps a value w wide where typing it wraps it, so a field
+// doesn't move when it's opened or left: each of plain's lines through an
+// editor that w wide, and styled (plain, coloured) cut where it breaks it.
+func wrapAsTyped(plain, styled string, w int) []string {
+	ed := newEditor()
+	ed.SetWidth(w)
+	sls := strings.Split(styled, "\n")
+	var out []string
+	for i, pl := range strings.Split(plain, "\n") {
+		sl := pl
+		if i < len(sls) {
+			sl = sls[i]
+		}
+		ed.SetValue(pl)
+		at, end := 0, ansi.StringWidth(pl)
+		for _, l := range strings.Split(ansi.Strip(ed.View()), "\n") {
+			n := ansi.StringWidth(strings.TrimRight(l, " "))
+			if n == 0 || at >= end {
+				continue
+			}
+			out = append(out, ansi.Cut(sl, at, at+n))
+			for at += n; at < end && ansi.Cut(pl, at, at+1) == " "; at++ { // the spaces it broke at
+			}
+		}
+		if end == 0 {
+			out = append(out, "")
+		}
+	}
+	return out
+}
+
+// typedIn is what's been typed into a field: each line trimmed at its end, no
+// empty lines (they'd end a description in the file), and for the command,
+// each line but the last carried on with \ as a pack's command is.
+func typedIn(r *formRow, v string) string {
+	var lines []string
+	for _, l := range strings.Split(v, "\n") {
+		if l = strings.TrimRight(l, " \t"); strings.TrimSpace(l) != "" {
+			lines = append(lines, l)
+		}
+	}
+	if strings.HasSuffix(r.key, "/cmd") {
+		for i := range lines {
+			l := strings.TrimRight(strings.TrimSuffix(lines[i], "\\"), " ")
+			if i < len(lines)-1 {
+				l += " \\"
+			}
+			lines[i] = l
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
@@ -857,8 +935,8 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 	switch {
 	case f.editing != nil:
 		switch k {
-		case "enter", "right":
-			v := strings.TrimSpace(f.input.Value())
+		case "esc": // done: what's typed is kept (ctrl+c throws it away)
+			v := typedIn(f.editing, f.input.Value())
 			r := f.editing
 			if err := f.change(func() error { return r.text(v) }); err != nil {
 				f.issue = err.Error()
@@ -866,12 +944,15 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			}
 			f.editing, f.input, f.issue = nil, nil, ""
 			f.refresh(r.key)
-		case "esc", "left":
-			f.editing, f.input, f.issue = nil, nil, ""
-		default:
-			return typeInto(f.input, msg)
+			return nil
+		case "enter": // a new line, where a field can have more than one
+			if !f.editing.lines {
+				return nil
+			}
 		}
-		return nil
+		var cmd tea.Cmd
+		*f.input, cmd = f.input.Update(msg) // the arrows move in what's typed
+		return cmd
 	case f.choosing != nil:
 		switch k {
 		case "up":
@@ -882,17 +963,19 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			f.opt = max(f.opt-max(f.pageSize, 1), 0)
 		case "pgdown", "]":
 			f.opt = min(f.opt+max(f.pageSize, 1), len(f.options)-1)
-		case "enter", "right":
+		case "right": // → takes it; enter is only ever a new line, typing
 			return f.chose()
 		case "esc", "left":
 			f.choosing = nil
 		}
 		return nil
 	}
-	if f.filtering { // it takes all text; the arrows still move, and enter edits
+	if f.filtering { // it takes all text; the arrows still move, and → edits
 		switch k {
-		case "up", "down", "enter", "right":
-			if k == "enter" || k == "right" {
+		case "enter":
+			return nil
+		case "up", "down", "right":
+			if k == "right" {
 				f.filtering = false
 				f.filter.Blur()
 			}
@@ -949,18 +1032,17 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			f.refresh("")
 		}
 		return nil
-	case "enter", "right":
+	case "right": // → edits, opens a list, or opens what's collapsed; enter does none of it
 		r := f.selectedRow()
 		if r == nil {
 			return nil
 		}
 		f.issue = ""
-		if r.header { // a module's or command's heading: → opens it, enter opens or collapses it
-			sub, cmd := openPart(r.key)
-			f.fold(r, k == "right" || !f.isOpen(sub, cmd))
+		if r.header { // a module's or command's heading: → opens it
+			f.fold(r, true)
 			return nil
 		}
-		if r.fold == "closed" && k == "right" { // a collapsed blank: → opens it; open, → and enter rename it
+		if r.fold == "closed" { // a collapsed blank: → opens it; open, → renames it
 			f.fold(r, true)
 			return nil
 		}
@@ -1167,12 +1249,13 @@ func guide(r *formRow) string {
 func (f *PackForm) keys(w int) []string {
 	keys := [][2]string{
 		{"↑ ↓", "move"},
-		{"→ or enter", "edit, or take the choice"},
+		{"→", "edit, open, or take the choice"},
 		{"←", "back: close what's open"},
+		{"enter", "a new line, typing a description or a command"},
 		{"[ ]", "jump to the previous or next heading"},
 		{"/", "filter; again stops"},
-		{"esc", "clear the filter, go back, or close the form"},
-		{"ctrl-c", "cancel what you're doing"},
+		{"esc", "done typing, clear the filter, go back, or close the form"},
+		{"ctrl-c", "cancel what you're doing, typing too"},
 		{"tab/shift-tab", "switch panes"},
 		{"?", "this screen"},
 	}
@@ -1318,7 +1401,10 @@ func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
 			heads[n].name = len(out) // pinned with its heading
 		}
 		open := on && f.choosing != nil
-		out = append(out, f.rowLine(r, on && !open, open, col, w))
+		out = append(out, strings.Split(f.rowLine(r, on && !open, open, col, w), "\n")...) // wrapped over lines, a long value
+		if on && f.editing != nil { // typing: the line the cursor's on, in view
+			at += f.input.Line()
+		}
 		if open {
 			for o, opt := range f.options { // the row's list, dropped down under it, with the cursor
 				if o == f.opt {
@@ -1381,6 +1467,8 @@ func (f *PackForm) labelAt(r *formRow) int {
 // are in commands; an add is pink; a remove is faint until the cursor's on it.
 // A row with its list open keeps its label pink, the cursor in the list.
 func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
+	var more []string // a value's lines past its first, wrapped or typed
+	at := 0           // the column they're in: the value's
 	g := guide(r)
 	slot := " "
 	switch {
@@ -1427,9 +1515,12 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 		}
 		rest += label + pad
 		room = max(w-col-2, 1) // and the ▾
+		at = ansi.StringWidth(g+slot) + ansi.StringWidth(rest) // where the value starts, and its lines after the first
 		switch {
 		case f.editing != nil && f.editing.key == r.key:
-			rest += inputView(f.input, room)
+			f.input.SetWidth(room)
+			more = strings.Split(f.input.View(), "\n")
+			rest, more = rest+more[0], more[1:]
 		case r.value != "":
 			v := fieldStyle.Render(r.value)
 			if r.look != nil {
@@ -1441,7 +1532,12 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 				rest += iconStyle(r.color).Render(r.icon) + iconGap(r.icon)
 				room = max(room-1-len(iconGap(r.icon)), 1)
 			}
-			rest += ansi.Truncate(v, room, "…")
+			if r.text == nil { // a pick: one line
+				rest += ansi.Truncate(v, room, "…")
+				break
+			}
+			lines := wrapAsTyped(r.value, v, room) // typed: wrapped, as it's typed in
+			rest, more = rest+lines[0], lines[1:]
 		case r.hint != "" && on: // only where you are: elsewhere they'd fill the form with what isn't yours
 			rest += dimStyle.Italic(true).Render(ansi.Truncate(r.hint, room, "…"))
 		case r.text != nil:
@@ -1454,10 +1550,24 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 			rest += lipgloss.NewStyle().Foreground(soft).Render(" ▾") // periwinkle: plainly there, under the white value
 		}
 	}
-	if on {
-		return faintStyle.Render(g) + onBg(slot+rest, formCursorBg, max(w-ansi.StringWidth(g), 1))
+	lines := []string{rest}
+	for _, l := range more {
+		lines = append(lines, strings.Repeat(" ", max(at-ansi.StringWidth(g+slot), 0))+l)
 	}
-	return faintStyle.Render(g+slot) + rest
+	for i, l := range lines {
+		s := slot
+		if i > 0 && on {
+			s = cursorBar(cursorStyle)
+		} else if i > 0 {
+			s = " "
+		}
+		if on {
+			lines[i] = faintStyle.Render(g) + onBg(s+l, formCursorBg, max(w-ansi.StringWidth(g), 1))
+		} else {
+			lines[i] = faintStyle.Render(g+s) + l
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // optionLine is one of the options in the list dropped down under row r, set

@@ -74,19 +74,19 @@ func TestPackFormMoves(t *testing.T) {
 
 // typeIn opens the highlighted field, replaces what's in it, and confirms.
 func typeIn(f *PackForm, text string) {
-	press(f, kEnter)
+	press(f, kRight)
 	f.input.SetValue(text)
-	press(f, kEnter)
+	press(f, kEsc)
 }
 
 // pick opens the highlighted field's list and picks the option titled title.
 func (f *PackForm) pick(t *testing.T, title string) {
 	t.Helper()
-	press(f, kEnter)
+	press(f, kRight)
 	for i, o := range f.options {
 		if o.Value == title {
 			f.opt = i
-			press(f, kEnter)
+			press(f, kRight)
 			return
 		}
 	}
@@ -103,7 +103,7 @@ func TestPackFormEditsThePack(t *testing.T) {
 	}
 	// A section, picked from the list dropped down under it.
 	f.onRow(t, "menu")
-	press(f, kEnter)
+	press(f, kRight)
 	if !strings.Contains(f.screen(), "infrastructure") {
 		t.Fatalf("the list should be under the row:\n%s", f.screen())
 	}
@@ -112,7 +112,7 @@ func TestPackFormEditsThePack(t *testing.T) {
 
 	// A new module, on the same page, the cursor on its title.
 	f.onRow(t, "add-module")
-	press(f, kEnter)
+	press(f, kRight)
 	if r := f.selectedRow(); r == nil || r.key != "1/name" {
 		t.Fatalf("on %+v", r)
 	}
@@ -127,14 +127,14 @@ func TestPackFormEditsThePack(t *testing.T) {
 	f.onRow(t, "1/0/0/kind")
 	f.pick(t, "choose")
 	f.onRow(t, "1/0/0/add")
-	press(f, kEnter)
+	press(f, kRight)
 	if r := f.selectedRow(); r == nil || r.key != "1/0/0/2" {
 		t.Fatalf("Add a choice should go to the new choice, on %+v", r)
 	}
 	// The choice's label, typed on its row; and made the default.
 	f.pick(t, "label")
 	f.input.SetValue("Production")
-	press(f, kEnter)
+	press(f, kEsc)
 	f.onRow(t, "1/0/0/2")
 	f.pick(t, "first")
 	if page := f.page(); !strings.Contains(page, "MODULE") || !strings.Contains(page, "COMMAND") {
@@ -147,18 +147,18 @@ func TestPackFormEditsThePack(t *testing.T) {
 	if !strings.Contains(f.screen(), "ISSUE:") || f.input == nil {
 		t.Fatalf("a bad name should be an issue, still being typed:\n%s", f.screen())
 	}
-	press(f, kLeft) // gives up on it
+	press(f, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}) // gives up on it
 	if f.pack.Files[1].Group.Commands[0].Name != "Ship it" {
 		t.Error("the bad name shouldn't have been kept")
 	}
 
 	// Removing asks first: No is first and does nothing.
 	f.onRow(t, "1/0/remove")
-	press(f, kEnter)
+	press(f, kRight)
 	if !strings.Contains(f.screen(), "No, keep it") {
 		t.Fatalf("should ask:\n%s", f.screen())
 	}
-	press(f, kEnter) // No
+	press(f, kRight) // No
 	if len(f.pack.Files[1].Group.Commands) != 1 {
 		t.Fatal("No should keep it")
 	}
@@ -201,9 +201,9 @@ func TestPackFormEditsThePack(t *testing.T) {
 func TestPackFormRemoves(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "0/add")
-	press(f, kEnter)
+	press(f, kRight)
 	f.onRow(t, "0/0/remove")
-	press(f, kEnter, kDown, kEnter) // Yes
+	press(f, kRight, kDown, kRight) // Yes
 	if len(f.pack.Files[0].Group.Commands) != 1 || f.pack.Files[0].Group.Commands[0].Name != "New command" {
 		t.Fatal("Yes should remove it")
 	}
@@ -395,7 +395,7 @@ func TestPackFormListKeepsItsQuestion(t *testing.T) {
 	f := newTestForm(t)
 	f.Update(tea.WindowSizeMsg{Width: 70, Height: 20})
 	f.onRow(t, "logo")
-	press(f, kEnter)
+	press(f, kRight)
 	for range 25 {
 		press(f, kDown)
 	}
@@ -492,7 +492,7 @@ func TestPackFormHasTheMenusKeys(t *testing.T) {
 		t.Fatal("a key should just close the keys")
 	}
 	f.onRow(t, "menu")
-	press(f, kEnter, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	press(f, kRight, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if f.choosing != nil || f.Left != "" {
 		t.Fatal("ctrl-c should cancel the list, not leave")
 	}
@@ -525,7 +525,7 @@ func TestPackFormCollapses(t *testing.T) {
 		t.Fatalf("→ opens it:\n%s", p)
 	}
 	f.onRow(t, "0/0/head")
-	press(f, kEnter)
+	press(f, kLeft)
 	if p := f.page(); !strings.Contains(p, "▸ COMMAND") || strings.Contains(p, "Prints a greeting.") || !strings.Contains(p, "Say hello") {
 		t.Fatalf("enter collapses a command, its name beside its heading:\n%s", p)
 	}
@@ -626,7 +626,7 @@ func TestPackFormTellsTheMenuItsName(t *testing.T) {
 func TestPackFormSectionOfYourOwn(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "menu")
-	press(f, kEnter)
+	press(f, kRight)
 	last := f.options[len(f.options)-1]
 	if f.options[0].Value != "ai" || last.Label != "+ New menu" {
 		t.Fatalf("options: %+v", f.options)
@@ -637,12 +637,12 @@ func TestPackFormSectionOfYourOwn(t *testing.T) {
 		t.Fatalf("a blank box on the row: %+v", f.editing)
 	}
 	f.input.SetValue("Hello There!")
-	press(f, kEnter)
+	press(f, kEsc)
 	if f.pack.Section != "hello-there" || !strings.Contains(f.pack.Markdown()[config.PackInfoFile], "menu: hello-there\n") {
 		t.Fatalf("section %q", f.pack.Section)
 	}
 	// It's in the list from then on; the list opens at its top, as every list does.
-	press(f, kEnter)
+	press(f, kRight)
 	if f.opt != 0 || !slices.ContainsFunc(f.options, func(o config.Option) bool { return o.Value == "hello-there" }) {
 		t.Errorf("on %d of %+v", f.opt, f.options)
 	}
@@ -650,7 +650,7 @@ func TestPackFormSectionOfYourOwn(t *testing.T) {
 	// A name it can't be is refused, saying why.
 	f.pick(t, newSection)
 	f.input.SetValue("clingon")
-	press(f, kEnter)
+	press(f, kEsc)
 	if f.pack.Section != "hello-there" || !strings.Contains(f.issue, "clingon's own heading") {
 		t.Errorf("section %q, issue %q", f.pack.Section, f.issue)
 	}
@@ -802,5 +802,71 @@ func TestIconGap(t *testing.T) {
 		if iconGap(g) != "  " {
 			t.Errorf("logo %s: %q", n, iconGap(g))
 		}
+	}
+}
+
+// Enter isn't →: on a row it does nothing, and typing it's a new line, in a
+// field that can have more than one. Esc is done, keeping what's typed; a
+// command over lines is carried on with \, as a pack's is; and a long value
+// wraps, under itself.
+func TestPackFormLines(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "0/0/desc")
+	press(f, kEnter)
+	if f.editing != nil {
+		t.Fatal("enter on a row opened it")
+	}
+	press(f, kRight)
+	f.input.SetValue("Prints")
+	f.input.MoveToEnd()
+	press(f, kEnter)
+	f.input.InsertString("a greeting.")
+	press(f, kEsc)
+	if c := f.pack.Files[0].Group.Commands[0]; f.editing != nil || c.Desc != "Prints\na greeting." {
+		t.Fatalf("desc %q, still editing %v", c.Desc, f.editing != nil)
+	}
+	if md := f.pack.Markdown()["examples.md"]; !strings.Contains(md, "## Say hello\nPrints\na greeting.\n") {
+		t.Errorf("two lines in the file:\n%s", md)
+	}
+	f.onRow(t, "0/0/risk")
+	f.pick(t, config.RiskWarn)
+	if md := f.pack.Markdown()["examples.md"]; !strings.Contains(md, "> [!WARNING]\n> Prints\n> a greeting.\n") || f.pack.Check() != nil {
+		t.Errorf("in a callout, every line of it:\n%s", md)
+	}
+
+	f.onRow(t, "0/0/cmd")
+	press(f, kRight)
+	f.input.SetValue("echo \"Hello,\nfriend <who>.\"")
+	press(f, kEsc)
+	if c := f.pack.Files[0].Group.Commands[0]; c.Cmd != "echo \"Hello, \\\nfriend <who>.\"" || f.issue != "" {
+		t.Fatalf("cmd %q, issue %q", c.Cmd, f.issue)
+	}
+	if err := f.pack.Check(); err != nil {
+		t.Errorf("a command over lines should load: %v", err)
+	}
+
+	f.onRow(t, "0/0/name")
+	press(f, kRight, kEnter)
+	if v := f.input.Value(); strings.Contains(v, "\n") {
+		t.Errorf("a name is one line: %q", v)
+	}
+	press(f, kEsc)
+
+	f.onRow(t, "0/desc")
+	press(f, kRight)
+	f.input.SetValue(strings.TrimSpace(strings.Repeat("word ", 30)))
+	words := func() []string {
+		var out []string
+		for _, l := range strings.Split(f.page(), "\n") {
+			if strings.Contains(l, "word") {
+				out = append(out, strings.TrimRight(l, " "))
+			}
+		}
+		return out
+	}
+	typing := words()
+	press(f, kEsc)
+	if done := words(); len(done) < 2 || strings.Join(done, "\n") != strings.Join(typing, "\n") {
+		t.Errorf("a long value wraps, as it did typing it:\n%s\n--\n%s", strings.Join(typing, "\n"), strings.Join(done, "\n"))
 	}
 }

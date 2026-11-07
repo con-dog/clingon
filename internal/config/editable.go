@@ -252,10 +252,11 @@ func commandMarkdown(c *Command) string {
 		b.WriteString("> [!CAUTION]\n")
 	}
 	if c.Desc != "" {
-		if c.Risk != "" {
-			b.WriteString("> ")
+		desc := c.Desc
+		if c.Risk != "" { // every line of it in the callout
+			desc = "> " + strings.ReplaceAll(desc, "\n", "\n> ")
 		}
-		b.WriteString(c.Desc + "\n")
+		b.WriteString(desc + "\n")
 	}
 	fence := "```sh"
 	if len(c.Requires) > 0 {
