@@ -45,11 +45,11 @@ func TestDescribeExtendsPerArg(t *testing.T) {
 		{Name: "flags", Type: "flags"},
 	}}
 	got := describe(c, map[string]string{"pattern": "*.log"}, map[string]string{}, 1, ".", "")
-	if got != "Deletes files. Files named *.log. Under this folder. ⚠ Asks before running." {
+	if got != "Deletes files. Files named *.log. Under this folder." {
 		t.Fatalf("got %q", got)
 	}
 	got = describe(c, map[string]string{"pattern": "x", "dir": "src", "flags": "-i -w"}, map[string]string{"flags": "ignore case, whole words"}, 3, "", "")
-	if got != "Deletes files. Files named x. Under src. Ignore case, whole words. ⚠ Asks before running." {
+	if got != "Deletes files. Files named x. Under src. Ignore case, whole words." {
 		t.Fatalf("got %q", got)
 	}
 }

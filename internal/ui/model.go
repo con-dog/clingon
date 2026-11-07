@@ -2364,6 +2364,9 @@ func (m *Model) stepsNote() string {
 func (m *Model) infoPane(w int) string {
 	n := infoN(m.h)
 	rule := faintStyle.Render(strings.Repeat("─", w))
+	if m.help && m.notice.text == "" {
+		return strings.Join([]string{rule, aboutInfo(w, 2*n+3), rule}, "\n")
+	}
 	if m.busy != "" && m.editing != "" && m.mode == modeBrowse && m.notice.text == "" && !m.help {
 		return strings.Join([]string{rule, labelStyle.Render("EDITING"), fit(m.editingInfo(w), w, 2*n+2, false), rule}, "\n")
 	}
@@ -2551,9 +2554,7 @@ func wrapSpaces(s string, w int) []string {
 func (m *Model) details() (cmd, desc string) {
 	switch m.mode {
 	case modeConfirm:
-		// The screen itself asks No/Yes, so skip the "asks before running" note.
-		desc := strings.TrimSuffix(strings.TrimSuffix(m.pending.desc, " "+warnNote), " "+dangerNote)
-		return highlight(m.pending.shown), desc
+		return highlight(m.pending.shown), m.pending.desc
 	case modeFill:
 		j, a := m.job, m.arg()
 		cmd = preview(j.ref.cmd, j.vals, j.step, j.current(a))
@@ -2590,7 +2591,7 @@ func (m *Model) details() (cmd, desc string) {
 	case describeRecipeRef:
 		return highlight(m.describeCommand(r.name)), "Lists this recipe's commands in the shell: what each one runs, what it does and what it will ask. Runs none of them."
 	case removeRecipeRef:
-		return highlight(m.removeCommand(r.name)), removeDesc + " " + warnNote
+		return highlight(m.removeCommand(r.name)), removeDesc
 	}
 	return "", ""
 }
@@ -2629,12 +2630,6 @@ func describe(c *config.Command, vals, said map[string]string, step int, tentati
 		case says != "":
 			parts = append(parts, sentence(says))
 		}
-	}
-	switch c.Risk {
-	case config.RiskWarn:
-		parts = append(parts, warnNote)
-	case config.RiskDanger:
-		parts = append(parts, dangerNote)
 	}
 	parts[0] = tmpl.Render(c.Desc, func(n string) bool { _, ok := filled[n]; return ok }, filled)
 	return strings.TrimSpace(strings.Join(parts, " "))
@@ -2712,12 +2707,6 @@ const secretMask = "••••••"
 // unfinishedCommand is what ShellState.Typed says when the shell is
 // waiting for the rest of a command rather than showing typed text.
 const unfinishedCommand = "an unfinished command"
-
-// The last sentence of a risky command's description.
-const (
-	warnNote   = warnGlyph + " Asks before running."
-	dangerNote = dangerGlyph + " Dangerous: you type a code, then it asks before running."
-)
 
 var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,~-]+$`) // ~ so `cd ~` still expands
 
@@ -2818,6 +2807,19 @@ func (m *Model) sectionInfo(s *config.Section, w, n int) string {
 	}
 	for _, g := range s.Groups {
 		add(g.Name, g.Commands)
+	}
+	return fit(lines, w, n, false)
+}
+
+// aboutInfo is what clingon is, for the help screen's info pane, n lines w
+// wide, laid out like a section's summary.
+func aboutInfo(w, n int) string {
+	var lines []string
+	for _, p := range [][2]string{
+		{"Clingon:", "a menu of the commands you can never remember, next to a real shell that runs them."},
+		{"How it runs:", "pick a command and fill in the blanks. It's typed into your shell and run, as if you'd typed it yourself."},
+	} {
+		lines = append(lines, hang(words(groupLabelStyle, p[0])+" "+words(dimStyle, p[1]), w)...)
 	}
 	return fit(lines, w, n, false)
 }
