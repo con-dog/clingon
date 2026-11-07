@@ -990,3 +990,30 @@ func TestPackFormLongList(t *testing.T) {
 		t.Errorf("at its end, the last in view, and what's above:\n%s", p)
 	}
 }
+
+// The form's foot has a rule level with the menu's info pane's, beside it, at
+// any height: the two panes read as one.
+func TestPackFormRuleLevelWithTheMenus(t *testing.T) {
+	ruleAt := func(lines []string, w int) int {
+		at := -1
+		for i, l := range lines {
+			if strings.HasPrefix(strings.TrimSpace(ansi.Strip(ansi.Cut(l, 0, w))), "────") {
+				at = i
+			}
+		}
+		return at
+	}
+	for _, h := range []int{20, 30, 45} {
+		sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Edit a pack", Cmd: "x"}}}
+		m := New(Options{Config: &config.Config{Sections: []config.Section{sec}}, Bar: func(string) {}, BarWidth: func() int { return 0 }})
+		m.Update(tea.WindowSizeMsg{Width: 60, Height: h})
+		m.showSection(&m.opt.Config.Sections[0])
+		m.busy, m.editing, m.form, m.blurred = "Edit a pack", "Demo · esc when done", &pending{}, true
+		f := newTestForm(t)
+		f.Update(tea.WindowSizeMsg{Width: 70, Height: h})
+		menu, form := ruleAt(strings.Split(m.view(), "\n"), 60), ruleAt(strings.Split(f.view(), "\n"), 70)
+		if menu < 0 || menu != form {
+			t.Errorf("height %d: the menu's rule on line %d, the form's on %d", h, menu, form)
+		}
+	}
+}

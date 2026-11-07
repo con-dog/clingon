@@ -1128,7 +1128,9 @@ func (f *PackForm) view() string {
 	// path (row 2), the filter by its filter (row 4), the form from row 6 by
 	// its list; the help and keys at the bottom, a row from the edge.
 	top := []string{"", "", f.crumb(inner), "", f.filterLine(inner), ""}
-	room := max(f.h-len(top)-len(foot)-1, 1)
+	// Its foot, under a rule level with the menu's info pane's, stays put.
+	panel := []string{faintStyle.Render(strings.Repeat("─", inner))}
+	room := max(f.h-len(top)-len(foot)-infoTop(f.h), 1)
 	body, at, row, heads := f.cards(inner)
 	if f.help {
 		body, at, row, heads = f.keys(inner), 0, 0, nil
@@ -1140,7 +1142,7 @@ func (f *PackForm) view() string {
 	for len(form) < len(top)+room {
 		form = append(form, "")
 	}
-	form = append(append(form, foot...), "")
+	form = append(append(form, foot...), panel...)
 	var prev []string
 	if previewW > 0 { // its title level with where you are
 		prev = append([]string{"", ""}, f.preview(previewW-2*panelPad, f.h-3)...) // each with its own left padding, the gutter for a mark

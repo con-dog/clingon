@@ -2381,13 +2381,7 @@ func (m *Model) stepsNote() string {
 // infoPane is the same on every screen: what will run, then what it's
 // about, in a fixed-height area at the foot of the menu.
 func (m *Model) infoPane(w int) string {
-	n := 3 // lines each for the command and the description
-	switch {
-	case m.h < 22:
-		n = 1
-	case m.h < 32:
-		n = 2
-	}
+	n := infoN(m.h)
 	rule := faintStyle.Render(strings.Repeat("─", w))
 	if m.busy != "" && m.editing != "" && m.mode == modeBrowse && m.notice.text == "" && !m.help {
 		return strings.Join([]string{rule, labelStyle.Render("EDITING"), fit(m.editingInfo(w), w, 2*n+2, false), rule}, "\n")
@@ -2432,6 +2426,23 @@ func (m *Model) infoPane(w int) string {
 		rule,
 	}, "\n")
 }
+
+// infoN is how many lines each the info pane gives the command and the
+// description, in a pane h high.
+func infoN(h int) int {
+	switch {
+	case h < 22:
+		return 1
+	case h < 32:
+		return 2
+	}
+	return 3
+}
+
+// infoTop is how far up from the pane's foot the info pane's rule is, in a
+// pane h high with nothing under it: the rule, the two headings, the two
+// blocks and the line between them. The pack form's foot is the same, level.
+func infoTop(h int) int { return 2*infoN(h) + 4 }
 
 // formNameMsg is a look at the open pack form's name, to say it as it changes.
 type formNameMsg struct{}
