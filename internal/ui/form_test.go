@@ -939,15 +939,15 @@ func TestPackFormPreviewFollows(t *testing.T) {
 	}
 }
 
-// An add is a ghost of what it adds, where that will be: + COMMAND at the end
-// of its module, + MODULE after the last, + Opts after a blank's choices.
+// An add is a ghost of what it adds, where that will be: + ADD COMMAND at the end
+// of its module, + ADD MODULE after the last, + Opts after a blank's choices.
 // Taking one adds it, named already, the cursor on its name, not typing.
 func TestPackFormGhostAdds(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "0/0/0/kind")
 	f.pick(t, "choose")
 	p := f.page()
-	for _, want := range []string{"+ COMMAND", "+ MODULE", "+ Opts"} {
+	for _, want := range []string{"+ ADD COMMAND", "+ ADD MODULE", "+ Opts"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("no %q in:\n%s", want, p)
 		}

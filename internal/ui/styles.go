@@ -17,18 +17,19 @@ import (
 // number. The background and plain text are the terminal's own, from
 // clingon's window profile (internal/window): that ink is exact.
 var (
-	accent = lipgloss.Color(PinkHex)   // 212 pink: the cursor, marks, what you act on
-	purple = lipgloss.Color("#875fff") // 99: the menu's headings, the prompt's folder
-	soft   = lipgloss.Color("#afafff") // 147 periwinkle: headings and keys in the shell's output, far enough from the prompt's purple; flags
-	grey   = lipgloss.Color(greyHex)   // 103 lavender: secondary text, the prompt's branch
-	faint  = lipgloss.Color("#5f5f87") // 60: chrome: rules, frames, placeholders
-	raised = lipgloss.Color("0")       // ANSI black, which clingon's window makes a step lighter than its background, in its violet (internal/window): the cursor's row, the command block, bars
-	text   = lipgloss.Color("#e4e4e4") // 254: text on coloured bands
-	orange = lipgloss.Color(orangeHex) // 215: cautions
-	red    = lipgloss.Color(redHex)    // 204: errors, danger; the prompt after a failure
-	green  = lipgloss.Color("#5fd7af") // 79: values, all's well
-	sky    = lipgloss.Color("#87d7ff") // 117: a command's blanks, waiting to be filled: apart from the pinks and purples (what you act on) and the flags' periwinkle
-	ink    = lipgloss.Color("#121212") // 233: dark text on bright bands
+	accent      = lipgloss.Color(PinkHex)   // 212 pink: the cursor, marks, what you act on
+	purple      = lipgloss.Color("#875fff") // 99: the menu's headings, the prompt's folder
+	ghostPurple = lipgloss.Color("#5f5faf") // 61: the headings' purple, dimmed: a form's "+ ADD MODULE", where one would go
+	soft        = lipgloss.Color("#afafff") // 147 periwinkle: headings and keys in the shell's output, far enough from the prompt's purple; flags
+	grey        = lipgloss.Color(greyHex)   // 103 lavender: secondary text, the prompt's branch
+	faint       = lipgloss.Color("#5f5f87") // 60: chrome: rules, frames, placeholders
+	raised      = lipgloss.Color("0")       // ANSI black, which clingon's window makes a step lighter than its background, in its violet (internal/window): the cursor's row, the command block, bars
+	text        = lipgloss.Color("#e4e4e4") // 254: text on coloured bands
+	orange      = lipgloss.Color(orangeHex) // 215: cautions
+	red         = lipgloss.Color(redHex)    // 204: errors, danger; the prompt after a failure
+	green       = lipgloss.Color("#5fd7af") // 79: values, all's well
+	sky         = lipgloss.Color("#87d7ff") // 117: a command's blanks, waiting to be filled: apart from the pinks and purples (what you act on) and the flags' periwinkle
+	ink         = lipgloss.Color("#121212") // 233: dark text on bright bands
 )
 
 // greyHex, orangeHex and redHex are the risk glyphs' colours, for where a

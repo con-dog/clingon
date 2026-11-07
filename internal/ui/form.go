@@ -1562,14 +1562,15 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 	room := max(w-f.labelAt(r), 1)
 	switch {
 	case r.do != nil && r.confirm == "" && flatForm: // an add, as a ghost of what it adds, where it'll be
-		word, st := "", lipgloss.NewStyle().Foreground(purple).Faint(true)
+		// A dim purple (61): a ghost of the headings, readable but not one yet.
+		word, st := "", lipgloss.NewStyle().Foreground(ghostPurple)
 		switch {
 		case r.key == "add-module":
-			word = "MODULE"
+			word = "ADD MODULE"
 		case strings.Count(r.key, "/") == 1:
-			word = "COMMAND"
+			word = "ADD COMMAND"
 		default: // a choice: in the Opts rows' place
-			word, st = "Opts", dimStyle.Faint(true)
+			word, st = "Opts", dimStyle
 		}
 		if on {
 			st = cursorStyle
