@@ -170,7 +170,7 @@ func (f *PackForm) saveKey(k string) tea.Cmd {
 		f.saveOpt = max(f.saveOpt-1, 0)
 	case "down":
 		f.saveOpt = min(f.saveOpt+1, len(saveChoices)-1)
-	case "left", "esc", "ctrl+c":
+	case "left", "esc":
 		f.saving = false
 	case "right", "enter":
 		f.saving = false
@@ -859,7 +859,7 @@ func (f *PackForm) barKeys() []string {
 	case f.saving:
 		return []string{"↑↓ move", "→ go", "← back"}
 	case f.editing != nil:
-		return []string{"→ go", "← back", "ctrl-c cancel"} // through the text, then out of it, as in the menu
+		return []string{"→ go", "← back", "enter done", "esc cancel"} // through the text, then out of it, as in the menu
 	case f.choosing != nil:
 		return []string{"↑↓ move", "→ go", "← back"}
 	case f.filtering:
@@ -875,9 +875,9 @@ func (f *PackForm) barKeys() []string {
 		}
 	}
 	if f.filter.Value() != "" { // closed, and still applied: esc clears it first
-		keys = append(keys, "/ edit filter", "[ ] jump", "esc clear", "shift-tab menu")
+		keys = append(keys, "/ edit filter", "[ ] jump", "esc clear", greyed+"shift-tab menu")
 	} else {
-		keys = append(keys, "/ filter", "[ ] jump", "esc done", "shift-tab menu")
+		keys = append(keys, "/ filter", "[ ] jump", "esc done", greyed+"shift-tab menu") // not from the form: greyed out, where it always is
 	}
 	return keys
 }
@@ -988,29 +988,18 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 	case "shift+down":
 		k = "]"
 	}
-	if k == "ctrl+c" {
-		switch {
-		case f.editing != nil: // cancel what you're doing
-			f.editing, f.input, f.issue = nil, nil, ""
-			return nil
-		case f.choosing != nil:
-			f.choosing = nil
-			return nil
-		case f.filtering:
-			f.filtering = false
-			f.filter.SetValue("")
-			f.filter.Blur()
-			f.refresh("")
-			return nil
-		}
-		return f.done() // out of the form: asking first, with changes
+	if k == "ctrl+c" { // does nothing in the form: esc cancels
+		return nil
 	}
 	switch {
 	case f.editing != nil:
 		switch {
+		case k == "esc": // cancel: what's typed is thrown away
+			f.editing, f.input, f.issue = nil, nil, ""
+			return nil
 		case k == "left" && f.inputAt(false), k == "right" && f.inputAt(true): // past its ends: out of it, kept
 			fallthrough
-		case k == "enter" || k == "esc": // done: what's typed is kept (ctrl+c throws it away)
+		case k == "enter": // done: what's typed is kept
 			v := typedIn(f.input.Value())
 			r := f.editing
 			if err := f.change(func() error { return r.text(v) }); err != nil {
@@ -1324,8 +1313,7 @@ func (f *PackForm) keys(w int) []string {
 		{"←", "back: close what's open"},
 		{"[ ]", "jump to the previous or next heading"},
 		{"/", "filter; again stops"},
-		{"esc", "done typing, clear the filter, go back, or close the form"},
-		{"ctrl-c", "cancel what you're doing, typing too"},
+		{"esc", "cancel typing, clear the filter, go back, or close the form"},
 		{"tab/shift-tab", "switch panes"},
 		{"?", "this screen"},
 	}

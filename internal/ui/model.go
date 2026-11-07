@@ -625,7 +625,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.resume != nil {
 		cmd, m.resume = tea.Batch(cmd, m.resume), nil
 	}
-	// Every way of not going through with a step (←, esc, ctrl-c, "No") ends
+	// Every way of not going through with a step (←, esc, "No") ends
 	// back in the list with nothing sent: that stops the recipe, and keeps it.
 	if m.run != nil && !m.run.sent && m.mode == modeBrowse {
 		if m.errMsg == "" {
@@ -808,8 +808,10 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help = false
 			return m, nil
 		}
-		if keyName(msg) == "ctrl+c" {
-			return m, m.cancel()
+		if keyName(msg) == "ctrl+c" { // does nothing here: esc cancels. Never quit on it: that
+			// would throw away the session, and the next key (often a ctrl-d) would
+			// land in the user's own shell and log them out.
+			return m, nil
 		}
 		switch m.mode {
 		case modeTrust:
@@ -845,26 +847,6 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.filter, cmd = m.list.filter.Update(msg)
 	}
 	return m, cmd
-}
-
-// cancel is Ctrl-C: drop whatever is in progress, but never quit. Closing
-// clingon on Ctrl-C would throw away the session, and the next key (often
-// a Ctrl-D) would land in the user's own shell and log them out.
-func (m *Model) cancel() tea.Cmd {
-	m.errMsg, m.hint = "", ""
-	switch {
-	case m.mode == modeFill && m.job.usePick && m.job.pick.filtered(): // the filter first, as in the menu's list
-		m.job.pick.clearFilter()
-	case m.mode != modeBrowse:
-		m.pending, m.job, m.mode = nil, nil, modeBrowse
-	case m.list.filtered():
-		m.list.clearFilter()
-	case m.section != nil:
-		m.showRoot(m.section.Name)
-	default:
-		m.hint = "Nothing to cancel · esc quit"
-	}
-	return nil
 }
 
 // quit closes clingon, and with it the shell and everything in it: never with
@@ -2105,7 +2087,6 @@ func (m *Model) helpView(w int) string {
 		{"[ ]", "jump to the previous or next heading"},
 		{"/", "filter (on the top level, every command); again stops"},
 		{"esc", "clear the filter, go back, or quit at the top"},
-		{"ctrl-c", "cancel what you're doing"},
 		{"space", "select or unselect, in a select-many list"},
 		{"1-9", "recipe position: clears later ones; again removes it"},
 		{"r", "go to the current recipe"},
@@ -2908,10 +2889,19 @@ func (m *Model) promptKeys() []string {
 	return keys
 }
 
-// keyHints styles "key what it does": the key in pink, the rest in grey.
+// greyed leads a key hint that doesn't work here, though it does elsewhere: it
+// keeps its place on the status bar, greyed out, so nothing shifts.
+const greyed = "~"
+
+// keyHints styles "key what it does": the key in pink, the rest in grey, or
+// all of it faint when it's greyed out.
 func keyHints(keys []string) []string {
 	out := make([]string, len(keys))
 	for i, k := range keys {
+		if rest, ok := strings.CutPrefix(k, greyed); ok {
+			out[i] = faintStyle.Render(rest)
+			continue
+		}
 		key, what, _ := strings.Cut(k, " ")
 		switch {
 		case key == "[": // "[ ] jump"

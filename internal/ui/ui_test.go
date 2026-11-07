@@ -802,9 +802,13 @@ func TestSlashOpensTheFilter(t *testing.T) {
 	if len(m.recipe) != 1 {
 		t.Fatalf("in the filter, a digit is search: %v", m.recipe)
 	}
-	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}) // ctrl-c stops filtering too
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}) // ctrl-c does nothing: esc stops filtering
+	if !m.list.filtering || m.section == nil || m.Quit {
+		t.Fatalf("ctrl-c should do nothing: filtering %v", m.list.filtering)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if m.list.filtering || m.section == nil {
-		t.Fatalf("ctrl-c should only stop filtering: filtering %v", m.list.filtering)
+		t.Fatalf("esc should only stop filtering: filtering %v", m.list.filtering)
 	}
 
 	// ← moves back through what's typed, and past its start leaves the
@@ -2733,12 +2737,13 @@ func TestEveryListFiltersTheSameWay(t *testing.T) {
 	}
 	m.Update(typed("/"))
 	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	if m.mode != modeFill || m.job.pick.filtering {
-		t.Errorf("ctrl-c should close the filter first: mode %v", m.mode)
+	if m.mode != modeFill || !m.job.pick.filtering {
+		t.Errorf("ctrl-c should do nothing: mode %v", m.mode)
 	}
-	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	key(tea.KeyEscape)
+	key(tea.KeyEscape)
 	if m.mode != modeBrowse {
-		t.Errorf("and then the command: mode %v", m.mode)
+		t.Errorf("esc closes the filter, and then the command: mode %v", m.mode)
 	}
 
 	// A checklist still ticks with space, filter open or not, and says nothing.
@@ -2941,7 +2946,7 @@ func TestAtLeastOneNeedsATick(t *testing.T) {
 	}
 }
 
-// / closes a filter and keeps it; only esc, ctrl-c or ← throws it away. The same
+// / closes a filter and keeps it; only esc or ← throws it away. The same
 // in the menu's list and an arg's.
 func TestSlashKeepsTheFilter(t *testing.T) {
 	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
@@ -3960,5 +3965,13 @@ func TestWhereChipAndFormKeys(t *testing.T) {
 	m.blurred = false
 	if got := chip(); got != "IN MENUS" || strings.Contains(ansi.Strip(m.barBody(80)), "Ctrl-Q") {
 		t.Errorf("back in the menu: %q, %q", got, ansi.Strip(m.barBody(80)))
+	}
+}
+
+// A greyed-out key hint keeps its place on the bar, all of it faint.
+func TestKeyHintsGreyOut(t *testing.T) {
+	got := keyHints([]string{greyed + "shift-tab menu", "esc done"})
+	if got[0] != faintStyle.Render("shift-tab menu") || ansi.Strip(got[1]) != "esc done" || got[1] == faintStyle.Render("esc done") {
+		t.Errorf("%q", got)
 	}
 }

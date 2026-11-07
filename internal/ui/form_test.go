@@ -73,11 +73,11 @@ func TestPackFormMoves(t *testing.T) {
 	}
 }
 
-// typeIn opens the highlighted field, replaces what's in it, and confirms.
+// typeIn opens the highlighted field, replaces what's in it, and confirms with enter.
 func typeIn(f *PackForm, text string) {
 	press(f, kRight)
 	f.input.SetValue(text)
-	press(f, kEsc)
+	press(f, kEnter)
 }
 
 // pick opens the highlighted field's list and picks the option titled title.
@@ -148,7 +148,7 @@ func TestPackFormEditsThePack(t *testing.T) {
 	if keys := config.FormKeys(); len(keys) == 0 || !strings.HasPrefix(keys[0], config.FormIssuePrefix) || strings.Contains(f.screen(), "ISSUE:") || f.input == nil {
 		t.Fatalf("a bad name should be said on the status bar, not the form, still being typed: %q\n%s", keys, f.screen())
 	}
-	press(f, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}) // gives up on it
+	press(f, kEsc) // gives up on it
 	if f.pack.Files[1].Group.Commands[0].Name != "Ship it" {
 		t.Error("the bad name shouldn't have been kept")
 	}
@@ -422,7 +422,7 @@ func TestPackFormHeadingsStick(t *testing.T) {
 // Esc with changes asks, at the foot of the form, whether to save them:
 // Save (first) saves and closes, Keep editing (or ←, or esc) goes back to the
 // form, and Throw them away closes without them. Without changes, esc just
-// closes; ← at the form's top does nothing; ctrl+c asks too.
+// closes; ← at the form's top does nothing, nor does ctrl+c.
 func TestPackFormAsksToSave(t *testing.T) {
 	f := newTestForm(t)
 	if _, cmd := f.Update(kLeft); cmd != nil || f.saving {
@@ -447,9 +447,10 @@ func TestPackFormAsksToSave(t *testing.T) {
 		t.Fatal("esc goes back to the form")
 	}
 	f.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	if !f.saving {
-		t.Fatal("ctrl+c asks too")
+	if f.saving || f.Left != "" {
+		t.Fatal("ctrl+c does nothing in the form: esc cancels")
 	}
+	f.Update(kEsc)
 	press(f, kDown, kRight) // Keep editing
 	if f.saving || f.Left != "" {
 		t.Fatal("Keep editing goes back to the form")
@@ -476,8 +477,8 @@ func TestPackFormAsksToSave(t *testing.T) {
 	}
 }
 
-// The menu's keys: [ ] jump between headings, ? shows the keys, ctrl-c
-// cancels what's open.
+// The menu's keys: [ ] jump between headings, ? shows the keys, esc cancels
+// what's open, and ctrl-c does nothing.
 func TestPackFormHasTheMenusKeys(t *testing.T) {
 	f := newTestForm(t)
 	press(f, tea.KeyPressMsg{Code: ']', Text: "]"})
@@ -498,8 +499,12 @@ func TestPackFormHasTheMenusKeys(t *testing.T) {
 	}
 	f.onRow(t, "menu")
 	press(f, kRight, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if f.choosing == nil || f.Left != "" {
+		t.Fatal("ctrl-c should do nothing")
+	}
+	press(f, kEsc)
 	if f.choosing != nil || f.Left != "" {
-		t.Fatal("ctrl-c should cancel the list, not leave")
+		t.Fatal("esc should cancel the list, not leave")
 	}
 }
 
@@ -642,7 +647,7 @@ func TestPackFormSectionOfYourOwn(t *testing.T) {
 		t.Fatalf("a blank box on the row: %+v", f.editing)
 	}
 	f.input.SetValue("Hello There!")
-	press(f, kEsc)
+	press(f, kEnter)
 	if f.pack.Section != "hello-there" || !strings.Contains(f.pack.Markdown()[config.PackInfoFile], "menu: hello-there\n") {
 		t.Fatalf("section %q", f.pack.Section)
 	}
@@ -655,7 +660,7 @@ func TestPackFormSectionOfYourOwn(t *testing.T) {
 	// A name it can't be is refused, saying why.
 	f.pick(t, newSection)
 	f.input.SetValue("clingon")
-	press(f, kEsc)
+	press(f, kEnter)
 	if f.pack.Section != "hello-there" || !strings.Contains(f.issue, "clingon's own heading") {
 		t.Errorf("section %q, issue %q", f.pack.Section, f.issue)
 	}
@@ -839,7 +844,7 @@ func TestPackFormLines(t *testing.T) {
 		return out
 	}
 	typing := words()
-	press(f, kEsc)
+	press(f, kEnter)
 	if done := words(); len(done) < 2 || strings.Join(done, "\n") != strings.Join(typing, "\n") {
 		t.Errorf("a long value wraps, as it did typing it:\n%s\n--\n%s", strings.Join(typing, "\n"), strings.Join(done, "\n"))
 	}
@@ -1037,10 +1042,11 @@ func TestPackFormTellsItsKeys(t *testing.T) {
 	f.onRow(t, "0/head")
 	press(f, kDown, kUp)
 	has("a heading", "→ go", "← back", "esc done")
+	has("shift-tab, greyed out: it doesn't work from the form", greyed+"shift-tab menu")
 	press(f, kDown)
 	has("a field", "→ go", "/ filter")
 	press(f, kRight)
-	has("typing", "→ go", "← back", "ctrl-c cancel")
+	has("typing", "→ go", "← back", "enter done", "esc cancel")
 	press(f, kEsc)
 	f.onRow(t, "menu")
 	press(f, kDown, kUp, kRight)
