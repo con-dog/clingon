@@ -2958,7 +2958,9 @@ func (m *Model) barKeys() []string {
 		if m.section != nil && m.section != m.recipesSection() {
 			keys = append(keys, "1-9 add")
 		}
-		keys = append(keys, "r recipe")
+		if len(m.recipe) > 0 { // only with a current recipe to go to
+			keys = append(keys, "r recipe")
+		}
 	}
 	if inClingon {
 		keys = append(keys, "tab shell")

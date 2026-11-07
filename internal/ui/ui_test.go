@@ -1620,10 +1620,10 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 			t.Errorf("%s: footer %q, want %q", when, got, want)
 		}
 	}
-	barIs("top", "→ go · / filter · [ ] jump · esc quit · r recipe · tab shell")
+	barIs("top", "→ go · / filter · [ ] jump · esc quit · tab shell") // no r recipe: there isn't one yet
 	footIs("top", "")
 
-	keys := "→ go · / filter · [ ] jump · esc quit · r recipe · tab shell"
+	keys := "→ go · / filter · [ ] jump · esc quit · tab shell"
 	m.news = &Headline{Kind: Attention, Text: "↑ Update clingon"}
 	barIs("news that needs acting on wins", "↑ Update clingon")
 	m.news = &Headline{Kind: Info, Text: "• Add 5 packs"}
@@ -1633,7 +1633,7 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 	m.news = nil
 
 	m.showSection(&m.opt.Config.Sections[0])
-	barIs("section", "→ go · ← back · / filter · [ ] jump · 1-9 add · r recipe · tab shell")
+	barIs("section", "→ go · ← back · / filter · [ ] jump · 1-9 add · tab shell")
 
 	m.Update(typed("/"))
 	barIs("filtering", "→ go · ← back · / stop filtering · esc clear filter · tab shell")
@@ -1669,6 +1669,9 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 		t.Errorf("bar %q", bar)
 	}
 	footIs("with a recipe", "")
+	if !slices.Contains(m.barKeys(), "r recipe") {
+		t.Errorf("with a current recipe, r goes to it: %q", m.barKeys())
+	}
 
 	// In print mode there's no shell pane to go to, and no recipes.
 	p := New(Options{Config: &config.Config{Sections: sections}})
