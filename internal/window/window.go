@@ -48,7 +48,7 @@ const (
 // command's block, the cursor's row). Terminal.app has no 24-bit colour, and
 // none of the other 256 is a dark violet, so this is the one way to draw one.
 var ansi = [16]string{
-	"#262236", "#ff5f87", "#5fd7af", "#ffd787", "#87afff", "#ff87d7", "#5fd7ff", "#c6c2d6",
+	"#2f2a44", "#ff5f87", "#5fd7af", "#ffd787", "#87afff", "#ff87d7", "#5fd7ff", "#c6c2d6",
 	"#5f5f87", "#ff87af", "#87ffd7", "#ffffaf", "#afafff", "#ffafff", "#afffff", "#ffffff",
 }
 

@@ -2372,8 +2372,7 @@ func (m *Model) infoPane(w int) string {
 		cmd, desc = "", ""
 	} else if s := m.highlightedSection(); s != nil {
 		if s.Name == RecipesSection && len(m.recipe) == 0 {
-			head, body := m.noCurrentRecipeInfo(w, 2*n+2)
-			return strings.Join([]string{rule, labelStyle.Render(head), body, rule}, "\n")
+			return strings.Join([]string{rule, m.noCurrentRecipeInfo(w, 2*n+3), rule}, "\n")
 		}
 		// A section runs nothing itself: what's in it gets the whole area,
 		// its heading's line too (how many it has is by the filter).
@@ -2461,21 +2460,19 @@ func quiet(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// noCurrentRecipeInfo is what the menu's Recipes row says with nothing numbered:
-// the recipes you have, or how to start.
-func (m *Model) noCurrentRecipeInfo(w, n int) (head, body string) {
-	saved := m.savedRecipes()
-	if len(saved) == 0 {
-		lines := wrapSpaces(dimStyle.Render("A recipe runs several commands in order."), w)
-		lines = append(lines, wrapSpaces(dimStyle.Render("Press 1-9 on any command to build one."), w)...)
-		return "NO RECIPES YET", fit(lines, w, n, false)
+// noCurrentRecipeInfo is what the menu's Recipes row says with nothing numbered,
+// n lines w wide, laid out like any section's: the recipes you have, or how
+// to start.
+func (m *Model) noCurrentRecipeInfo(w, n int) string {
+	label, text := "No recipes yet:", "a recipe runs several commands in order. Press 1-9 on any command to build one."
+	if saved := m.savedRecipes(); len(saved) > 0 {
+		var names []string
+		for _, r := range saved {
+			names = append(names, r.Name)
+		}
+		label, text = "Saved recipes:", strings.Join(names, ", ")
 	}
-	var names []string
-	for _, r := range saved {
-		names = append(names, r.Name)
-	}
-	line := words(crumbStyle, "Saved recipes:") + " " + words(dimStyle, strings.Join(names, ", "))
-	return strings.ToUpper(plural(len(saved), "recipe")), fit(wrapSpaces(line, w), w, n, false)
+	return fit(wrapSpaces(words(crumbStyle, label)+" "+words(dimStyle, text), w), w, n, false)
 }
 
 // onEmptyRecipe says whether the Recipes screen has nothing to describe: no

@@ -3724,12 +3724,12 @@ func TestRecipesRowWithNothingNumbered(t *testing.T) {
 		}
 	}
 	got := ansi.Strip(m.infoPane(60))
-	if !strings.Contains(got, "NO RECIPES YET") || !strings.Contains(got, "Press 1-9 on any command") || strings.Contains(got, "Current recipe") || strings.Contains(got, "0 COMMANDS") {
+	if !strings.Contains(got, "No recipes yet: a recipe runs") || strings.Contains(got, "NO RECIPES YET") || strings.Contains(got, "Current recipe") || strings.Contains(got, "0 COMMANDS") {
 		t.Errorf("none at all:\n%s", got)
 	}
 	saved = []config.Recipe{{Name: "Deploy", Steps: []string{"x-00000000"}}, {Name: "Tidy", Steps: []string{"x-00000000"}}}
 	got = ansi.Strip(m.infoPane(60))
-	if !strings.Contains(got, "2 RECIPES") || !strings.Contains(got, "Saved recipes: Deploy, Tidy") || strings.Contains(got, "Current recipe") {
+	if strings.Contains(got, "2 RECIPES") || !strings.Contains(got, "Saved recipes: Deploy, Tidy") || strings.Contains(got, "Current recipe") {
 		t.Errorf("some added:\n%s", got)
 	}
 }
