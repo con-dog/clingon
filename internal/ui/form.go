@@ -69,7 +69,8 @@ type formRow struct {
 	note                     string // faint, after the value: what a folded part has in it
 	header                   bool
 	sub                      int  // how many levels it's set in under its command: a blank 1, a blank's own rows 2
-	title                    bool // a label with nothing of its own, over what's set in under it: the cursor passes it
+	title                    bool   // a label with nothing of its own, over what's set in under it: the cursor passes it
+	fold                     string // "open" or "closed" on a blank's What row, which opens and collapses the blank
 	depth                    int  // 0 the pack's, 1 a module's, 2 a command's: how far in its tree guides go
 	branch                   bool // an add that ends its level, drawn on the tree's └─
 	icon, color              string
@@ -294,34 +295,45 @@ func openPart(key string) (sub, cmd int) {
 	return sub, cmd
 }
 
-// fold opens or collapses the module or command whose heading r is.
+// fold opens or collapses the module or command whose heading r is, or the
+// blank whose What row it is.
 func (f *PackForm) fold(r *formRow, open bool) {
-	sub, cmd := openPart(r.key)
-	f.setOpen(sub, cmd, open)
+	var at [3]int
+	n, _ := fmt.Sscanf(r.key, "%d/%d/%d/", &at[0], &at[1], &at[2])
+	if r.header {
+		at[0], at[1] = openPart(r.key)
+		n = 2
+	}
+	f.setOpen(open, at[:n]...)
 	f.refresh(r.key)
 }
 
-// partKey is how a module ("1") or a command ("1/2") is kept open or collapsed.
-func partKey(sub, cmd int) string {
-	if cmd < 0 {
-		return fmt.Sprint(sub)
+// partKey is how a module ("1"), a command ("1/2") or a command's blank
+// ("1/2/0") is kept open or collapsed: its indexes, as far as they go.
+func partKey(at ...int) string {
+	var s []string
+	for _, n := range at {
+		if n < 0 {
+			break
+		}
+		s = append(s, fmt.Sprint(n))
 	}
-	return fmt.Sprintf("%d/%d", sub, cmd)
+	return strings.Join(s, "/")
 }
 
-// isOpen says whether a module or command is open: it is unless it's been
-// collapsed.
-func (f *PackForm) isOpen(sub, cmd int) bool {
-	open, said := f.toggled[partKey(sub, cmd)]
+// isOpen says whether a module, command or blank is open: it is unless it's
+// been collapsed.
+func (f *PackForm) isOpen(at ...int) bool {
+	open, said := f.toggled[partKey(at...)]
 	return open || !said
 }
 
-// setOpen opens or collapses a module or command.
-func (f *PackForm) setOpen(sub, cmd int, open bool) {
+// setOpen opens or collapses a module, command or blank.
+func (f *PackForm) setOpen(open bool, at ...int) {
 	if f.toggled == nil {
 		f.toggled = map[string]bool{}
 	}
-	f.toggled[partKey(sub, cmd)] = open
+	f.toggled[partKey(at...)] = open
 }
 
 // reveal opens what the row keyed key is in, so going to it (after adding
@@ -331,9 +343,13 @@ func (f *PackForm) reveal(key string) {
 	if sub < 0 || strings.HasSuffix(key, "/head") && strings.Count(key, "/") == 1 {
 		return
 	}
-	f.setOpen(sub, -1, true)
+	f.setOpen(true, sub)
 	if cmd >= 0 && !(strings.HasSuffix(key, "/head") && strings.Count(key, "/") == 2) {
-		f.setOpen(sub, cmd, true)
+		f.setOpen(true, sub, cmd)
+	}
+	var b int
+	if n, _ := fmt.Sscanf(key, "%d/%d/%d/", &sub, &cmd, &b); n == 3 && !strings.HasSuffix(key, "/name") { // a blank's row, past its What
+		f.setOpen(true, sub, cmd, b)
 	}
 }
 
@@ -599,9 +615,6 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 			return nil
 		}},
 	}
-	if len(c.Args) > 0 { // the blanks, set in under a title
-		rows = append(rows, formRow{key: k("args"), label: "Args", title: true})
-	}
 	for b := range c.Args {
 		rows = append(rows, f.blankRows(i, j, b)...)
 	}
@@ -628,15 +641,15 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 	kinds := []config.Option{{Value: "text", Label: "text"}, {Value: "choose", Label: "select one"}, {Value: "flags", Label: "select many"}}
 	kind := map[string]string{"text": "text", "secret": "text, hidden", "choose": "select one", "flags": "select many"}[a.Kind()]
 	rows := []formRow{
-		{key: k("name"), sub: 1, label: "What", value: name, look: mdLook("- `", "`"), help: "The blank: where it is in the command. Renaming it renames it there too.", text: func(v string) error {
+		{key: k("name"), fold: "open", label: "What", value: name, look: mdLook("- `", "`"), help: "The blank: where it is in the command. Renaming it renames it there too.", text: func(v string) error {
 			return config.RenameBlank(f.command(i, j), f.blank(i, j, b).Name, v)
 		}},
-		{key: k("q"), sub: 2, label: "Desc", value: a.Prompt, hint: "the question asked", help: "What's asked for " + name + " when the command runs.", text: func(v string) error { f.blank(i, j, b).Prompt = v; return nil }},
+		{key: k("q"), label: "Desc", value: a.Prompt, hint: "the question asked", help: "What's asked for " + name + " when the command runs.", text: func(v string) error { f.blank(i, j, b).Prompt = v; return nil }},
 	}
 	if a.Kind() == "secret" {
-		rows = append(rows, formRow{key: k("kind"), sub: 2, label: "Type", value: kind, help: "Its name says it's a secret, token or password: typed hidden, and kept out of your history."})
+		rows = append(rows, formRow{key: k("kind"), label: "Type", value: kind, help: "Its name says it's a secret, token or password: typed hidden, and kept out of your history."})
 	} else {
-		rows = append(rows, formRow{key: k("kind"), sub: 2, label: "Type", value: kind, help: "How " + name + " is answered: text is typed in; select one picks one of its choices, or you type your own; select many picks any of them.", options: kinds, pick: func(v string) error {
+		rows = append(rows, formRow{key: k("kind"), label: "Type", value: kind, help: "How " + name + " is answered: text is typed in; select one picks one of its choices, or you type your own; select many picks any of them.", options: kinds, pick: func(v string) error {
 			a := f.blank(i, j, b)
 			switch v {
 			case "text":
@@ -651,16 +664,26 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 		}})
 	}
 	if kd := a.Kind(); kd == "text" || kd == "secret" {
-		return append(rows, formRow{key: k("start"), sub: 2, label: "Base", value: a.Default, look: mdLook("  - (x) `", "`"), hint: "none", help: "What's filled in for " + name + " until you change it.", text: func(v string) error { f.blank(i, j, b).Default = v; return nil }})
+		rows = append(rows, formRow{key: k("start"), label: "Base", value: a.Default, look: mdLook("  - (x) `", "`"), hint: "none", help: "What's filled in for " + name + " until you change it.", text: func(v string) error { f.blank(i, j, b).Default = v; return nil }})
+	} else {
+		for o := range a.Options {
+			rows = append(rows, f.choiceRow(i, j, b, o))
+		}
+		rows = append(rows, formRow{key: k("add"), label: "Add a choice", help: "Another answer to offer for " + name + ".", do: func() error {
+			a := f.blank(i, j, b)
+			a.Options = append(a.Options, config.Option{Value: uniqueName("choice", func(n string) bool { return a.HasOption(n) })})
+			return nil
+		}, then: fmt.Sprintf("%d/%d/%d/%d", i, j, b, len(a.Options))})
 	}
-	for o := range a.Options {
-		rows = append(rows, f.choiceRow(i, j, b, o))
+	if f.filter.Value() == "" && !f.noFold && !f.isOpen(i, j, b) { // collapsed to its What row, and what it is
+		note := kind
+		if len(a.Options) > 0 {
+			note += ", " + plural(len(a.Options), "opt")
+		}
+		rows[0].fold, rows[0].note = "closed", note
+		return rows[:1]
 	}
-	return append(rows, formRow{key: k("add"), sub: 2, label: "Add a choice", help: "Another answer to offer for " + name + ".", do: func() error {
-		a := f.blank(i, j, b)
-		a.Options = append(a.Options, config.Option{Value: uniqueName("choice", func(n string) bool { return a.HasOption(n) })})
-		return nil
-	}, then: fmt.Sprintf("%d/%d/%d/%d", i, j, b, len(a.Options))})
+	return rows
 }
 
 // pickedFirst says if a choice is a default: picked (or ticked) until you change it.
@@ -695,7 +718,7 @@ func (f *PackForm) choiceRow(i, j, b, o int) formRow {
 		}
 		return s
 	}
-	return formRow{key: fmt.Sprintf("%d/%d/%d/%d", i, j, b, o), sub: 2, label: "Opts", value: v, look: look,
+	return formRow{key: fmt.Sprintf("%d/%d/%d/%d", i, j, b, o), label: "Opts", value: v, look: look,
 		help:    "One of the answers offered: what it types, then its label.",
 		options: []config.Option{{Value: "types", Label: "Change what it types"}, {Value: "label", Label: "Change its label"}, {Value: "first", Label: first}, {Value: "remove", Label: "Remove it"}},
 		pick: func(what string) error {
@@ -916,7 +939,7 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return f.done()
 	case "left": // back, as at the menu's top: nothing above this but a filter left on
-		if r := f.selectedRow(); r != nil && r.header { // on a module's or command's heading: collapse it
+		if r := f.selectedRow(); r != nil && (r.header || r.fold == "open") { // on a heading, or an open blank: collapse it
 			f.fold(r, false)
 			return nil
 		}
@@ -934,6 +957,10 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 		if r.header { // a module's or command's heading: → opens it, enter opens or collapses it
 			sub, cmd := openPart(r.key)
 			f.fold(r, k == "right" || !f.isOpen(sub, cmd))
+			return nil
+		}
+		if r.fold == "closed" && k == "right" { // a collapsed blank: → opens it; open, → and enter rename it
+			f.fold(r, true)
 			return nil
 		}
 		switch {
@@ -1363,7 +1390,14 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 	}
 	rest := " " + strings.Repeat("  ", r.sub)
 	if flatForm {
-		rest += "  "
+		switch r.fold { // a blank's arrow, in the column the headings' are in
+		case "open":
+			rest += lipgloss.NewStyle().Foreground(soft).Render("▾") + " "
+		case "closed":
+			rest += lipgloss.NewStyle().Foreground(soft).Render("▸") + " "
+		default:
+			rest += "  "
+		}
 	}
 	room := max(w-f.labelAt(r), 1)
 	switch {

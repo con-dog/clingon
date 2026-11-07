@@ -678,8 +678,9 @@ func TestPackFormColoursAsTheMarkdown(t *testing.T) {
 	}
 }
 
-// A command's blanks are under an Args title the cursor passes by, each set in
-// under it as What <name>, and a blank's own rows set in under that.
+// A command's blanks are rows of its own, each opening and collapsing on its
+// What row, arrow and all, as a heading does: ← collapses it to a line saying
+// what it is, → opens it again, and then → renames it, as on any row.
 func TestPackFormArgs(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "0/0/0/kind")
@@ -687,18 +688,27 @@ func TestPackFormArgs(t *testing.T) {
 	f.onRow(t, "0/0/cmd")
 	press(f, kDown)
 	if r := f.selectedRow(); r == nil || r.key != "0/0/0/name" {
-		t.Fatalf("down from Runs, past Args, onto the blank: %+v", r)
+		t.Fatalf("down from Runs, onto the blank: %+v", r)
 	}
 	page := f.page()
-	args := strings.Index(page, "  Args") + 2
-	who := args + strings.Index(page[args:], "What  ")
-	opts := who + strings.Index(page[who:], "Desc")
-	if args < 2 || who < args || opts < who || !strings.Contains(page[who:opts], "<who>") {
-		t.Fatalf("Args, then What <who>, then its Desc:\n%s", page)
+	col := func(label string) int {
+		at := strings.Index(page, label)
+		return ansi.StringWidth(page[strings.LastIndex(page[:at], "\n")+1 : at])
 	}
-	line := func(at int) string { return page[strings.LastIndex(page[:at], "\n")+1 : at] }
-	if a, w, o := ansi.StringWidth(line(args)), ansi.StringWidth(line(who)), ansi.StringWidth(line(opts)); w != a+2 || o != w+2 {
-		t.Errorf("each set in two under the last: Args %d, What %d, Desc %d", a, w, o)
+	if !strings.Contains(page, "▾ What") || col("Runs") != col("What") || col("Type") != col("Runs") || strings.Contains(page, "Args") {
+		t.Fatalf("What, with its arrow, then its rows, all in line with Runs:\n%s", page)
+	}
+	press(f, kLeft)
+	if p := f.page(); !strings.Contains(p, "▸ What") || !strings.Contains(p, "<who>  · select one, 2 opts") || strings.Contains(p, "Who to greet") {
+		t.Fatalf("← collapses it:\n%s", p)
+	}
+	press(f, kRight)
+	if p := f.page(); !strings.Contains(p, "▾ What") || !strings.Contains(p, "Who to greet") || f.editing != nil {
+		t.Fatalf("→ opens it:\n%s", p)
+	}
+	press(f, kRight)
+	if f.editing == nil || f.editing.key != "0/0/0/name" {
+		t.Errorf("open, → renames it")
 	}
 }
 
