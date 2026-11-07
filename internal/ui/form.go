@@ -1686,11 +1686,14 @@ func filePreview(name, text string, on map[int]bool, near, w, h int) []string {
 
 // partLine is the line of a module's file the row keyed key is part of, for
 // the preview to show even when the row writes nothing there yet: its blank's
-// list item, or its command's heading; -1 for the module's own rows.
+// list item, its command's heading, or for Add a command the file's end,
+// where it goes; -1 for the module's own rows.
 func partLine(key string, lines []string) int {
 	parts := strings.Split(key, "/")
 	var on map[int]bool
 	switch {
+	case len(parts) == 2 && parts[1] == "add":
+		return len(lines) - 1
 	case len(parts) >= 4:
 		on = marked(strings.Join(parts[:3], "/")+"/q", lines)
 	case len(parts) == 3:

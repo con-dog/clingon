@@ -912,7 +912,8 @@ func TestPackFormOpts(t *testing.T) {
 
 // With more commands than the preview has room for, it shows the one the
 // cursor's in, even on a row that writes nothing there yet (no risk, no
-// description): scrolled to its heading.
+// description): scrolled to its heading. On Add a command, the file's end,
+// where it goes.
 func TestPackFormPreviewFollows(t *testing.T) {
 	f := newTestForm(t)
 	g := &f.pack.Files[0].Group
@@ -920,7 +921,7 @@ func TestPackFormPreviewFollows(t *testing.T) {
 		g.Commands = append(g.Commands, config.Command{Name: fmt.Sprintf("Command %d", n), Cmd: "echo hello"})
 	}
 	f.refresh("0/11/risk")
-	for _, key := range []string{"0/11/risk", "0/11/desc", "0/11/name"} {
+	for _, key := range []string{"0/11/risk", "0/11/desc", "0/11/name", "0/add"} {
 		f.onRow(t, key)
 		if p := ansi.Strip(strings.Join(f.preview(60, 30), "\n")); !strings.Contains(p, "## Command 12") {
 			t.Errorf("%s: the cursor's command should be in view:\n%s", key, p)
