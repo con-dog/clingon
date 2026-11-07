@@ -806,6 +806,20 @@ func typeInto(in *textinput.Model, msg tea.KeyPressMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// inText says whether ← or → moves within what's typed in a box, rather than
+// out of it: the arrows always move you on, through the text and then past
+// its ends, ← at its start going back and → at its end going forward, as
+// they do everywhere else.
+func inText(in *textinput.Model, k string) bool {
+	switch k {
+	case "left":
+		return in.Position() > 0
+	case "right":
+		return in.Position() < len([]rune(in.Value()))
+	}
+	return false
+}
+
 // inputView draws a text input w cells wide. (Without a width, Bubbles
 // cuts its placeholder to one letter.)
 func inputView(in *textinput.Model, w int) string {

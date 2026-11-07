@@ -805,52 +805,21 @@ func TestIconGap(t *testing.T) {
 	}
 }
 
-// Enter isn't →: on a row it does nothing, and typing it's a new line, in a
-// field that can have more than one. Esc is done, keeping what's typed; a
-// command over lines is carried on with \, as a pack's is; and a long value
-// wraps, under itself.
+// Enter does as → does: on a row it edits, and typing it's done, keeping
+// what's typed, as esc is. A value is one line, a long one wrapping as it's
+// typed and the same once it's left; anything pasted over lines is joined.
 func TestPackFormLines(t *testing.T) {
 	f := newTestForm(t)
 	f.onRow(t, "0/0/desc")
 	press(f, kEnter)
-	if f.editing != nil {
-		t.Fatal("enter on a row opened it")
+	if f.editing == nil {
+		t.Fatal("enter on a row should edit it")
 	}
-	press(f, kRight)
-	f.input.SetValue("Prints")
-	f.input.MoveToEnd()
+	f.input.SetValue("Prints\na greeting.")
 	press(f, kEnter)
-	f.input.InsertString("a greeting.")
-	press(f, kEsc)
-	if c := f.pack.Files[0].Group.Commands[0]; f.editing != nil || c.Desc != "Prints\na greeting." {
-		t.Fatalf("desc %q, still editing %v", c.Desc, f.editing != nil)
+	if c := f.pack.Files[0].Group.Commands[0]; f.editing != nil || c.Desc != "Prints a greeting." {
+		t.Fatalf("enter is done, on one line: desc %q, still editing %v", c.Desc, f.editing != nil)
 	}
-	if md := f.pack.Markdown()["examples.md"]; !strings.Contains(md, "## Say hello\nPrints\na greeting.\n") {
-		t.Errorf("two lines in the file:\n%s", md)
-	}
-	f.onRow(t, "0/0/risk")
-	f.pick(t, config.RiskWarn)
-	if md := f.pack.Markdown()["examples.md"]; !strings.Contains(md, "> [!WARNING]\n> Prints\n> a greeting.\n") || f.pack.Check() != nil {
-		t.Errorf("in a callout, every line of it:\n%s", md)
-	}
-
-	f.onRow(t, "0/0/cmd")
-	press(f, kRight)
-	f.input.SetValue("echo \"Hello,\nfriend <who>.\"")
-	press(f, kEsc)
-	if c := f.pack.Files[0].Group.Commands[0]; c.Cmd != "echo \"Hello, \\\nfriend <who>.\"" || f.issue != "" {
-		t.Fatalf("cmd %q, issue %q", c.Cmd, f.issue)
-	}
-	if err := f.pack.Check(); err != nil {
-		t.Errorf("a command over lines should load: %v", err)
-	}
-
-	f.onRow(t, "0/0/name")
-	press(f, kRight, kEnter)
-	if v := f.input.Value(); strings.Contains(v, "\n") {
-		t.Errorf("a name is one line: %q", v)
-	}
-	press(f, kEsc)
 
 	f.onRow(t, "0/desc")
 	press(f, kRight)
@@ -868,5 +837,40 @@ func TestPackFormLines(t *testing.T) {
 	press(f, kEsc)
 	if done := words(); len(done) < 2 || strings.Join(done, "\n") != strings.Join(typing, "\n") {
 		t.Errorf("a long value wraps, as it did typing it:\n%s\n--\n%s", strings.Join(typing, "\n"), strings.Join(done, "\n"))
+	}
+	if d := f.pack.Files[0].Group.Description; strings.Contains(d, "\n") || !strings.HasPrefix(d, "word word") {
+		t.Errorf("kept on one line: %q", d)
+	}
+}
+
+// The arrows move through what's typed and then on out of it, as they move
+// everywhere: ← past its start and → past its end leave the field, keeping
+// what's typed.
+func TestPackFormArrowsLeaveTheText(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "0/0/name")
+	press(f, kRight) // in, at its end
+	f.input.InsertString("!x")
+	press(f, kLeft, kLeft)
+	if f.editing == nil || f.input.Column() != len("Say hello") {
+		t.Fatalf("← moves back through the text: editing %v, at %d", f.editing != nil, f.input.Column())
+	}
+	f.input.SetValue("Hi there")
+	f.input.CursorStart()
+	press(f, kRight)
+	if f.editing == nil {
+		t.Fatal("→ inside the text moves through it")
+	}
+	f.input.CursorStart()
+	press(f, kLeft)
+	if f.editing != nil || f.pack.Files[0].Group.Commands[0].Name != "Hi there" {
+		t.Fatalf("← past its start leaves, keeping it: %q", f.pack.Files[0].Group.Commands[0].Name)
+	}
+	press(f, kRight)
+	f.input.SetValue("Hello")
+	f.input.MoveToEnd()
+	press(f, kRight)
+	if f.editing != nil || f.pack.Files[0].Group.Commands[0].Name != "Hello" {
+		t.Errorf("→ past its end leaves, keeping it: %q", f.pack.Files[0].Group.Commands[0].Name)
 	}
 }

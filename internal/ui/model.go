@@ -996,6 +996,9 @@ func (m *Model) quitView(w int) string {
 }
 
 func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
+	if m.list.filtering && inText(&m.list.filter, keyName(msg)) { // through the filter's text, then out of it
+		return m.list.update(msg)
+	}
 	switch keyName(msg) {
 	case "esc":
 		switch {
@@ -1503,6 +1506,9 @@ func (m *Model) askName() tea.Cmd {
 // saveNameKey takes the recipe's name. Saving is a command like any other, there
 // to see in the shell, and it goes first: the recipe's steps follow when it's done.
 func (m *Model) saveNameKey(msg tea.KeyPressMsg) tea.Cmd {
+	if inText(&m.word, keyName(msg)) { // through the name, then ← back or → on
+		return typeInto(&m.word, msg)
+	}
 	switch keyName(msg) {
 	case "esc", "left":
 		m.mode, m.yes = modeSave, true
@@ -1814,7 +1820,14 @@ func (m *Model) keyOnClosedList(p *picker, msg tea.KeyPressMsg) tea.Cmd {
 func (m *Model) fillKey(msg tea.KeyPressMsg) tea.Cmd {
 	j := m.job
 	m.hint = ""
-	// Arrows always navigate, text boxes included: ← back, → forward.
+	// Arrows always navigate, text boxes included: through the text, then ←
+	// back and → forward.
+	switch k := keyName(msg); {
+	case j.usePick && j.pick.filtering && inText(&j.pick.filter, k):
+		return j.pick.update(msg)
+	case !j.usePick && inText(&j.input, k):
+		return typeInto(&j.input, msg)
+	}
 	switch keyName(msg) {
 	case "esc":
 		if j.usePick && j.pick.filtered() { // as in the menu's list: the filter goes first
@@ -1878,10 +1891,13 @@ func (m *Model) finish(p pending) tea.Cmd {
 // back" (highlighted first) and "Yes, run it".
 func (m *Model) confirmKey(msg tea.KeyPressMsg) tea.Cmd {
 	if p := m.pending; p.risk == config.RiskDanger && !p.typed { // type the code first
+		if inText(&m.word, keyName(msg)) { // through the code, then ← back or → on
+			return typeInto(&m.word, msg)
+		}
 		switch keyName(msg) {
 		case "esc", "left":
 			return m.goBack()
-		case "enter":
+		case "enter", "right":
 			typed := m.word.Value()
 			if typed == "" {
 				return nil

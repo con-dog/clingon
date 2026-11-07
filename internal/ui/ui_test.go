@@ -807,13 +807,20 @@ func TestSlashOpensTheFilter(t *testing.T) {
 		t.Fatalf("ctrl-c should only stop filtering: filtering %v", m.list.filtering)
 	}
 
-	// ← leaves the filter behind too.
+	// ← moves back through what's typed, and past its start leaves the
+	// filter behind: the arrows always move you on.
 	m.showRoot("")
 	press("/")
 	press("aws")
+	for range 3 {
+		key(tea.KeyLeft)
+	}
+	if !m.list.filtering || m.list.filter.Position() != 0 {
+		t.Errorf("← should move back through the text first: filtering %v, at %d", m.list.filtering, m.list.filter.Position())
+	}
 	key(tea.KeyLeft)
 	if m.list.filtering {
-		t.Error("← should stop filtering at the top")
+		t.Error("← past its start should stop filtering at the top")
 	}
 
 	// Fast typing can bring the / and what's after it in one message.
