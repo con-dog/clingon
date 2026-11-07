@@ -456,9 +456,17 @@ func TestPackFormAsksToSave(t *testing.T) {
 		t.Fatal("Keep editing goes back to the form")
 	}
 	f.Update(kEsc)
-	press(f, kDown, kDown)
+	press(f, kDown, kDown, kRight) // Discard changes: a warning, so No/Yes
+	if s := f.screen(); !f.discard || !strings.Contains(s, "DISCARD CHANGES?") || f.Left != "" {
+		t.Fatalf("Discard changes should ask No/Yes:\n%s", s)
+	}
+	f.Update(kRight) // No, where it starts
+	if !f.saving || f.discard || f.Left != "" || saveChoices[f.saveOpt] != "Discard changes" {
+		t.Fatal("No goes back to the save choices, on Discard changes")
+	}
+	press(f, kRight, kDown)
 	if _, cmd := f.Update(kRight); cmd == nil || f.Left != "discarded" {
-		t.Fatal("Throw them away closes")
+		t.Fatal("Yes throws them away and closes")
 	}
 	if p, _ := config.LoadEditable("demo"); p.Description == "Thrown away" {
 		t.Fatal("thrown away, not saved")

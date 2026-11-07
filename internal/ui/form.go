@@ -45,11 +45,13 @@ type PackForm struct {
 
 	issue string // why the last change wasn't made
 
-	menu     bool // opened from the menu: leaving keeps a draft for it to ask about
-	saving   bool // asking, at its foot, whether to save the changes
-	saveOpt  int  // the answer the cursor's on
-	help     bool // the keys, in place of the form
-	pageSize int  // rows a page up or down moves
+	menu       bool // opened from the menu: leaving keeps a draft for it to ask about
+	saving     bool // asking, at its foot, whether to save the changes
+	saveOpt    int  // the answer the cursor's on
+	discard    bool // Discard changes taken: asking No/Yes in the save box's place
+	discardOpt int  // the No/Yes answer the cursor's on
+	help       bool // the keys, in place of the form
+	pageSize   int  // rows a page up or down moves
 
 	// The part the cursor's in, shown whole; the others are folded to
 	// their heading and name. -1 is the pack, -2 nothing (Add a module).
@@ -154,7 +156,7 @@ func (f *PackForm) done() tea.Cmd {
 	if !f.pack.Changed() {
 		return f.leave()
 	}
-	f.saving, f.saveOpt, f.editing, f.input, f.choosing = true, 0, nil, nil, nil
+	f.saving, f.saveOpt, f.discard, f.editing, f.input, f.choosing = true, 0, false, nil, nil, nil
 	return nil
 }
 
@@ -163,8 +165,12 @@ func (f *PackForm) done() tea.Cmd {
 var saveChoices = []string{"Save changes", "Keep editing", "Discard changes"}
 
 // saveKey answers "save the changes?": ↑↓ choose, → or enter take it, and ←
-// or esc go back to the form, as Keep editing does.
+// or esc go back to the form, as Keep editing does. Discard changes is a
+// warning, so it asks No/Yes first, as the menu's warned commands do.
 func (f *PackForm) saveKey(k string) tea.Cmd {
+	if f.discard {
+		return f.discardKey(k)
+	}
 	switch k {
 	case "up":
 		f.saveOpt = max(f.saveOpt-1, 0)
@@ -187,36 +193,76 @@ func (f *PackForm) saveKey(k string) tea.Cmd {
 			f.Left = "saved"
 			return tea.Quit
 		case "Discard changes":
-			if d, _ := config.ReadDraft(); f.pack.SameAs(d) {
-				_ = config.RemoveDraft()
-			}
-			f.Left = "discarded"
-			return tea.Quit
+			f.saving, f.discard, f.discardOpt = true, true, 0 // No first
 		}
+	}
+	return nil
+}
+
+// discardChoices answer "discard the changes?": No first, so a slip of
+// the finger keeps them.
+var discardChoices = []string{"No", "Yes"}
+
+// discardKey answers "discard the changes?": No, ← or esc go back to the
+// save choices, on Discard changes; Yes throws the changes away.
+func (f *PackForm) discardKey(k string) tea.Cmd {
+	switch k {
+	case "up":
+		f.discardOpt = max(f.discardOpt-1, 0)
+	case "down":
+		f.discardOpt = min(f.discardOpt+1, len(discardChoices)-1)
+	case "left", "esc":
+		f.discard = false
+	case "right", "enter":
+		if discardChoices[f.discardOpt] == "No" {
+			f.discard = false
+			return nil
+		}
+		if d, _ := config.ReadDraft(); f.pack.SameAs(d) {
+			_ = config.RemoveDraft()
+		}
+		f.saving, f.discard = false, false
+		f.Left = "discarded"
+		return tea.Quit
 	}
 	return nil
 }
 
 // saveLines is the question, under the form's foot rule, level with the
 // menu's EDITING: always there, greyed out until esc asks it, then its
-// answers with the form's cursor, Discard changes red under it.
+// answers with the form's cursor. Discard changes has the menu's ⚠ before
+// it, in a column every answer is set in by, as risky commands have.
 func (f *PackForm) saveLines(w int) []string {
+	mark := func(c string, st lipgloss.Style) string {
+		if c == "Discard changes" {
+			return st.Render(warnGlyph) + " "
+		}
+		return "  "
+	}
 	if !f.saving {
 		out := []string{faintStyle.Render("SAVE")}
 		for _, c := range saveChoices {
-			out = append(out, "  "+faintStyle.Render(c))
+			out = append(out, "  "+mark(c, faintStyle)+faintStyle.Render(c))
 		}
 		return out
 	}
+	if f.discard { // the same rows, so nothing under it moves
+		out := []string{labelStyle.Render("DISCARD CHANGES?")}
+		for i, c := range discardChoices {
+			if i == f.discardOpt {
+				out = append(out, onBg(cursorBar(cursorStyle)+" "+cursorStyle.Render(c), formCursorBg, w))
+			} else {
+				out = append(out, "  "+fieldStyle.Render(c))
+			}
+		}
+		return append(out, "")
+	}
 	out := []string{labelStyle.Render("SAVE")}
 	for i, c := range saveChoices {
-		switch {
-		case i == f.saveOpt && c == "Discard changes":
-			out = append(out, onBg(cursorBar(cursorStyle)+" "+dangerStyle.Render(c), formCursorBg, w))
-		case i == f.saveOpt:
-			out = append(out, onBg(cursorBar(cursorStyle)+" "+cursorStyle.Render(c), formCursorBg, w))
-		default:
-			out = append(out, "  "+fieldStyle.Render(c))
+		if i == f.saveOpt {
+			out = append(out, onBg(cursorBar(cursorStyle)+" "+mark(c, warnStyle)+cursorStyle.Render(c), formCursorBg, w))
+		} else {
+			out = append(out, "  "+mark(c, warnStyle)+fieldStyle.Render(c))
 		}
 	}
 	return out
@@ -1556,7 +1602,11 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 		case "closed":
 			rest += lipgloss.NewStyle().Foreground(soft).Render("▸") + " "
 		default:
-			rest += "  "
+			if r.risk == config.RiskWarn { // a Drop: the menu's ⚠, in the arrows' column
+				rest += warnStyle.Render(warnGlyph) + " "
+			} else {
+				rest += "  "
+			}
 		}
 	}
 	room := max(w-f.labelAt(r), 1)
