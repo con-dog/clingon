@@ -59,7 +59,6 @@ type PackForm struct {
 
 	named string // the pack's name as last told to the menu
 
-
 	Left string // how it was left: "draft", "saved", "answered" (by the menu) or "" (nothing changed)
 }
 

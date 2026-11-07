@@ -611,6 +611,14 @@ func (p *picker) tally() string {
 	if p.query() != "" {
 		return fmt.Sprintf("%d of %s", count(p.view), plural(total, p.noun))
 	}
+	if p.search != nil { // the top of the menu: what the highlighted pack has, and only while it's on one
+		if it := p.selected(); it != nil {
+			if s, ok := it.ref.(*config.Section); ok {
+				return plural(len(s.All()), p.noun)
+			}
+		}
+		return ""
+	}
 	return plural(total, p.noun)
 }
 

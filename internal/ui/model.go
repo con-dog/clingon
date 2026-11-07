@@ -2293,10 +2293,7 @@ func (m *Model) view() string {
 		}
 	}
 	head := []string{top, ansi.Truncate(crumb, w, "…"), ""}
-	var foot []string
-	if keys := m.footer(w); keys != "" {
-		foot = append(foot, keys)
-	}
+	var foot []string // keys are on the status bar, and only there
 	if m.opt.Bar == nil {
 		foot = append(foot, m.statusBar(w))
 	}
@@ -2390,14 +2387,13 @@ func (m *Model) infoPane(w int) string {
 	if m.notice.text != "" || m.help || m.mode == modeTrust || m.mode == modeTyped || m.mode == modeQuit || m.mode == modeSavePack {
 		cmd, desc = "", ""
 	} else if s := m.highlightedSection(); s != nil {
-		head, body := strings.ToUpper(plural(len(s.All()), "command")), ""
 		if s.Name == RecipesSection && len(m.recipe) == 0 {
-			head, body = m.noCurrentRecipeInfo(w, 2*n+2)
-		} else {
-			// A section runs nothing itself: what's in it gets the whole area.
-			body = m.sectionInfo(s, w, 2*n+2)
+			head, body := m.noCurrentRecipeInfo(w, 2*n+2)
+			return strings.Join([]string{rule, labelStyle.Render(head), body, rule}, "\n")
 		}
-		return strings.Join([]string{rule, labelStyle.Render(head), body, rule}, "\n")
+		// A section runs nothing itself: what's in it gets the whole area,
+		// its heading's line too (how many it has is by the filter).
+		return strings.Join([]string{rule, m.sectionInfo(s, w, 2*n+3), rule}, "\n")
 	} else if m.onEmptyRecipe() {
 		return strings.Join([]string{rule, labelStyle.Render("HOW RECIPES WORK"), fit(howRecipesWork(w), w, 2*n+2, false), rule}, "\n")
 	}
@@ -2410,19 +2406,23 @@ func (m *Model) infoPane(w int) string {
 	tail := m.mode == modeFill
 	// The command sits in a block of its own, like code in a doc; with no
 	// command there's no block, just the dash, at the same height.
-	code := strings.Split(block(cmd, w, n, tail), "\n")
+	// No headings: the command's block says what it is, and the lines they
+	// had go to the command and the description, one each. How many steps it
+	// takes leads the description.
+	code := strings.Split(block(cmd, w, n+1, tail), "\n")
 	for i := range code {
 		if !empty {
 			code[i] = onBg(code[i], raised, w)
 		}
 	}
+	if steps := m.stepsNote(); steps != "" && desc != "" {
+		desc = steps + ": " + desc
+	}
 	return strings.Join([]string{
 		rule,
-		rightAligned(labelStyle.Render("COMMAND"), m.stepsNote(), w),
 		strings.Join(code, "\n"),
 		"", // room between the two
-		labelStyle.Render("DESCRIPTION"),
-		block(dimStyle.Render(desc), w, n, tail),
+		block(dimStyle.Render(desc), w, n+1, tail),
 		rule,
 	}, "\n")
 }
@@ -2859,13 +2859,19 @@ func plural(n int, thing string) string {
 }
 
 func (m *Model) footer(w int) string {
+	return wrapJoin(keyHints(m.promptKeys()), faintStyle.Render(" · "), w)
+}
+
+// promptKeys are the keys that work on a screen other than the menu's list,
+// for the status bar: keys are said there and nowhere else.
+func (m *Model) promptKeys() []string {
 	var keys []string
 	if m.notice.text != "" || m.help {
-		return accentStyle.Render("any key") + " " + dimStyle.Render("back")
+		return []string{"any key back"}
 	}
 	switch m.mode {
 	case modeBrowse:
-		return "" // they're on the status bar
+		return nil // barKeys says the list's
 	case modeFill:
 		j := m.job
 		keys = []string{"→ next", "← back"}
@@ -2897,7 +2903,7 @@ func (m *Model) footer(w int) string {
 	case modeSaveName:
 		keys = []string{"→ add and run", "← back"}
 	}
-	return wrapJoin(keyHints(keys), faintStyle.Render(" · "), w)
+	return keys
 }
 
 // keyHints styles "key what it does": the key in pink, the rest in grey.
@@ -2905,8 +2911,11 @@ func keyHints(keys []string) []string {
 	out := make([]string, len(keys))
 	for i, k := range keys {
 		key, what, _ := strings.Cut(k, " ")
-		if key == "[" { // "[ ] jump"
+		switch {
+		case key == "[": // "[ ] jump"
 			key, what = "[ ]", strings.TrimPrefix(k, "[ ] ")
+		case strings.HasPrefix(k, "any key "):
+			key, what = "any key", strings.TrimPrefix(k, "any key ")
 		}
 		out[i] = accentStyle.Render(key) + " " + dimStyle.Render(what)
 	}
@@ -2924,7 +2933,7 @@ func (m *Model) barKeys() []string {
 		return nil
 	}
 	if m.mode != modeBrowse || m.help || m.notice.text != "" {
-		return nil
+		return m.promptKeys()
 	}
 	recipes := m.recipesSection() != nil
 	keys := []string{"→ go"}

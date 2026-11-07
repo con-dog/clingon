@@ -974,7 +974,7 @@ func TestCurrentRecipeListsTheSteps(t *testing.T) {
 	if it := m.list.selected(); it == nil || it.title != RecipesSection {
 		t.Fatalf("← should land on its row, at %+v", it)
 	}
-	if view := ansi.Strip(m.view()); !strings.Contains(view, "2 COMMANDS") || !strings.Contains(view, "Current recipe: a, b") {
+	if view := ansi.Strip(m.view()); strings.Contains(view, "2 COMMANDS") || !strings.Contains(view, "Current recipe: a, b") {
 		t.Errorf("the info pane should list the steps:\n%s", view)
 	}
 
@@ -1644,7 +1644,8 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 	barIs("in the shell", "shift-tab menu")
 	m.Update(tea.FocusMsg{})
 
-	// A prompt's keys stay in the menu, by the question.
+	// A prompt's keys are on the status bar too: keys are said there and
+	// nowhere else.
 	for i, it := range m.list.view {
 		if it.title == "r" {
 			m.list.cursor = i
@@ -1654,8 +1655,7 @@ func TestStatusBarShowsTheKeys(t *testing.T) {
 	if m.mode != modeConfirm {
 		t.Fatalf("mode %v", m.mode)
 	}
-	barIs("a prompt", "")
-	footIs("a prompt", "↑↓ choose · enter select")
+	barIs("a prompt", "↑↓ choose · enter select")
 	answer(m, false)
 
 	// The notch stays through anything else the bar has to say.
@@ -2601,7 +2601,7 @@ func TestPromptsIgnoreYAndN(t *testing.T) {
 // With the bar in its own pane, browsing leaves nothing under the info pane:
 // no keys and no rule, and the view still fills the menu's pane exactly. A
 // prompt keeps its keys, under the rule.
-func TestBrowsingHasNoFooter(t *testing.T) {
+func TestNoFooter(t *testing.T) {
 	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "r", Cmd: "r", Risk: config.RiskWarn}}}}},
 		Send: func(string) error { return nil }, Bar: func(string) {}, BarWidth: func() int { return 80 }})
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
@@ -2625,8 +2625,8 @@ func TestBrowsingHasNoFooter(t *testing.T) {
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	got = lines()
-	if len(got) != 40 || strings.TrimSpace(got[len(got)-1]) != "↑↓ choose · enter select" || !strings.HasPrefix(got[len(got)-2], "─") {
-		t.Errorf("a prompt keeps its keys under the rule: %d lines, ending %q", len(got), got[len(got)-2:])
+	if len(got) != 40 || strings.Contains(strings.Join(got, "\n"), "enter select") || strings.HasPrefix(strings.TrimSpace(got[len(got)-1]), "─") {
+		t.Errorf("a prompt's keys are on the bar, not under the info pane: %d lines, ending %q", len(got), got[len(got)-2:])
 	}
 }
 
@@ -2775,36 +2775,29 @@ func TestStatusBarShowsTheVersion(t *testing.T) {
 	}
 }
 
-// The command's heading says how many blanks it has, while choosing and filling
-// in; one with none doesn't mention it.
-func TestCommandHeadingSaysHowManySteps(t *testing.T) {
+// The info pane has no headings: the command's block, and under it the
+// description, led by how many steps the command takes; none, and it's the
+// description alone. Filling in, the same, with no → run · ← back under it
+// (the status bar says those).
+func TestDescriptionSaysHowManySteps(t *testing.T) {
 	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
-		{Name: "a two", Cmd: "x <p> <q>", Args: []config.Arg{{Name: "p"}, {Name: "q"}}},
-		{Name: "b one", Cmd: "y <p>", Args: []config.Arg{{Name: "p"}}},
-		{Name: "c none", Cmd: "z"},
+		{Name: "a two", Cmd: "x <p> <q>", Desc: "Does a.", Args: []config.Arg{{Name: "p"}, {Name: "q"}}},
+		{Name: "b one", Cmd: "y <p>", Desc: "Does b.", Args: []config.Arg{{Name: "p"}}},
+		{Name: "c none", Cmd: "z", Desc: "Does c."},
 	}}}}, Send: func(string) error { return nil }})
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
 	m.showSection(&m.opt.Config.Sections[0])
-	heading := func() string {
-		t.Helper()
-		for _, l := range strings.Split(ansi.Strip(m.view()), "\n") {
-			if f := strings.Fields(l); len(f) > 0 && f[0] == "COMMAND" {
-				// The note is at the far right, as the filter row's count is.
-				if f := strings.Fields(l); len(f) > 1 && !strings.HasSuffix(strings.TrimRight(l, "│ "), f[len(f)-1]) {
-					t.Errorf("not right-aligned: %q", l)
-				}
-				return strings.Join(strings.Fields(l), " ")
-			}
-		}
-		t.Fatal("no COMMAND heading")
-		return ""
-	}
-	want := map[string]string{"a two": "COMMAND 2 steps", "b one": "COMMAND 1 step", "c none": "COMMAND"}
+	view := func() string { return strings.Join(strings.Fields(ansi.Strip(m.view())), " ") }
+	want := map[string]string{"a two": "2 steps: Does a.", "b one": "1 step: Does b.", "c none": "Does c."}
 	for i, it := range m.list.view {
 		if w, ok := want[it.title]; ok {
 			m.list.cursor = i
-			if got := heading(); got != w {
-				t.Errorf("%s: %q, want %q", it.title, got, w)
+			v := view()
+			if !strings.Contains(v, w) || strings.Contains(v, "DESCRIPTION") || strings.Contains(v, "COMMAND ") {
+				t.Errorf("%s: want %q, no headings:\n%s", it.title, w, ansi.Strip(m.view()))
+			}
+			if it.title == "c none" && strings.Contains(v, "steps: Does c.") {
+				t.Errorf("no steps, no count")
 			}
 		}
 	}
@@ -2814,8 +2807,10 @@ func TestCommandHeadingSaysHowManySteps(t *testing.T) {
 		}
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
-	if got := heading(); got != "COMMAND 2 steps" {
-		t.Errorf("filling in: %q", got)
+	pane := ansi.Strip(m.view())
+	pane = pane[:strings.LastIndex(pane, "\n")] // the status bar, here in the pane, is the last line
+	if v := strings.Join(strings.Fields(pane), " "); !strings.Contains(v, "2 steps: Does a.") || strings.Contains(v, "→ run") || strings.Contains(v, "← back") || strings.Contains(v, "→ next") {
+		t.Errorf("filling in:\n%s", pane)
 	}
 }
 
@@ -3907,5 +3902,39 @@ func TestMenuStepsBackWhileEditing(t *testing.T) {
 	m.Update(formNameMsg{})
 	if m.editing != "Deploy tools · esc when done" || !strings.Contains(ansi.Strip(m.view()), "Deploy tools") {
 		t.Errorf("the form's new name: %q", m.editing)
+	}
+}
+
+// At the top of the menu, the filter's row says how many commands the
+// highlighted pack has, not how many there are in all; filtering, how many
+// match of them all.
+func TestTopTallyIsTheHighlightedPacks(t *testing.T) {
+	cmds := func(n int) []config.Command {
+		var out []config.Command
+		for i := range n {
+			out = append(out, config.Command{Name: fmt.Sprintf("c%d", i), Cmd: "ls"})
+		}
+		return out
+	}
+	m := New(Options{Config: &config.Config{Sections: []config.Section{
+		{Name: "Alpha", Icon: "•", Category: config.Other, Commands: cmds(2)},
+		{Name: "Beta", Icon: "•", Category: config.Other, Commands: cmds(5)},
+	}}})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
+	m.showRoot("")
+	for i, it := range m.list.view {
+		want := map[string]string{"Alpha": "2 commands", "Beta": "5 commands"}[it.title]
+		if want == "" {
+			continue
+		}
+		m.list.cursor = i
+		if got := m.list.tally(); got != want {
+			t.Errorf("on %s: %q, want %q", it.title, got, want)
+		}
+	}
+	m.list.filter.SetValue("c1")
+	m.list.refilter()
+	if got := m.list.tally(); !strings.Contains(got, " of 7 commands") {
+		t.Errorf("filtering: %q", got)
 	}
 }
