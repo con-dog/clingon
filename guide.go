@@ -52,8 +52,8 @@ const guideRest = `What each line means:
   > [!CAUTION]      under the name: dangerous, you type a code first
   ` + "```sh" + `             what's typed into your shell; \ at a line's end wraps
   - ` + "`<name>`" + ` Q      a blank in the command, and its question
-    - (x) ` + "`value`" + `   pick one, or press / and type your own
-    - [ ] ` + "`value`" + `   tick any; [x] starts ticked
+    - (x) ` + "`value`" + `   select one, or press / and type your own
+    - [ ] ` + "`value`" + `   select many; [x] starts selected
 
 When a command can be used, for every command in a file, in front matter
 at the very top:

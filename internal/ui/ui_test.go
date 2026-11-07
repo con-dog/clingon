@@ -2928,7 +2928,7 @@ func TestAtLeastOneNeedsATick(t *testing.T) {
 	m.list.cursor = 1
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.mode != modeFill || len(sent) != 0 || !strings.Contains(m.hint, "tick at least one") {
+	if m.mode != modeFill || len(sent) != 0 || !strings.Contains(m.hint, "select at least one") {
 		t.Fatalf("mode %v, sent %v, hint %q", m.mode, sent, m.hint)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeySpace})
@@ -3187,7 +3187,7 @@ func TestBlanksSayHowToAnswer(t *testing.T) {
 	for want, a := range map[string]config.Arg{
 		"type":          {Name: "x"},
 		"↑↓ to choose":  {Name: "x", Options: []config.Option{{Value: "a"}}},
-		"space to tick": {Name: "x", Type: "flags", Options: []config.Option{{Value: "a"}}},
+		"space to select": {Name: "x", Type: "flags", Options: []config.Option{{Value: "a"}}},
 	} {
 		if got := inputHint(a); got != want {
 			t.Errorf("%+v: %q, want %q", a, got, want)

@@ -551,15 +551,15 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 	a := f.blank(i, j, b)
 	k := func(s string) string { return fmt.Sprintf("%d/%d/%d/%s", i, j, b, s) }
 	name := "<" + a.Name + ">"
-	kinds := []config.Option{{Value: "text", Label: "typed in"}, {Value: "choose", Label: "pick one, or type your own"}, {Value: "flags", Label: "tick any"}}
-	kind := map[string]string{"text": "typed in", "secret": "typed in, hidden", "choose": "pick one", "flags": "tick any"}[a.Kind()]
+	kinds := []config.Option{{Value: "text", Label: "text"}, {Value: "choose", Label: "select one"}, {Value: "flags", Label: "select many"}}
+	kind := map[string]string{"text": "text", "secret": "text, hidden", "choose": "select one", "flags": "select many"}[a.Kind()]
 	rows := []formRow{
 		{key: k("q"), label: name, value: a.Prompt, hint: "the question asked", help: "What's asked for " + name + " when the command runs.", text: func(v string) error { f.blank(i, j, b).Prompt = v; return nil }},
 	}
 	if a.Kind() == "secret" {
-		rows = append(rows, formRow{key: k("kind"), sub: true, label: "Kind", value: kind, help: "Its name says it's a secret, token or password: typed hidden, and kept out of your history."})
+		rows = append(rows, formRow{key: k("kind"), sub: true, label: "Type", value: kind, help: "Its name says it's a secret, token or password: typed hidden, and kept out of your history."})
 	} else {
-		rows = append(rows, formRow{key: k("kind"), sub: true, label: "Kind", value: kind, help: "How " + name + " is answered.", options: kinds, pick: func(v string) error {
+		rows = append(rows, formRow{key: k("kind"), sub: true, label: "Type", value: kind, help: "How " + name + " is answered: text is typed in; select one picks one of its choices, or you type your own; select many picks any of them.", options: kinds, pick: func(v string) error {
 			a := f.blank(i, j, b)
 			switch v {
 			case "text":
@@ -601,8 +601,8 @@ func (f *PackForm) choiceRow(i, j, b, o int) formRow {
 		v += "  " + opt.Label
 	}
 	first, notFirst := "Make it the default", "Not the default"
-	if a.Kind() == "flags" { // any number can be: ticked by default
-		first, notFirst = "Ticked by default", "Not ticked by default"
+	if a.Kind() == "flags" { // any number can be: selected by default
+		first, notFirst = "Selected by default", "Not selected by default"
 	}
 	if pickedFirst(a, opt.Value) {
 		v += "  · default"
@@ -847,13 +847,8 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		f.issue = ""
 		switch {
-		case r.pick != nil: // a list, even if it can also be typed (from the list)
+		case r.pick != nil: // a list, even if it can also be typed (from the list): from the top
 			f.choosing, f.options, f.opt = r, r.options, 0
-			for i, o := range r.options {
-				if o.Value == currentValue(r) {
-					f.opt = i
-				}
-			}
 		case r.text != nil:
 			return f.edit(r, r.value)
 		case r.confirm != "":
@@ -896,16 +891,6 @@ func (f *PackForm) chose() tea.Cmd {
 	}
 	f.refresh(r.key)
 	return nil
-}
-
-// currentValue is the option a pick row has now, to start the list on it.
-func currentValue(r *formRow) string {
-	for _, o := range r.options {
-		if o.Value == r.value || o.Label == r.value || o.Label != "" && strings.HasPrefix(o.Label, r.value) {
-			return o.Value
-		}
-	}
-	return r.value
 }
 
 func (f *PackForm) View() tea.View {
@@ -1196,13 +1181,14 @@ func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
 		if n := len(heads) - 1; n >= 0 && i > 0 && f.rows[i-1].header && r.label == "Name" {
 			heads[n].name = len(out) // pinned with its heading
 		}
-		out = append(out, f.rowLine(r, on, col, w))
-		if on && f.choosing != nil {
-			for o, opt := range f.options { // the row's list, dropped down under it
+		open := on && f.choosing != nil
+		out = append(out, f.rowLine(r, on && !open, open, col, w))
+		if open {
+			for o, opt := range f.options { // the row's list, dropped down under it, with the cursor
 				if o == f.opt {
 					at = len(out) // the list's cursor, to keep in view
 				}
-				out = append(out, f.optionLine(r, opt, o == f.opt, col))
+				out = append(out, f.optionLine(r, opt, o == f.opt, col, w))
 			}
 		}
 	}
@@ -1223,7 +1209,8 @@ func (f *PackForm) labelAt(r *formRow) int {
 // form: its label, and its value (or the field being typed), with a periwinkle ▾
 // after a value that's picked from a list. A blank's label is pink, as blanks
 // are in commands; an add is pink; a remove is faint until the cursor's on it.
-func (f *PackForm) rowLine(r *formRow, on bool, col, w int) string {
+// A row with its list open keeps its label pink, the cursor in the list.
+func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 	g := guide(r)
 	slot := " "
 	switch {
@@ -1255,7 +1242,7 @@ func (f *PackForm) rowLine(r *formRow, on bool, col, w int) string {
 		label := ansi.Truncate(r.label, max(col-f.labelAt(r)-2, 1), "…")
 		pad := strings.Repeat(" ", max(col-f.labelAt(r)-ansi.StringWidth(label), 1))
 		switch {
-		case on:
+		case on || open:
 			label = cursorStyle.Render(label)
 		case strings.HasPrefix(r.label, "<"):
 			label = accentStyle.Render(label)
@@ -1294,13 +1281,13 @@ func (f *PackForm) rowLine(r *formRow, on bool, col, w int) string {
 }
 
 // optionLine is one of the options in the list dropped down under row r, set
-// in under its value.
-func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col int) string {
+// in under its value. The list's cursor is the form's, set in with it: the bar
+// just before the option, and the band from there across.
+func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) string {
 	title := o.Label
 	if title == "" {
 		title = o.Value
 	}
-	mark := "  "
 	switch {
 	case on && (o.Value == "yes" || o.Value == "remove"):
 		title = dangerStyle.Render(title)
@@ -1309,18 +1296,21 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col int) str
 	default:
 		title = dimStyle.Render(title)
 	}
-	if on {
-		mark = accentStyle.Render("›") + " "
-	}
 	g := strings.Repeat("│  ", r.depth) + "│"
 	if r.branch {
 		g = strings.Repeat("│  ", max(r.depth-1, 0))
 	}
-	line := faintStyle.Render(g) + strings.Repeat(" ", max(col-ansi.StringWidth(g)-2, 1)) + mark
+	in := max(col-ansi.StringWidth(g)-2, 0) // set in under the value, the bar a cell before it
+	rest := " "
 	if o.Icon != "" {
-		line += iconStyle(o.Color).Render(o.Icon) + "  "
+		rest += iconStyle(o.Color).Render(o.Icon) + "  "
 	}
-	return line + title
+	rest += title
+	lead := faintStyle.Render(g) + strings.Repeat(" ", in)
+	if on {
+		return lead + onBg(cursorBar(cursorStyle)+rest, formCursorBg, max(w-ansi.StringWidth(g)-in, 1))
+	}
+	return lead + " " + rest
 }
 
 // preview is the Markdown file the cursor's row is in, as it'll be saved,

@@ -29,8 +29,8 @@ import (
 //	```
 //
 //	- `<tag>` Question     a blank, with choices under it:
-//	  - (x) `value` label  pick one, or type your own; (x) is picked to begin with
-//	  - [ ] `value` label  tick any
+//	  - (x) `value` label  select one, or type your own; (x) is picked to begin with
+//	  - [ ] `value` label  select many; [x] starts selected
 //
 // <!-- comments --> are for whoever edits the file.
 
@@ -468,10 +468,10 @@ func (m *mdLines) blank(c *Command) (*Arg, error) {
 			k = "flags"
 		}
 		if ch[1] == "(" && ch[3] != ")" || ch[1] == "[" && ch[3] != "]" {
-			return nil, m.errf(m.at, "a choice is ( ) to pick one or [ ] to tick any")
+			return nil, m.errf(m.at, "a choice is ( ) to select one or [ ] to select many")
 		}
 		if kind != "" && k != kind {
-			return nil, m.errf(m.at, "a blank's choices are all ( ) (pick one) or all [ ] (tick any)")
+			return nil, m.errf(m.at, "a blank's choices are all ( ) (select one) or all [ ] (select many)")
 		}
 		kind = k
 		a.Options = append(a.Options, Option{Value: ch[4], Label: strings.TrimSpace(ch[5])})

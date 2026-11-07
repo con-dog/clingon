@@ -603,10 +603,10 @@ func TestPackFormSectionOfYourOwn(t *testing.T) {
 	if f.pack.Section != "hello-there" || !strings.Contains(f.pack.Markdown()[config.PackInfoFile], "section: hello-there\n") {
 		t.Fatalf("section %q", f.pack.Section)
 	}
-	// It stays in the list, picked.
+	// It's in the list from then on; the list opens at its top, as every list does.
 	press(f, kEnter)
-	if o := f.options[f.opt]; o.Value != "hello-there" {
-		t.Errorf("on %+v", o)
+	if f.opt != 0 || !slices.ContainsFunc(f.options, func(o config.Option) bool { return o.Value == "hello-there" }) {
+		t.Errorf("on %d of %+v", f.opt, f.options)
 	}
 	press(f, kLeft)
 	// A name it can't be is refused, saying why.

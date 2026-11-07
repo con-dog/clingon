@@ -1837,7 +1837,7 @@ func (m *Model) fillKey(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		if v == "" && a.AtLeastOne {
-			m.hint = "Press space to tick at least one"
+			m.hint = "Press space to select at least one"
 			return nil
 		}
 		if v != "" && (!j.usePick || j.pick.selected() == nil) && !a.Matches(v) {
@@ -2091,7 +2091,7 @@ func (m *Model) helpView(w int) string {
 		{"/", "filter (on the top level, every command); again stops"},
 		{"esc", "clear the filter, go back, or quit at the top"},
 		{"ctrl-c", "cancel what you're doing"},
-		{"space", "tick or untick, in a checklist"},
+		{"space", "select or unselect, in a select-many list"},
 		{"1-9", "recipe position: clears later ones; again removes it"},
 		{"r", "go to the current recipe"},
 		{"x", "clear the recipe"},
@@ -2856,7 +2856,7 @@ func (m *Model) footer(w int) string {
 			keys = append(keys, "[ ] jump")
 		}
 		if j.usePick && j.pick.multi && !j.pick.filtering {
-			keys = append([]string{"space tick"}, keys...)
+			keys = append([]string{"space select"}, keys...)
 		}
 	case modeConfirm:
 		keys = []string{"↑↓ choose", "enter select"}
@@ -3225,7 +3225,7 @@ func inputHint(a config.Arg) string {
 	case "choose":
 		return "↑↓ to choose"
 	case "flags":
-		return "space to tick"
+		return "space to select"
 	}
 	return "type"
 }

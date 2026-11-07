@@ -99,7 +99,7 @@ func TestMarkdownMistakes(t *testing.T) {
 		{"bare blank", "# T\n\n## Run\n\n```sh\nls <x>\n```\n\n- <x> X\n", "name in backticks"},
 		{"unlisted blank", "# T\n\n## Run\n\n```sh\nls <x>\n```\n", "list it after the code block"},
 		{"choice without code", "# T\n\n## Run\n\n```sh\nls <x>\n```\n\n- `<x>` X\n  - ( ) a\n", "then what it types in backticks"},
-		{"mixed choices", "# T\n\n## Run\n\n```sh\nls <x>\n```\n\n- `<x>` X\n  - ( ) `a`\n  - [ ] `b`\n", "all ( ) (pick one) or all [ ]"},
+		{"mixed choices", "# T\n\n## Run\n\n```sh\nls <x>\n```\n\n- `<x>` X\n  - ( ) `a`\n  - [ ] `b`\n", "all ( ) (select one) or all [ ]"},
 		{"two picked", "# T\n\n## Run\n\n```sh\nls <x>\n```\n\n- `<x>` X\n  - (x) `a`\n  - (x) `b`\n", "only one ( ) choice"},
 		{"other callout", "# T\n\n## Run\n> [!NOTE]\n> Hi.\n\n```sh\nls\n```\n", "the only callouts"},
 		{"two callouts", "# T\n\n## Run\n> [!WARNING]\n> Hi.\n\n> [!CAUTION]\n> Hi.\n\n```sh\nls\n```\n", "one callout"},
