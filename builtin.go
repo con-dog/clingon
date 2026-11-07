@@ -17,8 +17,13 @@ import (
 	"github.com/con-dog/clingon/internal/ui"
 )
 
-// clingon's own sections share its pink, under the Clingon heading.
-var clingonPink = ui.PinkHex
+// clingon's own sections' icon colours, from the pack colours
+// (config.PackColors), one each so they tell apart at a glance.
+const (
+	generalGrey = "#8787af"
+	packsYellow = "#ffd75f"
+	recipesCyan = "#5fd7d7"
+)
 
 // packOptions offers packs to pick from.
 func packOptions(ps []config.Pack) []config.Option {
@@ -86,7 +91,7 @@ func builtinSections() []*config.Section {
 	noLocal := unless(len(local) > 0, "You don't have any packs of your own yet: create one first.")
 	noneInstalled := unless(len(installed) > 0, "You haven't added any packs.")
 	sections := []*config.Section{
-		{Name: "Packs", Icon: config.Logos["puzzle"], Color: clingonPink, Category: "Clingon", Groups: []config.Group{
+		{Name: "Packs", Icon: config.Logos["puzzle"], Color: packsYellow, Category: "Clingon", Groups: []config.Group{
 			{Name: "My packs", Commands: []config.Command{
 				{Editor: true, Name: "Add a pack", Desc: "Opens a new pack of your own as a form, starting from a working example: fill it in, then esc when you're done, and it asks whether to save it.", Cmd: self + " pack create --menu"},
 				{Name: "Describe a pack", Disabled: noLocal, Desc: "Prints every command in <pack> and exactly what each one runs.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
@@ -121,7 +126,7 @@ func builtinSections() []*config.Section {
 				{Name: "Update packs", Disabled: unless(len(ups) > 0, "Every added pack is up to date."), Desc: "Brings your added packs up to date, replacing their files in packs/remote, and removes any clingon no longer ships: changes you made to those files are lost.", Risk: config.RiskWarn, Cmd: self + " pack update"},
 			}},
 		}},
-		{Name: "General", Icon: config.Logos["gear"], Color: clingonPink, Category: "Clingon", Groups: []config.Group{
+		{Name: "General", Icon: config.Logos["gear"], Color: generalGrey, Category: "Clingon", Groups: []config.Group{
 			{Name: "Healthchecks", Commands: []config.Command{
 				{Name: "Run all checks", Desc: "Checks tmux, your packs and the tools every added pack needs.", Cmd: self + " doctor"},
 				{Name: "Show last crash", Desc: "Shows why clingon last crashed, with the trace to put in a bug report.", Cmd: self + " crash"},
@@ -145,7 +150,7 @@ func builtinSections() []*config.Section {
 				}},
 			}},
 		}},
-		{Name: ui.RecipesSection, Icon: config.Logos["checklist"], Color: clingonPink, Category: "Clingon", Groups: []config.Group{
+		{Name: ui.RecipesSection, Icon: config.Logos["checklist"], Color: recipesCyan, Category: "Clingon", Groups: []config.Group{
 			{Name: "Current recipe"}, // the menu fills it in, with what's numbered
 		}},
 	}
