@@ -1580,8 +1580,8 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 		title = dangerStyle.Render(title)
 	case on:
 		title = cursorStyle.Render(title)
-	default:
-		title = dimStyle.Render(title)
+	default: // periwinkle, as the file's keys are: what can be set
+		title = lipgloss.NewStyle().Foreground(soft).Render(title)
 	}
 	g := strings.Repeat("│  ", r.depth) + "│"
 	switch {
@@ -1593,7 +1593,11 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 	in := max(col-ansi.StringWidth(g)-2, 0) // set in under the value, the bar a cell before it
 	rest := " "
 	if o.Icon != "" {
-		rest += iconStyle(o.Color).Render(o.Icon) + iconGap(o.Icon)
+		st := iconStyle(o.Color)
+		if o.Color == "" { // one without a colour of its own, as its title
+			st = lipgloss.NewStyle().Foreground(soft)
+		}
+		rest += st.Render(o.Icon) + iconGap(o.Icon)
 	}
 	rest += title
 	lead := faintStyle.Render(g) + strings.Repeat(" ", in)
