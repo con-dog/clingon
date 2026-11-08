@@ -153,11 +153,11 @@ func TestPackFormEditsThePack(t *testing.T) {
 		t.Error("the bad name shouldn't have been kept")
 	}
 
-	// Drop is a row like the rest, No until you say Yes: No is first, and
-	// does nothing.
+	// Remove is a − REMOVE row, asking No or Yes: No is first, and does
+	// nothing.
 	f.onRow(t, "1/0/remove")
-	if !strings.Contains(f.screen(), "Drop  No ▾") {
-		t.Fatalf("a Drop row:\n%s", f.screen())
+	if s := f.screen(); !strings.Contains(s, "− REMOVE") || strings.Contains(s, "Drop") {
+		t.Fatalf("a − REMOVE row:\n%s", s)
 	}
 	press(f, kRight)
 	if len(f.options) != 2 || f.options[0].Label != "No" || f.options[1].Label != "Yes" || f.opt != 0 {
@@ -414,7 +414,7 @@ func TestPackFormHeadingsStick(t *testing.T) {
 			t.Fatalf("line %d should be %s:\n%s", 6+i, want, f.screen())
 		}
 	}
-	if !strings.Contains(f.screen(), "Base") {
+	if !strings.Contains(f.screen(), "Default") {
 		t.Fatalf("and the cursor's row in view:\n%s", f.screen())
 	}
 }
@@ -734,15 +734,15 @@ func TestPackFormArgs(t *testing.T) {
 		at := strings.Index(page, label)
 		return ansi.StringWidth(page[strings.LastIndex(page[:at], "\n")+1 : at])
 	}
-	if !strings.Contains(page, "▾ What") || col("Runs") != col("What") || col("Type") != col("Runs") || strings.Contains(page, "Args") {
-		t.Fatalf("What, with its arrow, then its rows, all in line with Runs:\n%s", page)
+	if !strings.Contains(page, "▾ Argument") || col("Command") != col("Argument") || col("Type") != col("Command") || strings.Contains(page, "Args") {
+		t.Fatalf("Argument, with its arrow, then its rows, all in line with Command:\n%s", page)
 	}
 	press(f, kLeft)
-	if p := f.page(); !strings.Contains(p, "▸ What") || !strings.Contains(p, "<who>  · Select One, 2 opts") || strings.Contains(p, "Who to greet") {
+	if p := f.page(); !strings.Contains(p, "▸ Argument") || !strings.Contains(p, "<who>  · Select One, 2 opts") || strings.Contains(p, "Who to greet") {
 		t.Fatalf("← collapses it:\n%s", p)
 	}
 	press(f, kRight)
-	if p := f.page(); !strings.Contains(p, "▾ What") || !strings.Contains(p, "Who to greet") || f.editing != nil {
+	if p := f.page(); !strings.Contains(p, "▾ Argument") || !strings.Contains(p, "Who to greet") || f.editing != nil {
 		t.Fatalf("→ opens it:\n%s", p)
 	}
 	press(f, kRight)
@@ -903,12 +903,12 @@ func TestPackFormOpts(t *testing.T) {
 	a := &f.pack.Files[0].Group.Commands[0].Args[0]
 	a.Options[0].Label, a.Default = "the first", "one"
 	f.refresh("0/0/0/0")
-	if p := f.page(); !strings.Contains(p, "▸ Opts  one  · the first · Picked") || strings.Contains(p, "Pick  ") {
+	if p := f.page(); !strings.Contains(p, "▸ Opts      one  · the first · Picked") || strings.Contains(p, "Pick      ") {
 		t.Fatalf("collapsed, a line saying it all:\n%s", p)
 	}
 	press(f, kRight)
 	p := f.page()
-	if !strings.Contains(p, "▾ Opts  one") || !strings.Contains(p, "Runs  one") || !strings.Contains(p, "Desc  the first") || !strings.Contains(p, "Pick  Yes") {
+	if !strings.Contains(p, "▾ Opts      one") || !strings.Contains(p, "Value     one") || !strings.Contains(p, "Desc      the first") || !strings.Contains(p, "Pick      Yes") {
 		t.Fatalf("→ opens it:\n%s", p)
 	}
 	f.onRow(t, "0/0/0/0/types")
@@ -918,7 +918,7 @@ func TestPackFormOpts(t *testing.T) {
 	}
 	f.onRow(t, "0/0/0/0")
 	press(f, kLeft)
-	if p := f.page(); !strings.Contains(p, "▸ Opts  uno") || strings.Contains(p, "Runs  uno") {
+	if p := f.page(); !strings.Contains(p, "▸ Opts      uno") || strings.Contains(p, "Value     uno") {
 		t.Errorf("← collapses it:\n%s", p)
 	}
 	f.onRow(t, "0/0/0/1/remove")

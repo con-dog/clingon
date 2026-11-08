@@ -89,7 +89,7 @@ func news() []row {
 		acts = append(acts, row{mark: todo, glyph: "↓", label: "Install tools", detail: someNames(broken), nudge: true})
 	}
 	if len(config.LocalPacks()) == 0 {
-		acts = append(acts, row{mark: todo, glyph: createGlyph(), label: "Add a pack", detail: "the commands you keep looking up, in one place", note: "Clingon › Packs › Add a pack", nudge: true})
+		acts = append(acts, row{mark: todo, glyph: createGlyph(), label: "Create a pack", detail: "the commands you keep looking up, in one place", note: "Clingon › Packs › Create a pack", nudge: true})
 	}
 	return acts
 }

@@ -635,7 +635,7 @@ func (f *PackForm) packRows() []formRow {
 			}},
 		{key: "logo", label: "Logo", value: config.TitleWords(p.Logo), look: frontLook("logo"), icon: config.Logos[p.Logo], color: f.logoColour(), help: "Its icon in the menu.", options: logos, pick: func(v string) error { f.pack.Logo = v; return nil }},
 		{key: "tint", label: "Tint", value: config.TitleWords(colour), look: frontLook("tint"), icon: slotIcon("●"), color: colourHex, help: "The logo's colour.", options: colours, pick: func(v string) error { f.pack.Color = v; return nil }},
-		{key: "needs", label: "Need", value: joined(p.Needs), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs the pack needs, separated by commas: the status bar warns you while one's missing.", text: func(v string) error { f.pack.Needs = splitComma(v); return nil }},
+		{key: "needs", label: "Requires", value: joined(p.Needs), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs the pack needs, separated by commas: the status bar warns you while one's missing.", text: func(v string) error { f.pack.Needs = splitComma(v); return nil }},
 	}
 	if f.folded(-1, -1) {
 		return foldTo(rows, "")
@@ -650,9 +650,9 @@ func (f *PackForm) moduleRows(i int) []formRow {
 		{key: k("head"), label: "Module", header: true},
 		{key: k("name"), label: "Name", value: g.Name, look: mdLook("# ", ""), help: "What the menu calls the module.", text: func(v string) error { f.group(i).Name = v; return nil }},
 		{key: k("desc"), label: "Desc", value: g.Description, hint: "what's in it", help: "What's in the module.", text: func(v string) error { f.group(i).Description = v; return nil }},
-		{key: k("needs"), label: "Need", value: joined(g.Requires), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
-		{key: k("when"), label: "When", value: joined(g.When), look: frontLook("when"), hint: "files, like .git", help: "Files that must be here or in a folder above for these commands, like .git; ./Dockerfile means this folder only.", text: func(v string) error { f.group(i).When = splitComma(v); return nil }},
-		{key: k("remove"), label: "Drop", value: "No", risk: config.RiskWarn, help: "Yes removes the module, and every command in it.", confirm: "Yes", do: func() error {
+		{key: k("needs"), label: "Requires", value: joined(g.Requires), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
+		{key: k("when"), label: "Only if", value: joined(g.When), look: frontLook("when"), hint: "files, like .git", help: "Files that must be here or in a folder above for these commands, like .git; ./Dockerfile means this folder only.", text: func(v string) error { f.group(i).When = splitComma(v); return nil }},
+		{key: k("remove"), label: "Remove", value: "No", risk: config.RiskWarn, help: "Yes removes the module, and every command in it.", confirm: "Yes", do: func() error {
 			f.pack.Files = slices.Delete(f.pack.Files, i, i+1)
 			return nil
 		}},
@@ -698,9 +698,9 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 		{key: k("name"), label: "Name", value: c.Name, look: mdLook("## ", ""), help: "What the menu calls it: letters, digits, spaces and ( ).", text: func(v string) error { f.command(i, j).Name = v; return nil }},
 		{key: k("risk"), label: "Risk", value: risk, icon: riskIcon.Icon, color: riskIcon.Color, help: "Whether clingon asks before it runs: warning asks first; dangerous has you type a short code, then asks.", options: risks, pick: func(v string) error { f.command(i, j).Risk = v; return nil }},
 		{key: k("desc"), label: "Desc", value: c.Desc, look: descLook, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
-		{key: k("needs"), label: "Need", value: joined(c.Requires), hint: "programs, separated by commas", help: "Programs this command needs, separated by commas.", text: func(v string) error { f.command(i, j).Requires = splitComma(v); return nil }},
-		{key: k("when"), label: "When", value: joined(c.When), hint: "files, like .git", help: "Files that must be here or in a folder above, like .git.", text: func(v string) error { f.command(i, j).When = splitComma(v); return nil }},
-		{key: k("cmd"), label: "Runs", value: c.Cmd, look: mdLook("```sh\n", "\n```"), help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
+		{key: k("needs"), label: "Requires", value: joined(c.Requires), hint: "programs, separated by commas", help: "Programs this command needs, separated by commas.", text: func(v string) error { f.command(i, j).Requires = splitComma(v); return nil }},
+		{key: k("when"), label: "Only if", value: joined(c.When), hint: "files, like .git", help: "Files that must be here or in a folder above, like .git.", text: func(v string) error { f.command(i, j).When = splitComma(v); return nil }},
+		{key: k("cmd"), label: "Command", value: c.Cmd, look: mdLook("```sh\n", "\n```"), help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
 			c := f.command(i, j)
 			c.Cmd = v
 			config.SyncBlanks(c)
@@ -710,7 +710,7 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 	for b := range c.Args {
 		rows = append(rows, f.blankRows(i, j, b)...)
 	}
-	rows = append(rows, formRow{key: k("remove"), label: "Drop", value: "No", risk: config.RiskWarn, help: "Yes removes the command.", confirm: "Yes", do: func() error {
+	rows = append(rows, formRow{key: k("remove"), label: "Remove", value: "No", risk: config.RiskWarn, help: "Yes removes the command.", confirm: "Yes", do: func() error {
 		g := f.group(i)
 		g.Commands = slices.Delete(g.Commands, j, j+1)
 		return nil
@@ -733,7 +733,7 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 	kinds := []config.Option{{Value: "text", Label: "Text"}, {Value: "choose", Label: "Select One"}, {Value: "flags", Label: "Select Many"}}
 	kind := map[string]string{"text": "Text", "secret": "Text, Hidden", "choose": "Select One", "flags": "Select Many"}[a.Kind()]
 	rows := []formRow{
-		{key: k("name"), fold: "open", label: "What", value: name, look: mdLook("- `", "`"), help: "The blank: where it is in the command. Renaming it renames it there too.", text: func(v string) error {
+		{key: k("name"), fold: "open", label: "Argument", value: name, look: mdLook("- `", "`"), help: "The blank: where it is in the command. Renaming it renames it there too.", text: func(v string) error {
 			return config.RenameBlank(f.command(i, j), f.blank(i, j, b).Name, v)
 		}},
 		{key: k("q"), label: "Desc", value: a.Prompt, hint: "the question asked", help: "What's asked for " + name + " when the command runs.", text: func(v string) error { f.blank(i, j, b).Prompt = v; return nil }},
@@ -756,7 +756,7 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 		}})
 	}
 	if kd := a.Kind(); kd == "text" || kd == "secret" {
-		rows = append(rows, formRow{key: k("start"), label: "Base", value: a.Default, look: mdLook("  - (x) `", "`"), hint: "none", help: "What's filled in for " + name + " until you change it.", text: func(v string) error { f.blank(i, j, b).Default = v; return nil }})
+		rows = append(rows, formRow{key: k("start"), label: "Default", value: a.Default, look: mdLook("  - (x) `", "`"), hint: "none", help: "What's filled in for " + name + " until you change it.", text: func(v string) error { f.blank(i, j, b).Default = v; return nil }})
 	} else {
 		for o := range a.Options {
 			rows = append(rows, f.choiceRows(i, j, b, o)...)
@@ -814,7 +814,7 @@ func (f *PackForm) choiceRows(i, j, b, o int) []formRow {
 		pickHelp = "Whether it's picked to begin with: any number can be."
 	}
 	return []formRow{head,
-		{key: k("types"), label: "Runs", value: opt.Value, look: types, help: "What it types into the command, picked.", text: func(v string) error {
+		{key: k("types"), label: "Value", value: opt.Value, look: types, help: "What it types into the command, picked.", text: func(v string) error {
 			a := f.blank(i, j, b)
 			op := &a.Options[o]
 			switch {
@@ -857,7 +857,7 @@ func (f *PackForm) choiceRows(i, j, b, o int) []formRow {
 			a.Default = strings.Join(on, a.Separator())
 			return nil
 		}},
-		{key: k("remove"), label: "Drop", value: "No", risk: config.RiskWarn, help: "Yes removes the choice.", confirm: "Yes", do: func() error {
+		{key: k("remove"), label: "Remove", value: "No", risk: config.RiskWarn, help: "Yes removes the choice.", confirm: "Yes", do: func() error {
 			a := f.blank(i, j, b)
 			opt := a.Options[o]
 			if a.Kind() == "flags" {
@@ -1178,7 +1178,7 @@ func (f *PackForm) chose() tea.Cmd {
 	r, v := f.choosing, f.options[f.opt].Value
 	f.choosing, f.issue = nil, ""
 	switch {
-	case r.confirm != "": // a Drop's No/Yes: only Yes does it
+	case r.confirm != "": // a remove's No/Yes: only Yes does it
 		if v != "drop" {
 			return nil
 		}
@@ -1602,11 +1602,7 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 		case "closed":
 			rest += lipgloss.NewStyle().Foreground(soft).Render("▸") + " "
 		default:
-			if r.risk == config.RiskWarn { // a Drop: the menu's ⚠, in the arrows' column
-				rest += warnStyle.Render(warnGlyph) + " "
-			} else {
-				rest += "  "
-			}
+			rest += "  "
 		}
 	}
 	room := max(w-f.labelAt(r), 1)
@@ -1626,6 +1622,12 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 			st = cursorStyle
 		}
 		rest = " " + st.Render("+") + " " + st.Render(word)
+	case r.confirm != "" && flatForm: // a remove: an amber − and REMOVE, as an add's + and ADD; enter asks No or Yes under it
+		st := lipgloss.NewStyle().Foreground(ghostPurple)
+		if on || open {
+			st = cursorStyle
+		}
+		rest = " " + warnStyle.Render("−") + " " + st.Render("REMOVE")
 	case r.do != nil && r.confirm == "": // an add
 		st := accentStyle
 		if on {
@@ -1651,7 +1653,7 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 			f.input.SetWidth(room)
 			more = strings.Split(f.input.View(), "\n")
 			rest, more = rest+more[0], more[1:]
-		case r.confirm != "": // a Drop: faint, its No, until you're on it
+		case r.confirm != "": // a remove, were the form not flat: faint, its No, until you're on it
 			st := faintStyle
 			if on {
 				st = fieldStyle
@@ -1718,7 +1720,7 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 		title = o.Value
 	}
 	switch {
-	case on && o.Value == "drop": // a Drop's Yes
+	case on && o.Value == "drop": // a remove's Yes
 		title = dangerStyle.Render(title)
 	case on:
 		title = cursorStyle.Render(title)

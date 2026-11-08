@@ -3832,7 +3832,7 @@ func TestTextBoxesShowNoExample(t *testing.T) {
 	}
 }
 
-// A command that opens an editor (Add a pack, Edit a pack) takes focus to the
+// A command that opens an editor (Create a pack, Edit a pack) takes focus to the
 // shell, where you type in it; any other command leaves it on the menu.
 func TestEditorCommandsFocusTheShell(t *testing.T) {
 	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{

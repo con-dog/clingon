@@ -93,7 +93,7 @@ func builtinSections() []*config.Section {
 	sections := []*config.Section{
 		{Name: "Packs", Icon: config.Logos["puzzle"], Color: packsYellow, Category: "Clingon", Groups: []config.Group{
 			{Name: "My packs", Commands: []config.Command{
-				{Editor: true, Name: "Add a pack", Desc: "Opens a new pack of your own as a form, starting from a working example: fill it in, then esc when you're done, and it asks whether to save it.", Cmd: self + " pack create --menu"},
+				{Editor: true, Name: "Create a pack", Desc: "Opens a new pack of your own as a form, starting from a working example: fill it in, then esc when you're done, and it asks whether to save it.", Cmd: self + " pack create --menu"},
 				{Name: "Describe a pack", Disabled: noLocal, Desc: "Prints every command in <pack> and exactly what each one runs.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(local)},
 				}},

@@ -702,13 +702,13 @@ func TestPackGuide(t *testing.T) {
 	}
 }
 
-// Add a pack goes straight to the form, which asks for everything: the
+// Create a pack goes straight to the form, which asks for everything: the
 // menu asks nothing first, and the form leaves its draft for the menu.
 func TestAddAPackOpensTheForm(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	for _, s := range builtinSections() {
 		for _, c := range s.All() {
-			if c.Name == "Add a pack" {
+			if c.Name == "Create a pack" {
 				if !c.Editor || len(c.Args) != 0 || !strings.HasSuffix(c.Cmd, " pack create --menu") {
 					t.Fatalf("got %s %+v", c.Cmd, c.Args)
 				}
@@ -716,5 +716,5 @@ func TestAddAPackOpensTheForm(t *testing.T) {
 			}
 		}
 	}
-	t.Fatal("no Add a pack")
+	t.Fatal("no Create a pack")
 }
