@@ -474,7 +474,7 @@ func TestRecipeCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Ship it", "2 commands", " 1  Ship · Mine", "ship <where>", "Ships it.", "Asks for: Where", " 2  Not available here", "gone-00000000"} {
+	for _, want := range []string{"Ship it", "2 steps", " 1  Ship · Mine", "ship <where>", "Ships it.", "Asks for: Where", " 2  Not available here", "gone-00000000"} {
 		if !strings.Contains(ansi.Strip(out), want) {
 			t.Errorf("describe should say %q:\n%s", want, out)
 		}

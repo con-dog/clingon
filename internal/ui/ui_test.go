@@ -1090,7 +1090,7 @@ func TestRunningARecipe(t *testing.T) {
 	if m.details(); m.list.selected().title != "Run" {
 		t.Fatalf("r should land on Run, at %+v", m.list.selected())
 	}
-	if _, desc := m.details(); !strings.Contains(desc, "Runs 2 commands in order") {
+	if _, desc := m.details(); !strings.Contains(desc, "Runs 2 steps in order") {
 		t.Errorf("it should say what it does, got %q", desc)
 	}
 	right()
@@ -1109,7 +1109,7 @@ func TestRunningARecipe(t *testing.T) {
 	if m.run != nil || len(m.recipe) != 2 {
 		t.Fatalf("a finished recipe stays: run %+v, recipe %v", m.run, m.recipe)
 	}
-	if !strings.Contains(m.hint, "finished: 2 commands") {
+	if !strings.Contains(m.hint, "finished: 2 steps") {
 		t.Errorf("hint = %q", m.hint)
 	}
 	start() // and runs again
@@ -1135,7 +1135,7 @@ func TestRunningARecipe(t *testing.T) {
 	done(true)
 	failed = false
 	sentIs("one bad")
-	if m.run != nil || len(m.recipe) != 3 || !strings.Contains(m.errMsg, "command 2, bad: it failed") {
+	if m.run != nil || len(m.recipe) != 3 || !strings.Contains(m.errMsg, "step 2, bad: it failed") {
 		t.Fatalf("run %+v, recipe %v, err %q", m.run, m.recipe, m.errMsg)
 	}
 	start() // and it can go again, from the top
@@ -1167,7 +1167,7 @@ func TestRunningARecipe(t *testing.T) {
 	start()
 	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	sentIs("")
-	if m.run != nil || m.mode != modeBrowse || len(m.recipe) != 2 || !strings.Contains(m.hint, "stopped at command 1") {
+	if m.run != nil || m.mode != modeBrowse || len(m.recipe) != 2 || !strings.Contains(m.hint, "stopped at step 1") {
 		t.Fatalf("run %+v, mode %v, recipe %v, hint %q", m.run, m.mode, m.recipe, m.hint)
 	}
 
@@ -1180,7 +1180,7 @@ func TestRunningARecipe(t *testing.T) {
 	}
 	answer(m, false)
 	sentIs("one")
-	if m.run != nil || len(m.recipe) != 3 || !strings.Contains(m.hint, "stopped at command 2") {
+	if m.run != nil || len(m.recipe) != 3 || !strings.Contains(m.hint, "stopped at step 2") {
 		t.Fatalf("run %+v, hint %q", m.run, m.hint)
 	}
 	// "yes" goes on.
@@ -1351,7 +1351,7 @@ func TestFillInNamesTheCommand(t *testing.T) {
 	m.Update(typed("r"))
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m.Update(idleMsg{seq: m.run.seq, ok: true})
-	if head := row(lines(60, 20)[0]); head != "Recipe command 2 of 2 · Input 1 of 2" {
+	if head := row(lines(60, 20)[0]); head != "Recipe step 2 of 2 · Input 1 of 2" {
 		t.Errorf("head = %q", head)
 	}
 }
@@ -1412,7 +1412,7 @@ func TestRiskyScreensNameTheCommand(t *testing.T) {
 	m.Update(typed("r"))
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m.Update(idleMsg{seq: m.run.seq, ok: true})
-	if got := lines(20); !strings.Contains(got[0], "Recipe command 2 of 2") || got[1] != "" || !strings.Contains(got[2], "risky") {
+	if got := lines(20); !strings.Contains(got[0], "Recipe step 2 of 2") || got[1] != "" || !strings.Contains(got[2], "risky") {
 		t.Errorf("as a step: %q", got)
 	}
 }
@@ -2506,9 +2506,9 @@ func TestRunningARecipeFromAPosition(t *testing.T) {
 		}
 	}
 
-	// A command's row runs the recipe from there, and says so.
+	// A step runs the recipe from there, and says exactly which steps run.
 	on("bad")
-	if _, desc := m.details(); !strings.Contains(desc, "from here, command 2 of 3") {
+	if _, desc := m.details(); !strings.Contains(desc, "Runs steps 2–3.") {
 		t.Errorf("desc %q", desc)
 	}
 	right()
@@ -2539,7 +2539,7 @@ func TestRunningARecipeFromAPosition(t *testing.T) {
 	failed = true
 	done()
 	failed = false
-	if m.run != nil || cursorOn() != "bad" || !strings.Contains(m.errMsg, "command 2") {
+	if m.run != nil || cursorOn() != "bad" || !strings.Contains(m.errMsg, "step 2") {
 		t.Fatalf("run %+v, cursor on %q, err %q", m.run, cursorOn(), m.errMsg)
 	}
 	sent = nil
@@ -4230,6 +4230,14 @@ func TestRecipesScreen(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if v := ansi.Strip(m.view()); !strings.Contains(v, "RECIPE · 3 steps · 2 warnings") {
 		t.Errorf("the heading:\n%s", v)
+	}
+	if got := m.list.tally(); got != "3 steps" { // its steps, not Run and the rest, and in steps
+		t.Errorf("the filter's count: %q", got)
+	}
+	for at, want := range map[int]string{1: "Runs steps 1–3.", 2: "Runs steps 2–3.", 3: "Runs step 3."} {
+		if got := recipeFromHere(at, 3); got != want {
+			t.Errorf("from step %d: %q, want %q", at, got, want)
+		}
 	}
 	m.opened = "Boom"
 	m.showSection(m.section)

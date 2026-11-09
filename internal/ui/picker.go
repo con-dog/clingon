@@ -650,7 +650,12 @@ func (p *picker) tally() string {
 	count := func(items []item) int {
 		n := 0
 		for i := range items {
-			if _, isCmd := items[i].ref.(cmdRef); !items[i].header && (isCmd || items[i].stepAt > 0 || p.noun != "command") {
+			_, isCmd := items[i].ref.(cmdRef)
+			switch {
+			case items[i].header:
+			case p.noun == "step" && items[i].stepAt > 0, // a recipe's: its steps, not Run and the rest
+				p.noun == "command" && isCmd,
+				p.noun != "step" && p.noun != "command":
 				n++
 			}
 		}

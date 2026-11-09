@@ -463,7 +463,10 @@ func (m *Model) showSection(s *config.Section) {
 	m.list.noun = "command"
 	m.list.step = m.itemSteps
 	if s == m.recipesSection() {
-		m.list.recipe = m.opened != "" // a recipe's own list: numbered at the left, a slot for every mark
+		m.list.recipe = m.opened != "" // a recipe's own list: a slot for every mark, its steps counted
+		if m.list.recipe {
+			m.list.noun = "step"
+		}
 		at := func(ok func(it item) bool) {
 			if i := slices.IndexFunc(m.list.view, ok); i >= 0 {
 				m.list.cursor = i
@@ -611,7 +614,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// back in the list with nothing sent: that stops the recipe, and keeps it.
 	if m.run != nil && !m.run.sent && m.mode == modeBrowse {
 		if m.errMsg == "" {
-			m.hint = fmt.Sprintf("Recipe stopped at command %d%s", m.run.at+1, stoppedKeys)
+			m.hint = fmt.Sprintf("Recipe stopped at step %d%s", m.run.at+1, stoppedKeys)
 		}
 		m.stopRun()
 	}
@@ -1465,17 +1468,13 @@ func (m *Model) open() tea.Cmd {
 	return nil
 }
 
-// recipeFromHere says what running a row of the recipe's own list does.
+// recipeFromHere says what running a row of the recipe's own list does:
+// exactly which steps run.
 func recipeFromHere(at, total int) string {
-	switch {
-	case total == 1:
-		return "Runs this recipe's one command."
-	case at == 1:
-		return "Runs the recipe from here, its first command."
-	case at == total:
-		return fmt.Sprintf("Runs the recipe from here, just its last command. The %s before it don't run.", plural(at-1, "command"))
+	if at == total {
+		return fmt.Sprintf("Runs step %d.", at)
 	}
-	return fmt.Sprintf("Runs the recipe from here, command %d of %d. The ones before it don't run.", at, total)
+	return fmt.Sprintf("Runs steps %d–%d.", at, total)
 }
 
 // runRecipeRef is the current recipe's Run.
@@ -1522,7 +1521,7 @@ func (m *Model) loadRecipe(r config.Recipe) bool {
 	for i, id := range r.Steps {
 		c, ok := now[id]
 		if !ok {
-			m.errMsg = fmt.Sprintf("✗ %s can't be used: the command at position %d is gone (%s)", r.Name, i+1, id)
+			m.errMsg = fmt.Sprintf("✗ %s can't be used: step %d is gone (%s)", r.Name, i+1, id)
 			return false
 		}
 		steps = append(steps, recipeStep{id, c})
@@ -1765,7 +1764,7 @@ func (m *Model) runStep() tea.Cmd {
 		why = m.blocked()
 	}
 	if why != "" {
-		m.errMsg = fmt.Sprintf("✗ Recipe stopped at command %d, %s, can't run: %s%s", m.run.at+1, r.cmd.Name, why, stoppedKeys)
+		m.errMsg = fmt.Sprintf("✗ Recipe stopped at step %d, %s, can't run: %s%s", m.run.at+1, r.cmd.Name, why, stoppedKeys)
 		m.stopRun()
 		return nil
 	}
@@ -1809,7 +1808,7 @@ func (m *Model) stepDone(ok bool) tea.Cmd {
 		return nil
 	}
 	if why != "" {
-		m.errMsg = fmt.Sprintf("✗ Recipe stopped at command %d, %s: %s%s", n, name, why, stoppedKeys)
+		m.errMsg = fmt.Sprintf("✗ Recipe stopped at step %d, %s: %s%s", n, name, why, stoppedKeys)
 		m.stopRun()
 		return nil
 	}
@@ -1817,7 +1816,7 @@ func (m *Model) stepDone(ok bool) tea.Cmd {
 		return m.runStep()
 	}
 	m.run = nil
-	m.hint = fmt.Sprintf("✓ Recipe finished: %s", plural(n, "command"))
+	m.hint = fmt.Sprintf("✓ Recipe finished: %s", plural(n, "step"))
 	return nil
 }
 
@@ -2807,7 +2806,7 @@ func (m *Model) details() (cmd, desc string) {
 		if m.stopped > 0 {
 			return "", "Starts again from command 1, running every command in order, including the ones that already ran."
 		}
-		return "", "Runs " + plural(len(m.recipe), "command") + " in order, asking for any blanks as each is reached. Stops if one fails."
+		return "", "Runs " + plural(len(m.recipe), "step") + " in order, asking for any blanks as each is reached. Stops if one fails."
 	case openCurrentRef:
 		return "", "The recipe you're building: " + plural(len(m.recipe), "step") + ". Open it to run, save, describe or clear it."
 	case openRecipeRef:
@@ -3601,7 +3600,7 @@ func (m *Model) recipeStep() string {
 	if m.run == nil {
 		return ""
 	}
-	return fmt.Sprintf("Recipe command %d of %d", m.run.at+1, len(m.recipe))
+	return fmt.Sprintf("Recipe step %d of %d", m.run.at+1, len(m.recipe))
 }
 
 // panelWidth is the room for what's in a panel, inside its edge and padding.

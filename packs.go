@@ -502,7 +502,7 @@ func recipeCmd(args []string) error {
 		if isTerm() {
 			var rows []row
 			for _, r := range rs {
-				rows = append(rows, row{mark: info, label: r.Name, detail: plural(len(r.Steps), "command")})
+				rows = append(rows, row{mark: info, label: r.Name, detail: plural(len(r.Steps), "step")})
 			}
 			outln(card("Your recipes", rows, cardWidth()))
 			return nil
@@ -586,7 +586,7 @@ func describeSteps(name string, steps []string) error {
 			add(failStyle, "☠ Can't be undone: you type a code before it runs")
 		}
 	}
-	title := headStyle.Render(r.Name) + greyStyle.Render(" · "+plural(len(r.Steps), "command")+", stops if one fails")
+	title := headStyle.Render(r.Name) + greyStyle.Render(" · "+plural(len(r.Steps), "step")+", stops if one fails")
 	outln(titled(title, lines, w))
 	return nil
 }
