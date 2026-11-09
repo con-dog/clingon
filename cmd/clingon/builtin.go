@@ -94,14 +94,14 @@ func builtinSections() []*config.Section {
 		{Name: "Packs", Icon: config.Logos["puzzle"], Color: packsYellow, Category: "Clingon", Desc: "Add ready-made commands, or make packs of your own.", Groups: []config.Group{
 			{Name: "My packs", Commands: []config.Command{
 				{Editor: true, Name: "Create a pack", Desc: "Opens a new pack of your own as a form, starting from a working example: fill it in, then esc when you're done, and it asks whether to save it.", Cmd: self + " pack create --menu"},
-				{Name: "Describe a pack", Disabled: noLocal, Desc: "Prints every command in <pack> and exactly what each one runs.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
+				{Name: "Describe your pack", Disabled: noLocal, Desc: "Prints every command in <pack> and exactly what each one runs.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(local)},
 				}},
 				{Editor: true, Name: "Edit a pack", Disabled: noLocal, Desc: "Opens <pack> as a form, every part of it on one page: change it, then esc when you're done, and it asks whether to save the changes.", Cmd: self + " pack edit <pack> --menu", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(local)},
 				}},
 				{Name: "List your packs", Disabled: noLocal, Desc: "Lists your own packs.", Cmd: self + " pack list --mine"},
-				{Name: "Remove packs", Disabled: noLocal, Desc: "Deletes <pack> and every command in it, for good.", Risk: config.RiskDanger, Cmd: self + " pack remove <pack>", Args: []config.Arg{
+				{Name: "Remove your packs", Disabled: noLocal, Desc: "Deletes <pack> and every command in it, for good.", Risk: config.RiskDanger, Cmd: self + " pack remove <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(local)},
 				}},
 			}},
@@ -137,7 +137,7 @@ func builtinSections() []*config.Section {
 				{Name: "Update clingon", Desc: "Upgrades clingon the same way you installed it.", Cmd: self + " update"},
 			}},
 			{Name: "Welcome", Commands: []config.Command{
-				{Name: "Worth doing", Desc: "Shows the welcome card: updates, packs for tools you have, and anything else worth doing.", Cmd: self + " welcome"},
+				{Name: "Show welcome", Desc: "Shows the welcome card: updates, packs for tools you have, and anything else worth doing.", Cmd: self + " welcome"},
 			}},
 		}},
 		{Name: ui.CommandLineSection, Icon: config.Logos["terminal"], Category: config.CommandLine, Desc: "Type a line of your own to run, or to use as a step in a recipe.", Groups: []config.Group{

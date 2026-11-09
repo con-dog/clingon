@@ -222,7 +222,7 @@ type Model struct {
 	nameWhy   string                      // why the recipe's name was refused
 	listed    []config.Recipe             // the saved recipes the list was last drawn with
 	opened    string                      // the recipe whose own list is showing: a saved one's name, or openedCurrent
-	from      string                      // the saved recipe the current one was run or edited from: Save as… may replace it
+	from      string                      // the added recipe the current one was run or edited from: Add as… may replace it
 	removing  string                      // the saved recipe being removed, until the shell's done
 	help      bool                        // the keys screen is showing
 	blurred   bool                        // focus is in the shell: the cursor's row is drawn quietly
@@ -957,7 +957,7 @@ func (m *Model) quitView(w int) string {
 	}
 	title, why := headerStyle.Render("Quit clingon?"), "This closes its shell."
 	if len(m.jobs) > 0 {
-		title = warnStyle.Bold(true).Render("⚠ Still running in the shell")
+		title = warnHead("Still running in the shell")
 		why = "Quitting closes the shell, and ends: " + strings.Join(m.jobs, ", ")
 	}
 	return title + "\n" + lipgloss.NewStyle().Width(w).Render(why) + "\n\n" + panel([]string{row(!m.yes, "No, stay"), row(m.yes, "Yes, quit")}, w)
@@ -1094,13 +1094,13 @@ func (m *Model) recipeItems() []item {
 			cmds = append(cmds, st.ref.cmd)
 			steps = append(steps, m.stepItem(i, st.ref, st.ref))
 		}
-		state := "unsaved"
+		state := "not added"
 		if name := m.currentName(); name != "" {
-			state = "saved as " + name
+			state = "added as " + name
 		}
 		items := []item{{title: "Recipe", header: true, detail: recipeDetail(cmds, state)},
 			{title: "Run", accent: true, ref: runRecipeRef{}},
-			{title: "Save as…", ref: saveRecipeRef{}},
+			{title: "Add as…", ref: saveRecipeRef{}},
 			{title: "Describe", ref: describeCurrentRef{}},
 			{title: "Clear", ref: clearRecipeRef{}}}
 		return append(heading(items, "Steps"), steps...)
@@ -1137,13 +1137,13 @@ func (m *Model) recipeItems() []item {
 		}
 		title := m.currentName()
 		if title == "" {
-			title = "Unsaved recipe"
+			title = "New recipe" // not added yet
 		}
 		items = append(items, item{title: title, risk: worstRisk(cmds), right: plural(len(m.recipe), "step"), ref: openCurrentRef{}})
 	}
 	if len(saved) > 0 {
 		now := m.commandsByID()
-		items = heading(items, "Saved recipes")
+		items = heading(items, "My recipes")
 		for _, r := range saved {
 			var cmds []*config.Command
 			for _, id := range r.Steps {
@@ -1165,7 +1165,7 @@ func (m *Model) stepItem(n int, c cmdRef, ref any) item {
 }
 
 // recipeDetail is what a recipe's heading says after its name: how many
-// steps, how many of them are risky, and state, if any ("unsaved").
+// steps, how many of them are risky, and state, if any ("not added").
 func recipeDetail(cmds []*config.Command, state string) string {
 	parts := []string{plural(len(cmds), "step")}
 	danger, warn := 0, 0
@@ -1485,7 +1485,7 @@ type runRecipeRef struct{}
 // the recipe's own list.
 type openCurrentRef struct{}
 
-// saveRecipeRef is the current recipe's Save as…: it asks for a name.
+// saveRecipeRef is the current recipe's Add as…: it asks for a name.
 type saveRecipeRef struct{}
 
 // describeCurrentRef is the current recipe's Describe.
@@ -1507,7 +1507,7 @@ type savedStepRef struct {
 type missingStepRef struct{ id string }
 
 // editRecipeRef is a saved recipe's Edit: it becomes the current recipe, to
-// change with 1-9 and save over with Save as….
+// change with 1-9 and replace with Add as….
 type editRecipeRef struct{ config.Recipe }
 
 // loadRecipe makes a saved recipe the current one, its own list showing.
@@ -1550,7 +1550,7 @@ func (m *Model) describeCurrentCommand() string {
 	return m.opt.Self + " recipe describe --steps " + strings.Join(m.recipeIDs(), " ")
 }
 
-// openRecipeRef is a saved recipe's row in Saved recipes: it opens the list of
+// openRecipeRef is an added recipe's row in My recipes: it opens the list of
 // what can be done with it.
 type openRecipeRef struct{ config.Recipe }
 
@@ -1569,7 +1569,7 @@ func (m *Model) removeCommand(name string) string {
 	return m.opt.Self + " recipe remove " + shellQuote(name)
 }
 
-// closeRecipe goes back from a recipe's own list to its row in Saved recipes.
+// closeRecipe goes back from a recipe's own list to its row in My recipes.
 func (m *Model) closeRecipe() {
 	name := m.opened
 	m.opened = ""
@@ -1583,7 +1583,7 @@ func (m *Model) closeRecipe() {
 	m.landOnRecipe(name)
 }
 
-// landOnRecipe puts the cursor on that row in Saved recipes. If it's gone that's
+// landOnRecipe puts the cursor on that row in My recipes. If it's gone that's
 // the one after it, or the last.
 func (m *Model) landOnRecipe(name string) {
 	last := -1
@@ -2237,7 +2237,7 @@ func (m *Model) trustView(w, avail int) string {
 		head = "This folder's commands have changed since you trusted them"
 	}
 	lines := []string{
-		warnStyle.Bold(true).Render(warnGlyph + " " + head),
+		warnHead(head),
 		dimStyle.Render(ansi.Hardwrap(tildify(p.Path), max(w, 1), false)),
 		"",
 		"It would run these in your shell:",
@@ -2704,7 +2704,7 @@ func (m *Model) noCurrentRecipeInfo(w, n int) string {
 	for _, r := range saved {
 		names = append(names, r.Name)
 	}
-	return card(strings.Join(names, faintStyle.Render(" · ")), plural(len(saved), "saved recipe")+": "+how, w, n)
+	return card(strings.Join(names, faintStyle.Render(" · ")), plural(len(saved), "recipe")+" added: "+how, w, n)
 }
 
 // onEmptyRecipe says whether the Recipes screen has nothing to describe: no
@@ -2795,7 +2795,7 @@ func (m *Model) details() (cmd, desc string) {
 			name = shellQuote(v)
 		}
 		if strings.EqualFold(recipeName(m.word.Value()), m.from) && m.from != "" {
-			return highlight(m.saveCommand(name, true)), "Saves over " + m.from + " with these steps."
+			return highlight(m.saveCommand(name, true)), "Replaces " + m.from + " with these steps."
 		}
 		return highlight(m.saveCommand(name, false)), "Adds the recipe under this name."
 	}
@@ -2818,7 +2818,7 @@ func (m *Model) details() (cmd, desc string) {
 		}
 		return "", "Runs " + plural(len(m.recipe), "step") + " in order, asking for any blanks as each is reached. Stops if one fails."
 	case openCurrentRef:
-		return "", "The recipe you're building: " + plural(len(m.recipe), "step") + ". Open it to run, save, describe or clear it."
+		return "", "The recipe you're building: " + plural(len(m.recipe), "step") + ". Open it to run, add, describe or clear it."
 	case openRecipeRef:
 		return "", upperFirst(plural(len(r.Steps), "step")) + ". Open it to run, describe, edit or remove it."
 	case savedRecipeRef:
@@ -2828,13 +2828,13 @@ func (m *Model) details() (cmd, desc string) {
 	case missingStepRef:
 		return "", "Not available here: its pack is gone, or needs a tool you don't have. This recipe can't run until it's back."
 	case editRecipeRef:
-		return "", "Makes this the current recipe, to change: number commands with 1-9, then Save as… under its name to save over it."
+		return "", "Makes this the current recipe, to change: number commands with 1-9, then Add as… under its name to replace it."
 	case saveRecipeRef:
-		return "", "Saves the recipe under a name, to run again from Saved recipes."
+		return "", "Adds the recipe under a name, to run again from My recipes."
 	case describeCurrentRef:
 		return highlight(m.describeCurrentCommand()), "Lists the recipe's commands in the shell: what each one runs, what it does and what it will ask. Runs none of them."
 	case clearRecipeRef:
-		return "", "Empties the current recipe, as x does. Saved recipes stay."
+		return "", "Empties the current recipe, as x does. Recipes you've added stay."
 	case describeRecipeRef:
 		return highlight(m.describeCommand(r.name)), "Lists this recipe's commands in the shell: what each one runs, what it does and what it will ask. Runs none of them."
 	case removeRecipeRef:
@@ -3685,7 +3685,7 @@ func (m *Model) saveNameView(w int) string {
 }
 
 func (m *Model) noticeView(w int) string {
-	return lipgloss.NewStyle().Width(w).Render(warnStyle.Bold(true).Render(warnGlyph+" "+m.notice.title) + "\n" +
+	return lipgloss.NewStyle().Width(w).Render(warnHead(m.notice.title) + "\n" +
 		m.notice.text + "\n\n" + dimStyle.Render(fmt.Sprintf("Back in %ds · any key to go back now", m.notice.left)))
 }
 
@@ -3719,7 +3719,7 @@ func (m *Model) confirmBody(w int) string {
 		return dangerStyle.Render(dangerGlyph+" Last check: run it?") + "\n\n" +
 			panel([]string{row(!m.yes, "No, go back"), row(m.yes, "Yes, run it")}, w)
 	}
-	return warnStyle.Bold(true).Render(warnGlyph+" This command is risky. Run it?") + "\n\n" +
+	return warnHead("This command is risky. Run it?") + "\n\n" +
 		panel([]string{row(!m.yes, "No, go back"), row(m.yes, "Yes, run it")}, w)
 }
 

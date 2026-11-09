@@ -400,7 +400,7 @@ func TestEveryPackPickerSaysWhereItsFrom(t *testing.T) {
 	for _, s := range builtinSections() {
 		for g := range s.Groups {
 			for i := range s.Groups[g].Commands {
-				if c := &s.Groups[g].Commands[i]; c.Name == "Describe a pack" {
+				if c := &s.Groups[g].Commands[i]; c.Name == "Describe a pack" || c.Name == "Describe your pack" {
 					if s.Groups[g].Name == "My packs" {
 						mineInspect = c
 					} else {
@@ -440,7 +440,7 @@ func TestEveryPackPickerSaysWhereItsFrom(t *testing.T) {
 	}
 	// My packs' own Describe lists only yours.
 	if mineInspect == nil || len(mineInspect.Args[0].Options) != 1 {
-		t.Fatalf("My packs › Describe a pack should list just your pack: %+v", mineInspect)
+		t.Fatalf("My packs › Describe your pack should list just your pack: %+v", mineInspect)
 	}
 }
 
@@ -566,7 +566,7 @@ func TestRemovePacksIsAChecklist(t *testing.T) {
 			switch c.Name {
 			case "Remove a pack", "Uninstall packs", "Install packs":
 				t.Errorf("%s has been renamed", c.Name)
-			case "Remove packs":
+			case "Remove packs", "Remove your packs":
 				found++
 				if a := c.Args[0]; !a.Multi() || !a.AtLeastOne || a.CountAs != "pack" {
 					t.Errorf("%+v", a)

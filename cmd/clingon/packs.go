@@ -332,7 +332,7 @@ func printPacks(title string, ps []config.Pack, names func(config.Pack) string, 
 			}
 			if len(p.Modules) > 0 && p.Where == "remote" && config.IsInstalled(p.Name) {
 				if missing := len(config.MissingModules(p.Name)); missing > 0 {
-					note += fmt.Sprintf(" · %s not added", plural(missing, "subpack"))
+					note += fmt.Sprintf(" · %s not added", plural(missing, "module"))
 				}
 			}
 			rows = append(rows, row{mark: info, label: p.Name, detail: p.Description, note: note})
@@ -438,9 +438,9 @@ const recipeUsage = `Usage:
   clingon recipe describe NAME
   clingon recipe describe --steps ID...
 
-A recipe runs commands in order. Build one in the menu with 1-9, then Save as…
+A recipe runs commands in order. Build one in the menu with 1-9, then Add as…
 from Clingon › Recipes, where it's listed; each ID is one of its commands.
---replace saves over the recipe of that name, keeping its description. Each is
+--replace replaces the recipe of that name, keeping its description. Each is
 a Markdown file in recipes/, next to packs/, that you can edit too.
 `
 

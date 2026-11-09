@@ -75,6 +75,12 @@ const (
 
 // iconStyle colours a section's icon: its pack's colour (a brand's, say),
 // else grey, so the few brand colours stand out.
+// warnHead is a caution's heading: the ⚠, then text in bold amber. The mark
+// stays out of the bold: clingon's font has none, and a faked one smears it.
+func warnHead(text string) string {
+	return warnStyle.Render(warnGlyph) + " " + warnStyle.Bold(true).Render(text)
+}
+
 func iconStyle(color string) lipgloss.Style {
 	if color == "" {
 		return dimStyle

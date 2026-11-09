@@ -49,11 +49,11 @@ A recipe runs several commands in order, and stops if one fails or clingon can't
 2. Press `2` on the next, from the same section or any other.
 3. Press `r` to see the recipe, then `enter` on **Run**.
 
-The recipe's own list shows its numbered steps, each with its pack, under a heading that says how many there are, how many are risky and whether it's saved. Under the steps: **Run**, **Save as…**, **Describe** and **Clear**.
+The recipe's own list shows its numbered steps, each with its pack, under a heading that says how many there are, how many are risky and whether it's added. Above the steps: **Run**, **Add as…**, **Describe** and **Clear**.
 
-**Clingon › Recipes** lists the current recipe and your **Saved recipes**, each with how many steps it has and a mark if any step is risky. Open a saved one to see its steps, then **Run**, **Describe**, **Edit** or **Remove** it. **Edit** makes it the current recipe: change it with the number keys, then **Save as…** under the same name to save over it.
+**Clingon › Recipes** lists the current recipe and **My recipes**, each with how many steps it has and a mark if any step is risky. Open one to see its steps, then **Run**, **Describe**, **Edit** or **Remove** it. **Edit** makes it the current recipe: change it with the number keys, then **Add as…** under the same name to replace it.
 
-Each saved recipe is a Markdown file in `~/.clingon/recipes/`, next to your packs: a name, an optional description, and a numbered list of links to each command's heading in its pack's file. You can edit one by hand, or add a description:
+Each recipe you add is a Markdown file in `~/.clingon/recipes/`, next to your packs: a name, an optional description, and a numbered list of links to each command's heading in its pack's file. You can edit one by hand, or add a description:
 
 ```md
 # Deploy check
@@ -94,7 +94,7 @@ Add the rest as you need them: `aws`, `claude-code`, `codex`, `docker`, `dotnet`
 ```sh
 clingon pack available                      # what you can add
 clingon pack add git docker
-clingon pack add aws/ecs                    # just part of a pack
+clingon pack add aws/ecs                    # just one module
 clingon pack list
 clingon pack remove docker
 clingon pack update

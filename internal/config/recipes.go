@@ -181,7 +181,7 @@ func SaveRecipe(name string, steps, labels []string) error {
 }
 
 // ReplaceRecipe saves a recipe over the one of that name, keeping its
-// description: what Edit, then Save as… under the same name, does.
+// description: what Edit, then Add as… under the same name, does.
 func ReplaceRecipe(name string, steps, labels []string) error {
 	return saveRecipe(name, steps, labels, true)
 }

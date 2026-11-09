@@ -946,7 +946,7 @@ func TestCurrentRecipeListsTheSteps(t *testing.T) {
 		t.Errorf("the bar should offer the keys, got %q", bar)
 	}
 	press("r")
-	if rows() != "0Run 0Save as… 0Describe 0Clear 1a 2c 3b" {
+	if rows() != "0Run 0Add as… 0Describe 0Clear 1a 2c 3b" {
 		t.Fatalf("rows = %q", rows())
 	}
 	if it := m.list.selected(); it == nil || it.title != "Run" {
@@ -957,21 +957,21 @@ func TestCurrentRecipeListsTheSteps(t *testing.T) {
 	if row := ansi.Strip(m.list.row(m.list.view[slices.IndexFunc(m.list.view, func(it item) bool { return it.title == "a" })], false, 30)); !strings.HasPrefix(row, "    a · AWS") || !strings.HasSuffix(strings.TrimRight(row, " "), "1") {
 		t.Errorf("the step's name, where it's from, then its number: %q", row)
 	}
-	if view := ansi.Strip(m.view()); !strings.Contains(view, "RECIPE · 3 steps · unsaved") {
+	if view := ansi.Strip(m.view()); !strings.Contains(view, "RECIPE · 3 steps · not added") {
 		t.Errorf("the heading says how many:\n%s", view)
 	}
 
 	// The numbers work here too, and the list keeps up.
 	m.list.cursor = slices.IndexFunc(m.list.view, func(it item) bool { return it.title == "c" })
 	press("2") // c's own number: it goes, and the cursor stays in place
-	if rows() != "0Run 0Save as… 0Describe 0Clear 1a 2b" {
+	if rows() != "0Run 0Add as… 0Describe 0Clear 1a 2b" {
 		t.Fatalf("rows = %q", rows())
 	}
 	if it := m.list.selected(); it == nil || it.title != "b" {
 		t.Errorf("the cursor should stay put, at %+v", it)
 	}
 	press("4") // past what's left: refused
-	if rows() != "0Run 0Save as… 0Describe 0Clear 1a 2b" {
+	if rows() != "0Run 0Add as… 0Describe 0Clear 1a 2b" {
 		t.Fatalf("rows = %q", rows())
 	}
 
@@ -979,7 +979,7 @@ func TestCurrentRecipeListsTheSteps(t *testing.T) {
 	// says how many steps; ← again to the top, where the row says what's in it
 	// before it's opened.
 	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
-	if it := m.list.selected(); m.opened != "" || it == nil || it.title != "Unsaved recipe" || it.right != "2 steps" {
+	if it := m.list.selected(); m.opened != "" || it == nil || it.title != "New recipe" || it.right != "2 steps" {
 		t.Fatalf("← should land on the current recipe's row, at %+v", it)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
@@ -2231,11 +2231,11 @@ func TestSavingARecipe(t *testing.T) {
 
 	// r opens the current recipe's own list: its steps, numbered, then what
 	// can be done with it, on Run. The heading says how many, and unsaved.
-	if m.opened != openedCurrent || titles() != "Run Save as… Describe Clear one two" || m.list.selected().title != "Run" {
+	if m.opened != openedCurrent || titles() != "Run Add as… Describe Clear one two" || m.list.selected().title != "Run" {
 		t.Fatalf("opened %q, rows %q, at %+v", m.opened, titles(), m.list.selected())
 	}
-	if v := ansi.Strip(m.view()); !strings.Contains(v, "RECIPE · 2 steps · unsaved") {
-		t.Errorf("the heading says how many, and unsaved:\n%s", v)
+	if v := ansi.Strip(m.view()); !strings.Contains(v, "RECIPE · 2 steps · not added") {
+		t.Errorf("the heading says how many, and not added:\n%s", v)
 	}
 
 	// Run just runs: there's nothing to ask.
@@ -2250,7 +2250,7 @@ func TestSavingARecipe(t *testing.T) {
 
 	// Save as… asks for a name, and ← goes back, sending nothing.
 	sent = nil
-	on("Save as…")
+	on("Add as…")
 	right()
 	if m.mode != modeSaveName || !strings.Contains(m.view(), "Name this recipe") || m.word.Value() != "" {
 		t.Fatalf("mode %v, box %q: should ask for a name, the box empty", m.mode, m.word.Value())
@@ -2288,17 +2288,17 @@ func TestSavingARecipe(t *testing.T) {
 	if m.run != nil || len(m.recipe) != 2 || !strings.Contains(m.hint, "Added recipe My flow") {
 		t.Fatalf("run %+v, recipe %d steps, hint %q", m.run, len(m.recipe), m.hint)
 	}
-	if v := ansi.Strip(m.view()); !strings.Contains(v, "saved as My flow") {
+	if v := ansi.Strip(m.view()); !strings.Contains(v, "added as My flow") {
 		t.Errorf("the heading says it's saved:\n%s", v)
 	}
 
 	// Back on the Recipes screen the current one's row has its name, with how
-	// many steps at the right, and it's listed under Saved recipes.
+	// many steps at the right, and it's listed under My recipes.
 	left()
 	if it := m.list.selected(); m.opened != "" || it == nil || it.title != "My flow" || it.right != "2 steps" {
 		t.Fatalf("← from the recipe goes to its row: opened %q, at %+v", m.opened, it)
 	}
-	if !strings.Contains(m.view(), "SAVED RECIPES") {
+	if !strings.Contains(m.view(), "MY RECIPES") {
 		t.Errorf("should list it:\n%s", m.view())
 	}
 
@@ -2352,7 +2352,7 @@ func TestSavingARecipe(t *testing.T) {
 		t.Fatalf("recipe %d steps, run %+v, opened %q, from %q", len(m.recipe), m.run, m.opened, m.from)
 	}
 	sent = nil
-	on("Save as…")
+	on("Add as…")
 	right()
 	if m.word.Value() != "My flow" {
 		t.Errorf("the box starts with its name: %q", m.word.Value())
@@ -2401,7 +2401,7 @@ func TestSavingARecipe(t *testing.T) {
 		t.Errorf("opened %q, at %+v", m.opened, it)
 	}
 
-	// When it's gone, you're back in Saved recipes, on the next one.
+	// When it's gone, you're back in My recipes, on the next one.
 	right()
 	answer(m, true)
 	saved = slices.Delete(saved, 1, 2)
@@ -2436,7 +2436,7 @@ func TestSavingARecipe(t *testing.T) {
 	saved, failed, sent = nil, true, nil
 	m.errMsg = ""
 	m.Update(typed("r"))
-	on("Save as…")
+	on("Add as…")
 	right()
 	m.word.SetValue("Again")
 	right()
@@ -3759,7 +3759,7 @@ func TestRecipesRowWithNothingNumbered(t *testing.T) {
 	}
 	saved = []config.Recipe{{Name: "Deploy", Steps: []string{"x-00000000"}}, {Name: "Tidy", Steps: []string{"x-00000000"}}}
 	got = ansi.Strip(m.infoPane(60))
-	if strings.Contains(got, "2 RECIPES") || !strings.Contains(got, "Deploy · Tidy") || !strings.Contains(got, "2 saved recipes:") || strings.Contains(got, "Current recipe") {
+	if strings.Contains(got, "2 RECIPES") || !strings.Contains(got, "Deploy · Tidy") || !strings.Contains(got, "2 recipes added:") || strings.Contains(got, "Current recipe") {
 		t.Errorf("some added:\n%s", got)
 	}
 }

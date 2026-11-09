@@ -2,7 +2,7 @@
 when: ./*.csproj, ./*.fsproj
 ---
 # User secrets
-Start using .NET user secrets, and list, set and remove them
+Start using Dotnet user secrets, and list, set and remove them
 
 ## List secrets
 Shows the project's development secrets.

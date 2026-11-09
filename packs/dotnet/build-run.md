@@ -2,7 +2,7 @@
 when: ./*.csproj, ./*.fsproj, ./*.sln, ./*.slnx
 ---
 # Build and run
-Restore, build, run, watch, format, clean and publish a .NET project
+Restore, build, run, watch, format, clean and publish a Dotnet project
 
 ## Build
 Restores packages and compiles the project or solution.
@@ -47,7 +47,7 @@ dotnet publish -c <config> -r <rid> <flags>
   - ( ) `win-x64`
   - ( ) `win-arm64`
 - `<flags>` Extra options
-  - [ ] `--self-contained` include the .NET runtime
+  - [ ] `--self-contained` include the Dotnet runtime
   - [ ] `-p:PublishSingleFile=true` single file
 
 ## Restore

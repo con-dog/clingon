@@ -667,7 +667,7 @@ func (f *PackForm) packRows() []formRow {
 	rows := []formRow{
 		{label: "Pack", header: true},
 		{key: "name", label: "Name", value: p.Title, look: mdLook("# ", ""), help: "What the menu calls the pack.", text: func(v string) error { f.pack.Title = v; return nil }},
-		{key: "desc", label: "Desc", value: p.Description, hint: "one line on what's in it", help: "One line on what's in it, shown by clingon pack.", text: func(v string) error { f.pack.Description = v; return nil }},
+		{key: "desc", label: "Description", value: p.Description, hint: "one line on what's in it", help: "One line on what's in it, shown by clingon pack.", text: func(v string) error { f.pack.Description = v; return nil }},
 		{key: "menu", label: "Menu", value: config.SectionName(p.Section), look: frontLook("menu"), help: "Where the menu shows it: one of these, or + New menu for one of your own.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil },
 			text: func(v string) error {
 				s, err := config.SectionSlug(v)
@@ -692,7 +692,7 @@ func (f *PackForm) moduleRows(i int) []formRow {
 	rows := []formRow{
 		{key: k("head"), label: "Module", header: true},
 		{key: k("name"), label: "Name", value: g.Name, look: mdLook("# ", ""), help: "What the menu calls the module.", text: func(v string) error { f.group(i).Name = v; return nil }},
-		{key: k("desc"), label: "Desc", value: g.Description, hint: "what's in it", help: "What's in the module.", text: func(v string) error { f.group(i).Description = v; return nil }},
+		{key: k("desc"), label: "Description", value: g.Description, hint: "what's in it", help: "What's in the module.", text: func(v string) error { f.group(i).Description = v; return nil }},
 		{key: k("needs"), label: "Needs", value: joined(g.Requires), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
 		{key: k("when"), label: "When", value: joined(g.When), look: frontLook("when"), hint: "files, like .git", help: "Files that must be here or in a folder above for these commands, like .git; ./Dockerfile means this folder only.", text: func(v string) error { f.group(i).When = splitComma(v); return nil }},
 		{key: k("remove"), label: "Remove", value: "No", risk: config.RiskWarn, help: "Yes removes the module, and every command in it.", confirm: "Yes", do: func() error {
@@ -740,7 +740,7 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 		{key: k("head"), label: "Command", header: true},
 		{key: k("name"), label: "Name", value: c.Name, look: mdLook("## ", ""), help: "What the menu calls it: letters, digits, spaces and ( ).", text: func(v string) error { f.command(i, j).Name = v; return nil }},
 		{key: k("risk"), label: "Risk", value: risk, icon: riskIcon.Icon, color: riskIcon.Color, help: "Whether clingon asks before it runs: warning asks first; dangerous has you type a short code, then asks.", options: risks, pick: func(v string) error { f.command(i, j).Risk = v; return nil }},
-		{key: k("desc"), label: "Desc", value: c.Desc, look: descLook, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
+		{key: k("desc"), label: "Description", value: c.Desc, look: descLook, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
 		{key: k("needs"), label: "Needs", value: joined(c.Requires), hint: "programs, separated by commas", help: "Programs this command needs, separated by commas.", text: func(v string) error { f.command(i, j).Requires = splitComma(v); return nil }},
 		{key: k("when"), label: "When", value: joined(c.When), hint: "files, like .git", help: "Files that must be here or in a folder above, like .git.", text: func(v string) error { f.command(i, j).When = splitComma(v); return nil }},
 		{key: k("cmd"), label: "Command", value: c.Cmd, look: mdLook("```sh\n", "\n```"), help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
@@ -779,7 +779,7 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 		{key: k("name"), fold: "open", label: "Argument", value: name, look: mdLook("- `", "`"), help: "The blank: where it is in the command. Renaming it renames it there too.", text: func(v string) error {
 			return config.RenameBlank(f.command(i, j), f.blank(i, j, b).Name, v)
 		}},
-		{key: k("q"), label: "Desc", value: a.Prompt, hint: "the question asked", help: "What's asked for " + name + " when the command runs.", text: func(v string) error { f.blank(i, j, b).Prompt = v; return nil }},
+		{key: k("q"), label: "Description", value: a.Prompt, hint: "the question asked", help: "What's asked for " + name + " when the command runs.", text: func(v string) error { f.blank(i, j, b).Prompt = v; return nil }},
 	}
 	if a.Kind() == "secret" {
 		rows = append(rows, formRow{key: k("kind"), label: "Type", value: kind, help: "Its name says it's a secret, token or password: typed hidden, and kept out of your history."})
@@ -875,7 +875,7 @@ func (f *PackForm) choiceRows(i, j, b, o int) []formRow {
 			op.Value = v
 			return nil
 		}},
-		{key: k("label"), label: "Desc", value: opt.Label, hint: "what it means, if it needs saying", help: "Its label, shown beside it in the list.", text: func(v string) error {
+		{key: k("label"), label: "Description", value: opt.Label, hint: "what it means, if it needs saying", help: "Its label, shown beside it in the list.", text: func(v string) error {
 			f.blank(i, j, b).Options[o].Label = v
 			return nil
 		}},
@@ -1392,7 +1392,7 @@ func (f *PackForm) logoColour() string {
 const minPreviewWidth = 100
 
 var (
-	fieldStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#eeeeee")) // 255: a field's value, bright
+	fieldStyle = lipgloss.NewStyle().Foreground(text) // a field's value: the menu's white
 )
 
 // guide is a row's tree guide: what's to the left of it, showing which

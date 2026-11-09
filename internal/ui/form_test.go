@@ -996,12 +996,12 @@ func TestPackFormOpts(t *testing.T) {
 	a := &f.pack.Files[0].Group.Commands[0].Args[0]
 	a.Options[0].Label, a.Default = "the first", "one"
 	f.refresh("0/0/0/0")
-	if p := f.page(); !strings.Contains(p, "▸ Opts      one  · the first · Picked") || strings.Contains(p, "Pick      ") {
+	if p := f.page(); !strings.Contains(p, "▸ Opts         one  · the first · Picked") || strings.Contains(p, "Pick         ") {
 		t.Fatalf("collapsed, a line saying it all:\n%s", p)
 	}
 	press(f, kRight)
 	p := f.page()
-	if !strings.Contains(p, "▾ Opts      one") || !strings.Contains(p, "Value     one") || !strings.Contains(p, "Desc      the first") || !strings.Contains(p, "Pick      Yes") {
+	if !strings.Contains(p, "▾ Opts         one") || !strings.Contains(p, "Value        one") || !strings.Contains(p, "Description  the first") || !strings.Contains(p, "Pick         Yes") {
 		t.Fatalf("→ opens it:\n%s", p)
 	}
 	f.onRow(t, "0/0/0/0/types")
@@ -1011,7 +1011,7 @@ func TestPackFormOpts(t *testing.T) {
 	}
 	f.onRow(t, "0/0/0/0")
 	press(f, kLeft)
-	if p := f.page(); !strings.Contains(p, "▸ Opts      uno") || strings.Contains(p, "Value     uno") {
+	if p := f.page(); !strings.Contains(p, "▸ Opts         uno") || strings.Contains(p, "Value     uno") {
 		t.Errorf("← collapses it:\n%s", p)
 	}
 	f.onRow(t, "0/0/0/1/remove")

@@ -17,7 +17,7 @@ dotnet --info
 
 ## Install a global tool
 > [!WARNING]
-> Installs a .NET tool for every project.
+> Installs a Dotnet tool for every project.
 
 ```sh
 dotnet tool install --global <tool>
@@ -34,7 +34,7 @@ dotnet tool install --global dotnet-ef
 ```
 
 ## Installed SDKs
-Lists every .NET SDK installed and where.
+Lists every Dotnet SDK installed and where.
 
 ```sh
 dotnet --list-sdks
@@ -50,7 +50,7 @@ dotnet dev-certs https --trust
 
 ## Update a global tool
 > [!WARNING]
-> Updates a global .NET tool to its latest version.
+> Updates a global Dotnet tool to its latest version.
 
 ```sh
 dotnet tool update --global <tool>

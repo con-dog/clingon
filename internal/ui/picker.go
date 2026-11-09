@@ -27,7 +27,7 @@ type item struct {
 	pinned   bool   // in the list's foot, kept in view under the rest when the list doesn't fit (clingon's own section)
 	risk     string // config.RiskWarn or RiskDanger: drawn with a mark (danger in red)
 	where    string // a search result's section › group, drawn faint after it
-	detail   string // with header: drawn faint after the heading, as written: "4 steps · unsaved"
+	detail   string // with header: drawn faint after the heading, as written: "4 steps · not added"
 	right    string // drawn dim at the row's right end: a recipe's "4 steps", a step's pack
 	disabled bool   // drawn greyed out; can be highlighted but not opened
 	missing  string // a section's tools that aren't installed: drawn dim, marked !, but it opens as usual
@@ -322,7 +322,7 @@ func (p *picker) move(delta int) {
 }
 
 // nestedOnly says whether a list's sections are parents with children under them,
-// rather than headings: a list of packs and their subpacks.
+// rather than headings: a list of packs and their modules.
 func (p *picker) nestedOnly() bool {
 	nested := false
 	for _, it := range p.view {
