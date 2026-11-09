@@ -1,8 +1,6 @@
 # clingon
 
-<video src="media/clingon-intro.mp4" controls muted playsinline width="100%"></video>
-
-[▶ Watch the intro](media/clingon-intro.mp4)
+![clingon: pick commands from a menu, run them in a real shell beside it](media/clingon-intro.gif)
 
 **A menu of the commands you can never remember, next to a real shell that runs them.**
 
