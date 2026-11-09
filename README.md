@@ -1,6 +1,6 @@
 # clingon
 
-![clingon: pick commands from a menu, run them in a real shell beside it](media/clingon-intro.gif)
+![clingon: pick commands from a menu, run them in a real shell beside it](media/clingon-intro.gif.png)
 
 **A menu of the commands you can never remember, next to a real shell that runs them.**
 
