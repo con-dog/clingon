@@ -33,4 +33,3 @@ Try a release locally without publishing: `goreleaser release --snapshot --clean
   Unsigned binaries in casks get quarantined by Gatekeeper.
 - Once the project is popular enough for homebrew-core (roughly 75+ stars and some
   outside users), submitting it there makes it a plain `brew install clingon`.
-- To re-record the README GIF: `brew install vhs && vhs demo.tape`.

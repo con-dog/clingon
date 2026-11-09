@@ -2,8 +2,6 @@
 
 **A menu of the commands you can never remember, next to a real shell that runs them.**
 
-<!-- ![clingon demo](demo.gif): add back once `vhs demo.tape` has made it -->
-
 Type `clingon`. Commands open on the left and your shell on the right. Pick a command, fill in the blanks, and it's typed into your shell and run, as if you'd typed it yourself. So `cd` stays changed, exports stay exported, your aliases work, and `↑` brings the command back.
 
 ## Install
