@@ -30,8 +30,8 @@ type item struct {
 	detail   string // with header: drawn faint after the heading, as written: "4 steps · unsaved"
 	right    string // drawn dim at the row's right end: a recipe's "4 steps", a step's pack
 	disabled bool   // drawn greyed out; can be highlighted but not opened
-	missing  string // a section's tools that aren't installed: drawn dim, naming them, but it opens as usual
-	off      string // with disabled: why, said short after it: "no Dockerfile", "all added"
+	missing  string // a section's tools that aren't installed: drawn dim, marked !, but it opens as usual
+	unmet    bool   // a command whose when isn't met here: marked !, the info pane says what it needs
 	indent   bool   // sits under the row above it
 	note     bool   // with header: a faint line of text, not a heading
 	stepAt   int    // the one recipe position this row is, in the recipe's own list
@@ -828,11 +828,8 @@ func (p *picker) row(it item, active bool, width int) string {
 	case it.missing != "":
 		title = dimStyle.Render(title)
 	}
-	if room := width - ansi.StringWidth(prefix) - ansi.StringWidth(it.title) - 3; it.off != "" && room > 4 {
-		title += faintStyle.Render(" · " + ansi.Truncate(it.off, room, "…"))
-	}
-	if room := width - ansi.StringWidth(prefix) - ansi.StringWidth(it.title) - 9; it.missing != "" && room > 4 {
-		title += faintStyle.Render(" · needs " + ansi.Truncate(it.missing, room, "…"))
+	if it.missing != "" || it.unmet { // missing what it needs, or a file it looks for: the info pane says which
+		title += " " + warnStyle.Render("!")
 	}
 	if room := width - ansi.StringWidth(prefix) - ansi.StringWidth(it.title) - 3; it.where != "" && room > 4 {
 		title += dimStyle.Render(" · " + ansi.Truncate(it.where, room, "…"))

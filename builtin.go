@@ -90,20 +90,18 @@ func builtinSections() []*config.Section {
 	}
 	noLocal := unless(len(local) > 0, "You don't have any packs of your own yet: create one first.")
 	noneInstalled := unless(len(installed) > 0, "You haven't added any packs.")
-	// What each says short, on the command's row, after its name.
-	noLocalOff, noneInstalledOff := "none of your own yet", "none added"
 	sections := []*config.Section{
 		{Name: "Packs", Icon: config.Logos["puzzle"], Color: packsYellow, Category: "Clingon", Desc: "Add ready-made commands, or make packs of your own.", Groups: []config.Group{
 			{Name: "My packs", Commands: []config.Command{
 				{Editor: true, Name: "Create a pack", Desc: "Opens a new pack of your own as a form, starting from a working example: fill it in, then esc when you're done, and it asks whether to save it.", Cmd: self + " pack create --menu"},
-				{Name: "Describe a pack", Disabled: noLocal, Off: noLocalOff, Desc: "Prints every command in <pack> and exactly what each one runs.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
+				{Name: "Describe a pack", Disabled: noLocal, Desc: "Prints every command in <pack> and exactly what each one runs.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(local)},
 				}},
-				{Editor: true, Name: "Edit a pack", Disabled: noLocal, Off: noLocalOff, Desc: "Opens <pack> as a form, every part of it on one page: change it, then esc when you're done, and it asks whether to save the changes.", Cmd: self + " pack edit <pack> --menu", Args: []config.Arg{
+				{Editor: true, Name: "Edit a pack", Disabled: noLocal, Desc: "Opens <pack> as a form, every part of it on one page: change it, then esc when you're done, and it asks whether to save the changes.", Cmd: self + " pack edit <pack> --menu", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(local)},
 				}},
-				{Name: "List your packs", Disabled: noLocal, Off: noLocalOff, Desc: "Lists your own packs.", Cmd: self + " pack list --mine"},
-				{Name: "Remove packs", Disabled: noLocal, Off: noLocalOff, Desc: "Deletes <pack> and every command in it, for good.", Risk: config.RiskDanger, Cmd: self + " pack remove <pack>", Args: []config.Arg{
+				{Name: "List your packs", Disabled: noLocal, Desc: "Lists your own packs.", Cmd: self + " pack list --mine"},
+				{Name: "Remove packs", Disabled: noLocal, Desc: "Deletes <pack> and every command in it, for good.", Risk: config.RiskDanger, Cmd: self + " pack remove <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(local)},
 				}},
 			}},
@@ -111,25 +109,25 @@ func builtinSections() []*config.Section {
 				{Name: "How packs work", Desc: "Prints how to write a pack of your own: the folders, the file format and an example to copy.", Cmd: self + " pack guide"},
 			}},
 			{Name: "Curated packs", Commands: []config.Command{
-				{Name: "Add packs", Disabled: unless(len(available) > 0, "Every pack is added already."), Off: "all added", Desc: "Adds ready-made commands for <pack>.", Cmd: self + " pack add <pack>", Args: []config.Arg{
+				{Name: "Add packs", Disabled: unless(len(available) > 0, "Every pack is added already."), Desc: "Adds ready-made commands for <pack>.", Cmd: self + " pack add <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(available)},
 				}},
 				{Name: "List available packs", Desc: "Lists the packs you can add and what each one covers.", Cmd: self + " pack available"},
 				{Name: "Describe a pack", Desc: "Prints every command in <pack> and exactly what each one runs, whether you have it or not.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(inspectable(local, installed, all))},
 				}},
-				{Name: "List added packs", Disabled: noneInstalled, Off: noneInstalledOff, Desc: "Lists the packs you've added.", Cmd: self + " pack list --remote"},
-				{Name: "Remove packs", Disabled: noneInstalled, Off: noneInstalledOff, Desc: "Removes <pack>, taking its commands out of the menu.", Risk: config.RiskWarn, Cmd: self + " pack remove <pack>", Args: []config.Arg{
+				{Name: "List added packs", Disabled: noneInstalled, Desc: "Lists the packs you've added.", Cmd: self + " pack list --remote"},
+				{Name: "Remove packs", Disabled: noneInstalled, Desc: "Removes <pack>, taking its commands out of the menu.", Risk: config.RiskWarn, Cmd: self + " pack remove <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(installed)},
 				}},
-				{Name: "Update packs", Disabled: unless(len(ups) > 0, "Every added pack is up to date."), Off: "all up to date", Desc: "Brings your added packs up to date, replacing their files in packs/remote, and removes any clingon no longer ships: changes you made to those files are lost.", Risk: config.RiskWarn, Cmd: self + " pack update"},
+				{Name: "Update packs", Disabled: unless(len(ups) > 0, "Every added pack is up to date."), Desc: "Brings your added packs up to date, replacing their files in packs/remote, and removes any clingon no longer ships: changes you made to those files are lost.", Risk: config.RiskWarn, Cmd: self + " pack update"},
 			}},
 		}},
 		{Name: "General", Icon: config.Logos["gear"], Color: generalGrey, Category: "Clingon", Desc: "Check, update and look after clingon itself.", Groups: []config.Group{
 			{Name: "Healthchecks", Commands: []config.Command{
 				{Name: "Run all checks", Desc: "Checks tmux, your packs and the tools every added pack needs.", Cmd: self + " doctor"},
 				{Name: "Show last crash", Desc: "Shows why clingon last crashed, with the trace to put in a bug report.", Cmd: self + " crash"},
-				{Name: "Check a pack's tools", Disabled: noneInstalled, Off: noneInstalledOff, Desc: "Checks that the tools an added pack needs are on your PATH.", Cmd: self + " doctor <pack>", Args: []config.Arg{
+				{Name: "Check a pack's tools", Disabled: noneInstalled, Desc: "Checks that the tools an added pack needs are on your PATH.", Cmd: self + " doctor <pack>", Args: []config.Arg{
 					{Name: "pack", Options: packOptions(installed), Desc: "Checking <pack>."},
 				}},
 				{Name: "Check all packs", Desc: "Checks every pack, yours and added, for mistakes.", Cmd: self + " check"},

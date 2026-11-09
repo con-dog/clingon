@@ -4083,18 +4083,40 @@ func TestClingonPinnedAtTheFoot(t *testing.T) {
 	}
 }
 
-// A section's missing tools are said on its row, "needs x", and not again
-// in the info pane under it, which lists its commands.
-func TestInfoDoesNotRepeatNeeds(t *testing.T) {
-	s := config.Section{Name: "Gone", Icon: "•", Category: config.Other, Desc: "Runs things.", Groups: []config.Group{{Name: "Basics", Description: "The usual.", Commands: []config.Command{{Name: "Run", Cmd: "true"}}}}, Needs: []string{"clingon-test-nope"}}
-	m := New(Options{Config: &config.Config{Sections: []config.Section{s}}})
+// A pack missing a tool it needs is marked ! on its row, and its info says
+// which, before what it's for. A command whose when isn't met here is marked
+// ! too, and its info says what it looks for, then what it does.
+func TestMissingNeedsAndWhen(t *testing.T) {
+	s := config.Section{Name: "Gone", Icon: "•", Category: config.Other, Desc: "Runs things.", Groups: []config.Group{{Name: "Basics", Description: "The usual.", Commands: []config.Command{
+		{Name: "Run", Cmd: "true"},
+		{Name: "Build", Cmd: "docker build .", Desc: "Builds it.", When: []string{"./Dockerfile"}},
+	}}}, Needs: []string{"clingon-test-nope"}}
+	dir := t.TempDir()
+	m := New(Options{Config: &config.Config{Sections: []config.Section{s}}, Dir: func() string { return dir }})
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	if len(m.missingFor(&m.opt.Config.Sections[0])) == 0 {
 		t.Fatal("the test's tool should be missing")
 	}
-	info := ansi.Strip(m.sectionInfo(&m.opt.Config.Sections[0], 60, 10))
-	if strings.Contains(strings.ToLower(info), "needs") || !strings.Contains(info, "Runs things.") {
-		t.Errorf("what it's for, not the tools again:\n%s", info)
+	if row := ansi.Strip(m.list.row(m.list.view[slices.IndexFunc(m.list.view, func(it item) bool { return it.title == "Gone" })], false, 40)); !strings.HasSuffix(strings.TrimRight(row, " "), "Gone !") || strings.Contains(row, "needs") {
+		t.Errorf("the pack's row, marked !: %q", row)
+	}
+	info := ansi.Strip(m.sectionInfo(&m.opt.Config.Sections[0], 60, 3))
+	if !strings.Contains(info, "Needs clingon-test-nope (not installed)") || !strings.Contains(info, "Runs things.") ||
+		strings.Index(info, "Needs") > strings.Index(info, "Runs things.") {
+		t.Errorf("what it needs, then what it's for:\n%s", info)
+	}
+
+	m.showSection(&m.opt.Config.Sections[0])
+	m.list.cursor = slices.IndexFunc(m.list.view, func(it item) bool { return it.title == "Build" })
+	if row := ansi.Strip(m.list.row(m.list.view[m.list.cursor], false, 40)); !strings.Contains(row, "Build !") {
+		t.Errorf("the command's row, marked !: %q", row)
+	}
+	if row := ansi.Strip(m.list.row(m.list.view[slices.IndexFunc(m.list.view, func(it item) bool { return it.title == "Run" })], false, 40)); strings.Contains(row, "!") {
+		t.Errorf("one that's fine isn't marked: %q", row)
+	}
+	pane := strings.Join(strings.Fields(ansi.Strip(m.infoPane(60))), " ")
+	if !strings.Contains(pane, "Needs Dockerfile in this folder. No inputs: Builds it.") || strings.Contains(pane, "Not available") {
+		t.Errorf("what it looks for, then what it does:\n%s", pane)
 	}
 }
 
@@ -4303,29 +4325,5 @@ func TestStepsInfoOneARow(t *testing.T) {
 	lines = strings.Split(ansi.Strip(stepsInfo(steps, 40, 5)), "\n")
 	if len(lines) != 5 || !strings.Contains(lines[4], "… 5 more") {
 		t.Errorf("five rows: four, then how many more:\n%s", strings.Join(lines, "\n"))
-	}
-}
-
-// A greyed-out command says why on its row, short, as a pack says what it
-// needs: the file it looks for, or what clingon's own says.
-func TestGreyedOutSaysWhy(t *testing.T) {
-	dir := t.TempDir()
-	cmds := []config.Command{
-		{Name: "Up", Cmd: "docker compose up", When: []string{"compose.yaml", "compose.yml"}},
-		{Name: "Build image", Cmd: "docker build .", When: []string{"./Dockerfile"}},
-		{Name: "Add packs", Cmd: "x", Disabled: "Every pack is added already.", Off: "all added"},
-		{Name: "Fine", Cmd: "ls"},
-	}
-	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "Docker", Icon: "•", Category: config.Other, Commands: cmds}}}, Dir: func() string { return dir }})
-	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
-	m.showSection(&m.opt.Config.Sections[0])
-	list := ansi.Strip(m.list.render(60, 20))
-	for _, want := range []string{"Up · no compose.yaml or similar", "Build image · no Dockerfile", "Add packs · all added"} {
-		if !strings.Contains(list, want) {
-			t.Errorf("want %q in:\n%s", want, list)
-		}
-	}
-	if strings.Contains(list, "Fine ·") {
-		t.Errorf("one that can be used says nothing:\n%s", list)
 	}
 }
