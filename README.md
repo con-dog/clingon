@@ -216,7 +216,7 @@ If you use Terminal, also delete any profiles named "clingon" in Settings › Pr
 ## Hacking on clingon
 
 ```sh
-go build -o clingon . && ./clingon
+go build -o clingon ./cmd/clingon && ./clingon
 go test ./...
 ```
 

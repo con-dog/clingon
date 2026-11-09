@@ -5,7 +5,8 @@ version: 2
 project_name: clingon
 
 builds:
-  - env: [CGO_ENABLED=0]
+  - main: ./cmd/clingon
+    env: [CGO_ENABLED=0]
     goos: [darwin]
     goarch: [amd64, arm64]
     flags: [-trimpath]
