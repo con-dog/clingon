@@ -586,20 +586,20 @@ func TestPackFormPreviewsItsFile(t *testing.T) {
 		return true
 	}
 	f.onRow(t, "name")
-	if p := plain(); !order(p, "_PACK.MD", "# Demo", "EXAMPLES.MD", "## Say hello") {
+	if p := plain(); !order(p, "_pack.md", "# Demo", "examples.md", "## Say hello") {
 		t.Errorf("on the pack's rows, the pack and its first module:\n%s", p)
 	}
 	f.onRow(t, "1/name")
-	if p := plain(); !order(p, "_PACK.MD", "# Demo", "MORE.MD", "# More") || strings.Contains(p, "EXAMPLES.MD") {
+	if p := plain(); !order(p, "_pack.md", "# Demo", "more.md", "# More") || strings.Contains(p, "examples.md") {
 		t.Errorf("in the second module, it under the pack:\n%s", p)
 	}
 	f.onRow(t, "needs")
-	if p := plain(); !strings.Contains(p, "MORE.MD") {
+	if p := plain(); !strings.Contains(p, "more.md") {
 		t.Errorf("back on the pack's rows, the module last in:\n%s", p)
 	}
 	f.onRow(t, "1/0/cmd")
 	got := strings.Join(f.preview(60, 40), "\n")
-	if bar, mod := strings.Index(got, cursorBar(cursorStyle)), strings.Index(got, "MORE.MD"); strings.Count(got, cursorBar(cursorStyle)) != 1 || bar < mod {
+	if bar, mod := strings.Index(got, cursorBar(cursorStyle)), strings.Index(got, "more.md"); strings.Count(got, cursorBar(cursorStyle)) != 1 || bar < mod {
 		t.Errorf("the command's line marked, in the module's file only:\n%s", got)
 	}
 }

@@ -678,7 +678,7 @@ func (f *PackForm) packRows() []formRow {
 			}},
 		{key: "logo", label: "Logo", value: config.TitleWords(p.Logo), look: frontLook("logo"), icon: config.Logos[p.Logo], color: f.logoColour(), help: "Its icon in the menu.", options: logos, pick: func(v string) error { f.pack.Logo = v; return nil }},
 		{key: "tint", label: "Tint", value: config.TitleWords(colour), look: frontLook("tint"), icon: slotIcon("●"), color: colourHex, help: "The logo's colour.", options: colours, pick: func(v string) error { f.pack.Color = v; return nil }},
-		{key: "needs", label: "Requires", value: joined(p.Needs), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs the pack needs, separated by commas: the status bar warns you while one's missing.", text: func(v string) error { f.pack.Needs = splitComma(v); return nil }},
+		{key: "needs", label: "Needs", value: joined(p.Needs), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs the pack needs, separated by commas: the status bar warns you while one's missing.", text: func(v string) error { f.pack.Needs = splitComma(v); return nil }},
 	}
 	if f.folded(-1, -1) {
 		return foldTo(rows, "")
@@ -693,8 +693,8 @@ func (f *PackForm) moduleRows(i int) []formRow {
 		{key: k("head"), label: "Module", header: true},
 		{key: k("name"), label: "Name", value: g.Name, look: mdLook("# ", ""), help: "What the menu calls the module.", text: func(v string) error { f.group(i).Name = v; return nil }},
 		{key: k("desc"), label: "Desc", value: g.Description, hint: "what's in it", help: "What's in the module.", text: func(v string) error { f.group(i).Description = v; return nil }},
-		{key: k("needs"), label: "Requires", value: joined(g.Requires), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
-		{key: k("when"), label: "Only if", value: joined(g.When), look: frontLook("when"), hint: "files, like .git", help: "Files that must be here or in a folder above for these commands, like .git; ./Dockerfile means this folder only.", text: func(v string) error { f.group(i).When = splitComma(v); return nil }},
+		{key: k("needs"), label: "Needs", value: joined(g.Requires), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
+		{key: k("when"), label: "When", value: joined(g.When), look: frontLook("when"), hint: "files, like .git", help: "Files that must be here or in a folder above for these commands, like .git; ./Dockerfile means this folder only.", text: func(v string) error { f.group(i).When = splitComma(v); return nil }},
 		{key: k("remove"), label: "Remove", value: "No", risk: config.RiskWarn, help: "Yes removes the module, and every command in it.", confirm: "Yes", do: func() error {
 			f.pack.Files = slices.Delete(f.pack.Files, i, i+1)
 			return nil
@@ -741,8 +741,8 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 		{key: k("name"), label: "Name", value: c.Name, look: mdLook("## ", ""), help: "What the menu calls it: letters, digits, spaces and ( ).", text: func(v string) error { f.command(i, j).Name = v; return nil }},
 		{key: k("risk"), label: "Risk", value: risk, icon: riskIcon.Icon, color: riskIcon.Color, help: "Whether clingon asks before it runs: warning asks first; dangerous has you type a short code, then asks.", options: risks, pick: func(v string) error { f.command(i, j).Risk = v; return nil }},
 		{key: k("desc"), label: "Desc", value: c.Desc, look: descLook, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
-		{key: k("needs"), label: "Requires", value: joined(c.Requires), hint: "programs, separated by commas", help: "Programs this command needs, separated by commas.", text: func(v string) error { f.command(i, j).Requires = splitComma(v); return nil }},
-		{key: k("when"), label: "Only if", value: joined(c.When), hint: "files, like .git", help: "Files that must be here or in a folder above, like .git.", text: func(v string) error { f.command(i, j).When = splitComma(v); return nil }},
+		{key: k("needs"), label: "Needs", value: joined(c.Requires), hint: "programs, separated by commas", help: "Programs this command needs, separated by commas.", text: func(v string) error { f.command(i, j).Requires = splitComma(v); return nil }},
+		{key: k("when"), label: "When", value: joined(c.When), hint: "files, like .git", help: "Files that must be here or in a folder above, like .git.", text: func(v string) error { f.command(i, j).When = splitComma(v); return nil }},
 		{key: k("cmd"), label: "Command", value: c.Cmd, look: mdLook("```sh\n", "\n```"), help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
 			c := f.command(i, j)
 			c.Cmd = v
@@ -1866,7 +1866,7 @@ func fit2(lines []string, h int) []string {
 func filePreview(name, text string, on map[int]bool, near, w, h int) []string {
 	pad := strings.Repeat(" ", panelPad)
 	rule := pad + faintStyle.Render(strings.Repeat("─", w))
-	head := []string{pad + labelStyle.Render(ansi.Truncate(strings.ToUpper(name), w, "…")), rule}
+	head := []string{pad + accentStyle.Render(ansi.Truncate(name, w, "…")), rule} // as it is: a file's name is case-sensitive
 	var body []string
 	first, last := -1, -1 // the marked rows, first and last
 	plain := strings.Split(text, "\n")
