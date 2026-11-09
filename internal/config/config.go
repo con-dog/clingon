@@ -104,6 +104,7 @@ type Command struct {
 	When     []string `yaml:"when"`     // greyed out unless one of these files is here or in a folder above (./x: here only)
 	Args     []Arg    `yaml:"args"`
 	Disabled string   `yaml:"-"` // why it can't be used right now: shown greyed out
+	Off      string   `yaml:"-"` // that, said short on its row after it: "all added"
 	Editor   bool     `yaml:"-"` // opens an editor in the shell: focus goes there while it's open
 	Source   string   `yaml:"-"` // the pack file it's from: with its heading, what a recipe links to
 	Line     int      `yaml:"-"` // its heading's line in that file, from 1

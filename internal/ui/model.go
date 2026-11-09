@@ -278,7 +278,7 @@ func (m *Model) showRoot(focus string) {
 		add := func(where string, cmds []config.Command) {
 			for i := range cmds {
 				c := &cmds[i]
-				search = append(search, item{title: c.Name, where: where, desc: s.Name, keywords: c.Cmd, risk: c.Risk, disabled: m.unavailable(c) != "", ref: cmdRef{s.Name, s, c}})
+				search = append(search, item{title: c.Name, where: where, desc: s.Name, keywords: c.Cmd, risk: c.Risk, disabled: m.offNote(c) != "", off: m.offNote(c), ref: cmdRef{s.Name, s, c}})
 			}
 		}
 		add(s.Name, s.Commands)
@@ -442,7 +442,7 @@ func (m *Model) showSection(s *config.Section) {
 	add := func(cmds []config.Command) {
 		for i := range cmds {
 			c := &cmds[i]
-			items = append(items, item{title: c.Name, keywords: c.Cmd, risk: c.Risk, disabled: m.unavailable(c) != "", ref: cmdRef{s.Name, s, c}})
+			items = append(items, item{title: c.Name, keywords: c.Cmd, risk: c.Risk, disabled: m.offNote(c) != "", off: m.offNote(c), ref: cmdRef{s.Name, s, c}})
 		}
 	}
 	if s != m.recipesSection() {
@@ -501,6 +501,18 @@ func (m *Model) look() {
 
 // unavailable says why a command can't be used here, or "": it doesn't
 // fit this folder or this setup. Such rows are greyed out and skipped.
+// offNote is why c can't be used right now, said short for its row after
+// its name, as a pack's row says what it needs: "" if it can.
+func (m *Model) offNote(c *config.Command) string {
+	switch {
+	case c.Disabled != "" && c.Off != "":
+		return c.Off
+	case c.Disabled != "":
+		return "not now"
+	}
+	return m.here.UnmetShort(c)
+}
+
 func (m *Model) unavailable(c *config.Command) string {
 	if c.Disabled != "" {
 		return c.Disabled
@@ -552,7 +564,8 @@ func (m *Model) regrey() {
 	for _, l := range [][]item{m.list.items, m.list.view, m.list.search} {
 		for i := range l {
 			if r, ok := l[i].ref.(cmdRef); ok {
-				l[i].disabled = m.unavailable(r.cmd) != ""
+				l[i].off = m.offNote(r.cmd)
+				l[i].disabled = l[i].off != ""
 			}
 		}
 	}
@@ -1160,7 +1173,7 @@ func (m *Model) recipeItems() []item {
 // its pack after it, and its number in the badges' column at the right, as
 // every list numbers commands.
 func (m *Model) stepItem(n int, c cmdRef, ref any) item {
-	return item{title: c.cmd.Name, stepAt: n + 1, where: c.section, keywords: c.cmd.Cmd, risk: c.cmd.Risk, disabled: m.unavailable(c.cmd) != "", ref: ref}
+	return item{title: c.cmd.Name, stepAt: n + 1, where: c.section, keywords: c.cmd.Cmd, risk: c.cmd.Risk, disabled: m.offNote(c.cmd) != "", off: m.offNote(c.cmd), ref: ref}
 }
 
 // recipeDetail is what a recipe's heading says after its name: how many

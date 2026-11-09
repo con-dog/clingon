@@ -4305,3 +4305,27 @@ func TestStepsInfoOneARow(t *testing.T) {
 		t.Errorf("five rows: four, then how many more:\n%s", strings.Join(lines, "\n"))
 	}
 }
+
+// A greyed-out command says why on its row, short, as a pack says what it
+// needs: the file it looks for, or what clingon's own says.
+func TestGreyedOutSaysWhy(t *testing.T) {
+	dir := t.TempDir()
+	cmds := []config.Command{
+		{Name: "Up", Cmd: "docker compose up", When: []string{"compose.yaml", "compose.yml"}},
+		{Name: "Build image", Cmd: "docker build .", When: []string{"./Dockerfile"}},
+		{Name: "Add packs", Cmd: "x", Disabled: "Every pack is added already.", Off: "all added"},
+		{Name: "Fine", Cmd: "ls"},
+	}
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "Docker", Icon: "•", Category: config.Other, Commands: cmds}}}, Dir: func() string { return dir }})
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	list := ansi.Strip(m.list.render(60, 20))
+	for _, want := range []string{"Up · no compose.yaml or similar", "Build image · no Dockerfile", "Add packs · all added"} {
+		if !strings.Contains(list, want) {
+			t.Errorf("want %q in:\n%s", want, list)
+		}
+	}
+	if strings.Contains(list, "Fine ·") {
+		t.Errorf("one that can be used says nothing:\n%s", list)
+	}
+}

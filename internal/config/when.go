@@ -36,6 +36,20 @@ func (h *Here) Unmet(c *Command) string {
 	return "Needs " + strings.Join(names, " or ") + where
 }
 
+// UnmetShort is Unmet said short, for the command's row: the first file it
+// looks for, "no Dockerfile", or "no compose.yaml or similar" when it'd take
+// any of several. "" if it can be used here.
+func (h *Here) UnmetShort(c *Command) string {
+	if h.Unmet(c) == "" {
+		return ""
+	}
+	say := "no " + strings.TrimPrefix(c.When[0], "./")
+	if len(c.When) > 1 {
+		say += " or similar"
+	}
+	return say
+}
+
 func (h *Here) found(pat string) bool {
 	if v, ok := h.seen[pat]; ok {
 		return v
