@@ -1949,9 +1949,6 @@ func (m *Model) accept(v string) tea.Cmd {
 	editing := ""
 	if c.Editor && len(c.Args) > 0 {
 		editing = j.vals[c.Args[0].Name] + " · esc when done" // the pack form's key
-		if strings.Contains(c.Cmd, "--files") {
-			editing = j.vals[c.Args[0].Name] + " in micro · Ctrl-Q when done"
-		}
 	}
 	return m.finish(pending{editor: c.Editor, editing: editing, section: j.ref.section, sec: j.ref.sec, name: c.Name, cmd: tmpl.Render(c.Cmd, c.Known, vals),
 		shown: tmpl.Render(c.Cmd, c.Known, shown), risk: c.Risk, desc: desc})
@@ -2674,14 +2671,11 @@ func formNameTick() tea.Cmd {
 // there with it.
 func (m *Model) editingAway() bool { return m.blurred && m.busy != "" && m.editing != "" }
 
-// editingInfo is the info pane while you're editing in the shell, as a
-// card: what's being edited, and how you're done.
+// editingInfo is the info pane while you're editing a pack in the form, as
+// a card: what's being edited, and how you're done.
 func (m *Model) editingInfo(w, n int) string {
 	what, how, _ := strings.Cut(m.editing, " · ")
-	say := upperFirst(how) + " in the shell, on the right."
-	if m.form != nil {
-		say = upperFirst(how) + " in the form: it asks then whether to save your changes."
-	}
+	say := upperFirst(how) + " in the form: it asks then whether to save your changes."
 	return card(dimStyle.Render("Editing:")+" "+lipgloss.NewStyle().Bold(true).Render(what), say, w, n) // what's being done, quiet; what, bright
 }
 
@@ -3390,7 +3384,7 @@ func bar(bg color.Color, msg string, w int) string {
 	return st.Render(ansi.Truncate(msg, max(w-2, 0), "…"))
 }
 
-// editingBar is the bar while a pack's open in the form or micro beside the
+// editingBar is the bar while a pack's open in the form beside the
 // menu: on the quiet band the keys have, as they look when browsing, what's
 // being edited and the keys for it.
 func (m *Model) editingBar(w int) string {
@@ -3398,7 +3392,7 @@ func (m *Model) editingBar(w int) string {
 	if len(keys) > 0 && strings.HasPrefix(keys[0], config.FormIssuePrefix) { // a change it refused: why
 		return bar(orange, "✗ "+strings.TrimPrefix(keys[0], config.FormIssuePrefix), w)
 	}
-	if m.form == nil || len(keys) == 0 { // micro, in the shell: how you're done there
+	if m.form == nil || len(keys) == 0 { // the form, before it's said its keys: how you're done there
 		_, how, _ := strings.Cut(m.editing, " · ")
 		keys = []string{strings.TrimSuffix(how, " when done") + " done"}
 		if m.opt.FocusMenu != nil {

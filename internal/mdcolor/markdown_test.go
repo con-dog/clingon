@@ -1,4 +1,4 @@
-package micro
+package mdcolor
 
 import (
 	"os"
@@ -26,7 +26,7 @@ func TestMarkdownKeepsTheText(t *testing.T) {
 	}
 }
 
-// The same colours micro uses for the file (checked against micro itself):
+// The menu's colours for what each line is:
 // the command is coloured as the menu colours it.
 func TestMarkdownColoursWhatMatters(t *testing.T) {
 	src := "---\nwhen: .git\n---\n# Undo\n\n## Hard reset\n> [!CAUTION]\n> Throws it away.\n\n```sh needs=git\ngit reset --hard | grep \"<branch>\"\n```\n\n- `<branch>` Which branch\n  - (x) `main`\n"

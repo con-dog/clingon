@@ -13,7 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/con-dog/clingon/internal/config"
-	"github.com/con-dog/clingon/internal/micro"
+	"github.com/con-dog/clingon/internal/mdcolor"
 	"github.com/con-dog/clingon/internal/ui"
 )
 
@@ -24,7 +24,7 @@ const packUsage = `Usage:
   clingon pack remove NAME...    remove packs or single modules (curated or your own)
   clingon pack update [NAME...]  bring added packs up to date
   clingon pack create [NAME]     start your own pack, as a form (or NAME LOGO TINT)
-  clingon pack edit NAME         edit your pack, as a form (--files: its Markdown, in micro)
+  clingon pack edit NAME         edit your pack, as a form
   clingon pack modules NAME      list the modules in your pack
   clingon pack describe NAME     print a pack's files, whether you have it or not
   clingon pack guide             how to write a pack: the folders and the format
@@ -42,7 +42,7 @@ func packCmd(args []string) error {
 	}
 	var rest []string
 	var names func(config.Pack) string // how to print a list as names, not as a card
-	remoteOnly, localOnly, files, menu := false, false, false, false
+	remoteOnly, localOnly, menu := false, false, false
 	for _, a := range args[1:] {
 		switch a {
 		case "--names":
@@ -53,8 +53,6 @@ func packCmd(args []string) error {
 			remoteOnly = true
 		case "--mine":
 			localOnly = true
-		case "--files": // edit the pack's Markdown in micro, not with the form
-			files = true
 		case "--menu": // the form was opened from the menu, which asks whether to save
 			menu = true
 		default:
@@ -160,9 +158,6 @@ func packCmd(args []string) error {
 		if err := config.NewPackWithLogo(name, logo, color); err != nil {
 			return err
 		}
-		if _, err := exec.LookPath("micro"); err != nil { // it won't open, so say it's made now
-			say(ok, "created %s", config.PackPath(name))
-		}
 		return formEdit(name, "created", menu)
 
 	case "remove", "rm":
@@ -245,9 +240,6 @@ func packCmd(args []string) error {
 		if err != nil {
 			return err
 		}
-		if files {
-			return editPack(ref)
-		}
 		return formEdit(ref, "saved", menu)
 
 	case "guide":
@@ -262,8 +254,8 @@ func packCmd(args []string) error {
 		if err != nil {
 			return err
 		}
-		if isTerm() { // in micro's colours, in a box; to a file or a pipe it's the file as it is
-			sayBoxed(ref, micro.Markdown(string(data)))
+		if isTerm() { // in the menu's colours, in a box; to a file or a pipe it's the file as it is
+			sayBoxed(ref, mdcolor.Markdown(string(data)))
 			return nil
 		}
 		_, err = os.Stdout.Write(data)

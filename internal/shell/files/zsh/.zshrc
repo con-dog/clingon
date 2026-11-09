@@ -38,7 +38,7 @@ _clingon_prompt() {
   RPROMPT=''
 }
 # Typed commands in clingon's colours, if a highlighting plugin is loaded: the
-# same as a command in the menu, in micro and in `clingon pack guide` (programs
+# same as a command in the menu, the form's preview and `clingon pack guide` (programs
 # green, flags periwinkle, strings tan, operators grey). Only in clingon's shell.
 () {
   local -A want=(

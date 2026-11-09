@@ -213,7 +213,7 @@ func TestShiftJumpsBetweenHeadings(t *testing.T) {
 
 func TestMenuLocksWhileShellIsBusy(t *testing.T) {
 	sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{
-		{Name: "Edit a pack", Cmd: "micro x"}, {Name: "Other", Cmd: "ls"},
+		{Name: "Edit a pack", Cmd: "vim x"}, {Name: "Other", Cmd: "ls"},
 	}}
 	var sent []string
 	release := make(chan bool)
@@ -222,7 +222,7 @@ func TestMenuLocksWhileShellIsBusy(t *testing.T) {
 		WaitIdle: func() bool { return <-release }})
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
 	m.showSection(&m.opt.Config.Sections[0])
-	_, cmds := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // runs "micro x"
+	_, cmds := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // runs "vim x"
 	wait := cmds().(tea.BatchMsg)[0]
 	if m.busy != "Edit a pack" {
 		t.Fatalf("menu should lock while it runs, busy=%q", m.busy)
@@ -243,12 +243,12 @@ func TestMenuLocksWhileShellIsBusy(t *testing.T) {
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape}) // back to the top
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape}) // and quitting would end micro: refused
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape}) // and quitting would end vim: refused
 	if len(sent) != 1 || m.Quit {
 		t.Fatalf("nothing runs, and no quitting, while locked: sent %v quit %v", sent, m.Quit)
 	}
 	go func() { release <- true }()
-	m.Update(wait()) // micro exits
+	m.Update(wait()) // vim exits
 	if m.busy != "" {
 		t.Fatal("menu should unlock when the shell is back at its prompt")
 	}
@@ -3959,8 +3959,8 @@ func TestTopTallyIsTheHighlightedPacks(t *testing.T) {
 
 // Beside ? help, a chip says where you are: IN MENUS, IN SHELL, or IN FORMS
 // with the pack form open and focus there; then the bar is the form's keys,
-// as it says them, on the quiet band, and nothing else. Editing in micro, the
-// bar says how you're done there.
+// as it says them, on the quiet band, and nothing else. Before the form's
+// said its keys, the bar says how you're done there.
 func TestWhereChipAndFormKeys(t *testing.T) {
 	t.Setenv("CLINGON_CONFIG", t.TempDir())
 	m := New(Options{Config: &config.Config{}, FocusMenu: func() {}})
@@ -3988,12 +3988,12 @@ func TestWhereChipAndFormKeys(t *testing.T) {
 	if s := strings.TrimSpace(ansi.Strip(m.barBody(80))); s != "✗ a pack needs a module with a command in it" {
 		t.Errorf("a change the form refused, why, in place of its keys: %q", s)
 	}
-	m.form, m.formKeys, m.editing = nil, nil, "demo in micro · Ctrl-Q when done"
-	if s := strings.TrimSpace(ansi.Strip(m.barBody(80))); s != "Ctrl-Q done · shift-tab menu" {
-		t.Errorf("micro: %q", s)
+	m.formKeys = nil
+	if s := strings.TrimSpace(ansi.Strip(m.barBody(80))); s != "esc done · shift-tab menu" {
+		t.Errorf("before the form's keys: %q", s)
 	}
 	m.blurred = false
-	if got := chip(); got != "IN MENUS" || strings.Contains(ansi.Strip(m.barBody(80)), "Ctrl-Q") {
+	if got := chip(); got != "IN MENUS" || strings.Contains(ansi.Strip(m.barBody(80)), "esc done") {
 		t.Errorf("back in the menu: %q, %q", got, ansi.Strip(m.barBody(80)))
 	}
 }

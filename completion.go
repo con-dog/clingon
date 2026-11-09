@@ -28,7 +28,6 @@ _clingon() {
     'pack:list, add and remove packs'
     'command:add and list your own commands'
     'recipe:add, remove and list recipes'
-    'edit:open your pack in micro'
     'check:check your packs for mistakes'
     'doctor:check tmux, your packs and their tools'
     'crash:show why clingon last crashed'
@@ -73,7 +72,7 @@ fi
 const bashCompletion = `_clingon() {
   local cur=${COMP_WORDS[COMP_CWORD]} words=
   case $COMP_CWORD in
-    1) words="print pack command recipe edit check doctor crash update welcome completion version help" ;;
+    1) words="print pack command recipe check doctor crash update welcome completion version help" ;;
     2)
       case ${COMP_WORDS[1]} in
         pack|packs) words="list available add remove create update edit modules describe guide" ;;

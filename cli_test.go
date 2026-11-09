@@ -131,7 +131,7 @@ func TestDoctor(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, _ := output(t, func() error { return doctor(nil) })
-	for _, want := range []string{"packs    valid", "micro"} {
+	for _, want := range []string{"packs    valid"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("doctor should mention %q:\n%s", want, out)
 		}
@@ -731,4 +731,22 @@ func TestAddAPackOpensTheForm(t *testing.T) {
 		}
 	}
 	t.Fatal("no Create a pack")
+}
+
+// Only your own packs open in the form: a curated one says how to read it or
+// start your own, and one you don't have says how to start it.
+func TestEditOnlyYourOwn(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if err := config.Install("git"); err != nil {
+		t.Fatal(err)
+	}
+	for ref, want := range map[string]string{
+		"git":        "pack describe git",
+		"remote/git": "not yours to edit",
+		"nope":       "pack create nope",
+	} {
+		if err := formEdit(ref, "saved", false); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want %q", ref, err, want)
+		}
+	}
 }

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 )
 
@@ -294,7 +293,7 @@ func parseModule(path string, data []byte) (*Group, error) {
 // command reads one ## command, up to the next heading.
 func (m *mdLines) command() (*Command, error) {
 	head := m.at
-	c := &Command{Name: strings.TrimSpace(m.lines[m.at][3:]), Line: m.at + 1}
+	c := &Command{Name: strings.TrimSpace(m.lines[m.at][3:])}
 	if t := strings.TrimSpace(strings.TrimRight(c.Name, "?!")); t != c.Name {
 		return nil, m.errf(m.at, "a command's risk is a > [!WARNING] or > [!CAUTION] callout under its heading, not a ? or ! in its name")
 	}
@@ -516,50 +515,4 @@ func parsePackFile(path string, data []byte) (parsedFile, error) {
 		return parsedFile{}, err
 	}
 	return parsedFile{group: g}, nil
-}
-
-// Problem is something wrong in a pack's file, at a line (from 1).
-type Problem struct {
-	Line    int
-	Message string
-}
-
-// CheckFile checks one file of a pack as `clingon check` would, reading data
-// as its contents (an editor's unsaved text, say) and path for what it is: its
-// name says whether it's a _pack.md, its folder names the pack.
-func CheckFile(path string, data []byte) []Problem {
-	part, err := parsePackFile(path, data)
-	if err != nil {
-		return []Problem{atLine(path, err.Error())}
-	}
-	if part.group == nil {
-		return nil
-	}
-	var out []Problem
-	for _, e := range assemble(filepath.Base(filepath.Dir(path)), []parsedFile{part}).Validate() {
-		p := Problem{Line: 1, Message: e.Error()}
-		for _, c := range part.group.Commands { // "Pack › Command: …" is at that command's heading
-			if before, rest, ok := strings.Cut(p.Message, " › "+c.Name); ok && !strings.Contains(before, ":") {
-				p.Line, p.Message = c.Line, strings.TrimLeft(strings.TrimPrefix(rest, ":"), " ›")
-				if p.Message == "" {
-					p.Message = e.Error()
-				}
-				break
-			}
-		}
-		out = append(out, p)
-	}
-	return out
-}
-
-// atLine splits a parse error's "path:line: message" into its line and message.
-func atLine(path, msg string) Problem {
-	if rest, ok := strings.CutPrefix(msg, path+":"); ok {
-		if n, m, ok := strings.Cut(rest, ": "); ok {
-			if line, err := strconv.Atoi(n); err == nil {
-				return Problem{Line: line, Message: m}
-			}
-		}
-	}
-	return Problem{Line: 1, Message: strings.TrimPrefix(msg, path+": ")}
 }

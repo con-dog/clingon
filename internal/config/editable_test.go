@@ -13,7 +13,7 @@ import (
 func TestWritingPacksReadsBackTheSame(t *testing.T) {
 	strip := func(g *Group) {
 		for i := range g.Commands {
-			g.Commands[i].Source, g.Commands[i].Line = "", 0
+			g.Commands[i].Source = ""
 		}
 	}
 	n := 0

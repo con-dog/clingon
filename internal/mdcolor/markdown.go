@@ -1,6 +1,9 @@
-package micro
+// Package mdcolor colours a pack's Markdown for the terminal, in the menu's
+// colours: the form's preview, `clingon pack describe` and the guide.
+package mdcolor
 
 import (
+	_ "embed"
 	"regexp"
 	"strings"
 	"sync"
@@ -8,11 +11,10 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Markdown colours a pack file for the terminal exactly as micro does when it
-// edits one: it reads clingon's own syntax file and colour scheme (the ones
-// micro is given) and applies them the way micro does, rules in order with a
-// later match winning, regions carrying over lines. It only adds colour: the
-// text comes through as it is.
+// Markdown colours a pack file for the terminal: it applies the rules in
+// markdown.yaml in order, a later match winning, regions carrying over lines,
+// in colours.txt's colours. It only adds colour: the text comes through as
+// it is.
 func Markdown(src string) string {
 	syn := loadSyntax()
 	var out strings.Builder
@@ -39,6 +41,12 @@ func Markdown(src string) string {
 	return out.String()
 }
 
+//go:embed markdown.yaml
+var rulesFile string
+
+//go:embed colours.txt
+var coloursFile string
+
 type synPattern struct {
 	group string
 	re    *regexp.Regexp
@@ -64,14 +72,13 @@ var (
 func loadSyntax() *syntax {
 	synOnce.Do(func() {
 		syn = &syntax{colours: map[string]string{}}
-		data, _ := files.ReadFile("config/syntax/markdown.yaml")
+		data := []byte(rulesFile)
 		var doc struct {
 			Rules []map[string]yaml.Node `yaml:"rules"`
 		}
 		_ = yaml.Unmarshal(data, &doc)
 		syn.patterns, syn.regions = parseRules(doc.Rules)
-		scheme, _ := files.ReadFile("config/colorschemes/clingon.micro")
-		for _, m := range colorLinkRe.FindAllStringSubmatch(string(scheme), -1) {
+		for _, m := range colorLinkRe.FindAllStringSubmatch(coloursFile, -1) {
 			syn.colours[m[1]] = sgrFor(m[2])
 		}
 	})
@@ -97,7 +104,7 @@ func sgrFor(spec string) string {
 	return strings.Join(parts, ";")
 }
 
-// colour is a group's SGR, falling back as micro does: special.blank, then special.
+// colour is a group's SGR, falling back to its parent: special.blank, then special.
 func (s *syntax) colour(group string) string {
 	for g := group; g != ""; {
 		if c, ok := s.colours[g]; ok {

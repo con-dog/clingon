@@ -12,7 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/con-dog/clingon/internal/config"
-	"github.com/con-dog/clingon/internal/micro"
+	"github.com/con-dog/clingon/internal/mdcolor"
 )
 
 // PackForm edits one of your packs as a form, in place of its Markdown. It's
@@ -592,14 +592,14 @@ func (f *PackForm) pageRows() []formRow {
 }
 
 // mdLook colours a value as the preview colours it: the lines it's on in the
-// Markdown, before and after being what's around it there, coloured as micro
-// colours the file, cut down to the value. A value over lines has each line
+// Markdown, before and after being what's around it there, coloured as the
+// preview colours the file, cut down to the value. A value over lines has each line
 // after the first set in as the first is (> for a callout's).
 func mdLook(before, after string) func(string) string {
 	lead := before[strings.LastIndex(before, "\n")+1:]
 	return func(v string) string {
 		vs := strings.Split(v, "\n")
-		lines := strings.Split(micro.Markdown(before+strings.Join(vs, "\n"+lead)+after), "\n")
+		lines := strings.Split(mdcolor.Markdown(before+strings.Join(vs, "\n"+lead)+after), "\n")
 		first, pre := strings.Count(before, "\n"), ansi.StringWidth(lead)
 		out := make([]string, len(vs))
 		for i, l := range vs {
@@ -1820,7 +1820,7 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 
 // preview is the pack's _pack.md, and under it the module the cursor's in
 // (or was last in), as they'll be saved,
-// coloured as micro colours it: the pack's _pack.md, or a module's file
+// coloured as internal/mdcolor colours it: the pack's _pack.md, or a module's file
 // for its rows and its commands'.
 func (f *PackForm) preview(w, h int) []string {
 	md := f.pack.Markdown()
@@ -1859,7 +1859,7 @@ func fit2(lines []string, h int) []string {
 	return lines
 }
 
-// filePreview is a pack's file, as micro shows it, h lines at most: the
+// filePreview is a pack's file, coloured, h lines at most: the
 // lines in on marked, each with a bar in the gutter on a band of the
 // window's own colour, scrolled into view. Every line has the panel's
 // padding at its left, the gutter the bar's in.
@@ -1872,7 +1872,7 @@ func filePreview(name, text string, on map[int]bool, near, w, h int) []string {
 	plain := strings.Split(text, "\n")
 	code := false   // in a fenced code block
 	var rowOf []int // each line's first row
-	for i, l := range strings.Split(strings.TrimRight(micro.Markdown(text), "\n"), "\n") {
+	for i, l := range strings.Split(strings.TrimRight(mdcolor.Markdown(text), "\n"), "\n") {
 		src := ""
 		if i < len(plain) {
 			src = plain[i]
@@ -2137,7 +2137,7 @@ func (f *PackForm) footer(w int) []string {
 	return nil // beside the menu, its status bar says it
 }
 
-// issueChip is a problem as an orange chip, like the status bar and micro's.
+// issueChip is a problem as an orange chip, like the status bar's.
 func issueChip(msg string, w int) string {
 	return stepStyle.Background(orange).Render(ansi.Truncate(" ISSUE: "+msg+" ", w, "…"))
 }

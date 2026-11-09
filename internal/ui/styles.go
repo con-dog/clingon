@@ -13,7 +13,7 @@ import (
 // colours, so it looks the same everywhere: Terminal.app has no 24-bit
 // colour, and inside tmux any other colour is rounded to the nearest of
 // these, which is how near-misses of one purple end up as two. The shell's
-// prompt (internal/shell), tmux (tmux.conf) and micro use the same ones by
+// prompt (internal/shell), tmux (tmux.conf) and pack colouring (internal/mdcolor) use the same ones by
 // number. The background and plain text are the terminal's own, from
 // clingon's window profile (internal/window): that ink is exact.
 var (

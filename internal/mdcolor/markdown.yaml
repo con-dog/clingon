@@ -1,10 +1,5 @@
 # clingon's packs: only the Markdown a pack uses, in the menu's colours.
-# Anything a pack doesn't allow is drawn as an error, so it shows as you type.
-filetype: markdown
-
-detect:
-    filename: "\\.md$"
-
+# Anything a pack doesn't allow is drawn as an error.
 rules:
     # Text with a mark of its own; plain text stays the default colour.
     - statement: "^\\s*- "

@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/con-dog/clingon/internal/micro"
+	"github.com/con-dog/clingon/internal/mdcolor"
 )
 
 // guideExample is the pack file `clingon pack guide` shows: harmless commands,
@@ -97,6 +97,6 @@ func guide() error {
 		}
 		return strings.Join(lines, "\n")
 	}
-	sayBoxed("How packs work", guideTop+"\n"+indent(micro.Markdown(guideExample))+"\n\n"+guideRest)
+	sayBoxed("How packs work", guideTop+"\n"+indent(mdcolor.Markdown(guideExample))+"\n\n"+guideRest)
 	return nil
 }

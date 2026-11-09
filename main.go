@@ -16,7 +16,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/con-dog/clingon/internal/config"
-	"github.com/con-dog/clingon/internal/micro"
 	"github.com/con-dog/clingon/internal/shell"
 	"github.com/con-dog/clingon/internal/tmux"
 	"github.com/con-dog/clingon/internal/ui"
@@ -33,7 +32,6 @@ Usage:
   clingon pack     list, add and remove packs; make and edit your own
   clingon command  add and list commands in your own packs
   clingon recipe   add, remove and list recipes (sequences of commands)
-  clingon edit     open your pack in micro
   clingon check    check your packs for mistakes
   clingon doctor   check tmux, your packs and each pack's tools
   clingon crash    show why clingon last crashed, if it has
@@ -89,14 +87,10 @@ func main() {
 		if err == nil {
 			say(ok, "created %s", config.PackPath(defaultPack()))
 		}
-	case "edit":
-		err = editPack(defaultPack())
 	case "check":
 		err = check()
 	case "welcome":
 		welcome(len(os.Args) > 2 && os.Args[2] == "--then-shell")
-	case "_check-file": // micro's clingon plugin: PATH and a file of its unsaved text
-		err = checkFile(os.Args[2:])
 	case "_check-release":
 		checkRelease()
 	case "_shell": // the shell inside clingon, started again (System › Reload shell)
@@ -358,12 +352,15 @@ func printMode() error {
 	return nil
 }
 
-// formEdit opens your pack in clingon's pack form, then says it's done. One
-// that isn't yours (remote/NAME, or one you've only added) opens in micro.
+// formEdit opens your pack in clingon's pack form, then says it's done. Only
+// your own: one you've added is clingon's, to read with `pack describe`.
 func formEdit(ref, done string, menu bool) error {
 	where, name := config.SplitRef(ref)
-	if where == "remote" || where == "" && !config.IsLocal(name) {
-		return editPackAs(ref, done)
+	switch {
+	case where == "remote" || where == "" && !config.IsLocal(name) && config.IsInstalled(name):
+		return fmt.Errorf("%s is a curated pack, not yours to edit: `clingon pack describe %s` shows it, or start your own with `clingon pack create my-%s`", name, name, name)
+	case !config.IsLocal(name):
+		return fmt.Errorf("you don't have a pack called %s: `clingon pack create %s` starts one", name, name)
 	}
 	form, err := ui.NewPackForm(name, menu)
 	if err != nil {
@@ -401,72 +398,7 @@ func runForm(form *ui.PackForm, done string) error {
 	return nil
 }
 
-// editPack opens a pack in micro (your local one, unless ref says
-// remote/NAME), then says whether it still loads.
-func editPack(ref string) error { return editPackAs(ref, "saved") }
-
-// editPackAs is editPack, saying done (created, saved) of the pack afterwards.
-func editPackAs(ref, done string) error {
-	where, name := config.SplitRef(ref)
-	if _, err := exec.LookPath("micro"); err != nil {
-		return errors.New("clingon edits packs with micro, a simple terminal editor (Ctrl-S saves, Ctrl-Q quits).\n" +
-			"Install it with `brew install micro`")
-	}
-	path := config.PackPath(name)
-	switch {
-	case where == "" && !config.IsLocal(name) && config.IsInstalled(name):
-		return fmt.Errorf("%s is a curated pack: `clingon pack edit remote/%s` edits it (but `clingon pack update` overwrites it), or start your own with `clingon pack create my-%s`", name, name, name)
-	case where == "remote":
-		if !config.IsInstalled(name) {
-			return fmt.Errorf("%s isn't added", config.RemoteRef(name))
-		}
-		path = config.RemotePath(name)
-		say(warn, "`clingon pack update` overwrites curated packs")
-	case !config.IsLocal(name):
-		if strings.Contains(name, "/") {
-			return fmt.Errorf("you don't have mine/%s: `clingon command add` starts one", name)
-		}
-		if err := config.NewPack(name); err != nil {
-			return err
-		}
-	}
-	dir, err := micro.ConfigDir(config.StateDir())
-	if err != nil {
-		return err
-	}
-	// A whole pack opens with a tab for each module, at its commands.
-	args := []string{"-config-dir", dir}
-	targets := []string{path}
-	if !strings.HasSuffix(path, ".md") {
-		targets = config.ModuleFiles(path)
-	}
-	// Opened from the packs folder, so micro's status bar names a file by where it
-	// is in there (mine/work/deploy.md), not by its whole path.
-	base := config.PacksDir()
-	for _, f := range targets {
-		if rel, err := filepath.Rel(base, f); err == nil && !strings.HasPrefix(rel, "..") {
-			f = rel
-		}
-		args = append(args, f, "+/^## ")
-	}
-	flushSaid() // micro takes over the terminal
-	cmd := exec.Command("micro", args...)
-	cmd.Dir = base
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if self, err := os.Executable(); err == nil { // its plugin checks the file as you type, with this clingon
-		cmd.Env = append(os.Environ(), "CLINGON_CHECK="+self)
-	}
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-	if _, _, err := config.Load(); err != nil {
-		return fmt.Errorf("%s, but it has problems:\n%w", done, err)
-	}
-	say(ok, "%s %s", done, path)
-	return nil
-}
-
-// defaultPack is the pack `clingon edit` and `init` mean: your only one,
+// defaultPack is the pack `clingon init` means: your only one,
 // or "my-commands".
 func defaultPack() string {
 	if yours, _ := config.YourPacks(); len(yours) == 1 {
@@ -524,22 +456,4 @@ func reloader() func() (*config.Config, error) {
 		cfg, _, err := config.Load()
 		return cfg, err
 	}
-}
-
-// checkFile prints each problem in a pack's file, one a line as LINE<tab>MESSAGE,
-// for the editor to show as you type: args are the file's path and, if the
-// text being checked isn't saved yet, a file holding it.
-func checkFile(args []string) error {
-	if len(args) < 1 || len(args) > 2 {
-		return errors.New("usage: clingon _check-file PATH [TEXT-FILE]")
-	}
-	from := args[len(args)-1]
-	data, err := os.ReadFile(from)
-	if err != nil {
-		return err
-	}
-	for _, p := range config.CheckFile(args[0], data) {
-		fmt.Printf("%d\t%s\n", p.Line, strings.ReplaceAll(p.Message, "\n", " "))
-	}
-	return nil
 }

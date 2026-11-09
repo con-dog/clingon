@@ -7,7 +7,7 @@ import (
 )
 
 // Minimal shell highlighting for the Command area, in the colours used for a
-// command everywhere (micro, `clingon pack guide`, the shell's highlighting
+// command everywhere (the form's preview, `clingon pack guide`, the shell's highlighting
 // plugin): program names green, flags periwinkle, quoted strings tan,
 // operators grey. Placeholders and filled
 // values keep their own styles (see preview).

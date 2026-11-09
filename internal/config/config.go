@@ -107,7 +107,6 @@ type Command struct {
 	Off      string   `yaml:"-"` // that, said short on its row after it: "all added"
 	Editor   bool     `yaml:"-"` // opens an editor in the shell: focus goes there while it's open
 	Source   string   `yaml:"-"` // the pack file it's from: with its heading, what a recipe links to
-	Line     int      `yaml:"-"` // its heading's line in that file, from 1
 }
 
 // Arg fills one <name> placeholder in a command.

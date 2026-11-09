@@ -102,9 +102,6 @@ func builtinSections() []*config.Section {
 				{Editor: true, Name: "Edit a pack", Disabled: noLocal, Off: noLocalOff, Desc: "Opens <pack> as a form, every part of it on one page: change it, then esc when you're done, and it asks whether to save the changes.", Cmd: self + " pack edit <pack> --menu", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(local)},
 				}},
-				{Editor: true, Name: "Edit a pack's files", Disabled: noLocal, Off: noLocalOff, Desc: "Opens <pack>'s Markdown files in micro, to edit by hand: Ctrl-S saves, Ctrl-Q quits.", Cmd: self + " pack edit <pack> --files", Args: []config.Arg{
-					{Name: "pack", Options: moduleOptions(local)},
-				}},
 				{Name: "List your packs", Disabled: noLocal, Off: noLocalOff, Desc: "Lists your own packs.", Cmd: self + " pack list --mine"},
 				{Name: "Remove packs", Disabled: noLocal, Off: noLocalOff, Desc: "Deletes <pack> and every command in it, for good.", Risk: config.RiskDanger, Cmd: self + " pack remove <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(local)},
@@ -203,11 +200,6 @@ func doctor(names []string) error {
 				where = "another clingon is first on your PATH, at " + other
 			}
 			add(&setup, row{mark: warn, label: "clingon", detail: getVersion() + ", " + where + local})
-		}
-		if _, err := exec.LookPath("micro"); err != nil {
-			add(&setup, row{mark: warn, label: "micro", detail: "not installed: it's the editor for your packs (`brew install micro`)"})
-		} else {
-			add(&setup, row{mark: ok, label: "micro", detail: "installed, for editing your packs"})
 		}
 		if cfg, _, err := config.Load(); err != nil {
 			packErr = err

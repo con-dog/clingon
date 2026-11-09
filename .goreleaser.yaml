@@ -43,10 +43,9 @@ brews:
     homepage: https://github.com/con-dog/clingon
     description: Menu of the commands you can never remember, next to a real shell
     license: MIT
-    # clingon runs tmux (the panes) and micro (the pack editor) itself.
+    # clingon runs tmux (the panes) itself.
     dependencies:
       - name: tmux
-      - name: micro
     caveats: |
       clingon opens in a window of its own and installs one font, Clingon Mono,
       for your user. In Terminal and iTerm2, macOS may ask once to let it control

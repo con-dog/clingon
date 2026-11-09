@@ -185,23 +185,3 @@ func TestPackSection(t *testing.T) {
 		}
 	}
 }
-
-// The editor's checks: each problem at its line, parse errors where they are
-// and others at their command's heading, checking text that isn't saved yet.
-func TestCheckFile(t *testing.T) {
-	path := "/tmp/mine/work/deploy.md"
-	if ps := CheckFile(path, []byte("# Deploy\n\n## Ship it\n\n```sh\n./ship.sh\n```\n")); len(ps) != 0 {
-		t.Errorf("a good file: %+v", ps)
-	}
-	ps := CheckFile(path, []byte("# Deploy\n\n## Ship it\n\n```sh\ncd x\nmake\n```\n"))
-	if len(ps) != 1 || ps[0].Line != 6 || !strings.Contains(ps[0].Message, "one command") {
-		t.Errorf("a parse error, at its line: %+v", ps)
-	}
-	ps = CheckFile(path, []byte("# Deploy\n\n## Ok\n\n```sh\nls\n```\n\n## Unused\n\n```sh\nls\n```\n\n- `<who>` Who\n"))
-	if len(ps) != 1 || ps[0].Line != 9 || !strings.Contains(ps[0].Message, "never used") {
-		t.Errorf("a check of the whole command, at its heading: %+v", ps)
-	}
-	if ps := CheckFile("/tmp/mine/work/_pack.md", []byte("---\nmenu: other\nlogo: rocket\ntint: mauve\n---\n# W\n")); len(ps) != 1 || ps[0].Line != 4 {
-		t.Errorf("_pack.md: %+v", ps)
-	}
-}
