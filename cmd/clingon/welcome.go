@@ -83,7 +83,7 @@ func news() []row {
 	}
 	suggest, broken := packAdvice()
 	if len(suggest) > 0 {
-		acts = append(acts, row{mark: todo, glyph: packGlyph(), label: "Add " + plural(len(suggest), "pack"), detail: "you have the tools for " + someNames(suggest), note: "Clingon › Packs › Add packs"})
+		acts = append(acts, row{mark: todo, glyph: packGlyph(), colour: packsYellow, label: "Add " + plural(len(suggest), "pack"), detail: "you have the tools for " + someNames(suggest), note: "Clingon › Packs › Add packs"})
 	}
 	if len(broken) > 0 { // nothing in the menu installs tools: no note; its rows say what's missing
 		acts = append(acts, row{mark: todo, glyph: "↓", label: "Install tools", detail: someNames(broken), nudge: true})
@@ -143,13 +143,14 @@ func packAdvice() (suggest, broken []string) {
 	return suggest, broken
 }
 
-// packGlyph marks pack suggestions: in clingon's window, the box that
-// Package managers has, from its font; elsewhere a symbol every font has.
+// packGlyph marks pack suggestions: in clingon's window, the jigsaw piece
+// Clingon › Packs has in the menu, from its font; elsewhere a symbol every
+// font has.
 func packGlyph() string {
 	if os.Getenv("CLINGON") == "" {
 		return "⊞"
 	}
-	return config.Logos["box"]
+	return config.Logos["puzzle"]
 }
 
 // createGlyph marks the suggestion to make a pack: a hammer in clingon's

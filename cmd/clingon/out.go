@@ -180,6 +180,7 @@ func errUsage(text string) {
 type row struct {
 	mark   mark
 	glyph  string // todo's mark
+	colour string // the glyph's, where it's a section's logo (#rrggbb): as the menu draws it; else pink
 	label  string
 	detail string // cut short to fit
 	note   string // at the right, faint
@@ -223,7 +224,11 @@ func card(title string, rows []row, w int) string {
 	}
 	var lines []string
 	for _, r := range rows {
-		line := r.mark.render(slot(r.glyph)) + "  " + r.label + strings.Repeat(" ", labelW-ansi.StringWidth(r.label)) + "  "
+		mk := r.mark.render(slot(r.glyph))
+		if r.colour != "" && r.mark == todo {
+			mk = lipgloss.NewStyle().Foreground(lipgloss.Color(r.colour)).Render(slot(r.glyph))
+		}
+		line := mk + "  " + r.label + strings.Repeat(" ", labelW-ansi.StringWidth(r.label)) + "  "
 		line += greyStyle.Render(fit(r.detail, max(detailW, 0)))
 		if noteW > 0 {
 			line += "  " + faintStyle.Render(fmt.Sprintf("%*s", noteW, r.note))

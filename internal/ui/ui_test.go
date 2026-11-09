@@ -4327,3 +4327,26 @@ func TestStepsInfoOneARow(t *testing.T) {
 		t.Errorf("five rows: four, then how many more:\n%s", strings.Join(lines, "\n"))
 	}
 }
+
+// A command's name starts in the same column in every pack, risky commands
+// in it or not: the column for a mark is always kept.
+func TestCommandsLineUpAcrossPacks(t *testing.T) {
+	m := New(Options{Config: &config.Config{Sections: []config.Section{
+		{Name: "Calm", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "safe", Cmd: "ls"}}},
+		{Name: "Edgy", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "safe", Cmd: "ls"}, {Name: "risky", Cmd: "rm x", Risk: config.RiskWarn}}},
+	}}})
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	col := func(s int) int {
+		m.showSection(&m.opt.Config.Sections[s])
+		for _, l := range strings.Split(ansi.Strip(m.list.render(50, 10)), "\n") {
+			if i := strings.Index(l, "safe"); i >= 0 {
+				return i
+			}
+		}
+		t.Fatal("no safe row")
+		return 0
+	}
+	if calm, edgy := col(0), col(1); calm != edgy {
+		t.Errorf("safe at %d in a calm pack, %d beside a risky one", calm, edgy)
+	}
+}

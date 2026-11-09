@@ -802,7 +802,7 @@ func (p *picker) row(it item, active bool, width int) string {
 	case it.risk == config.RiskDanger:
 		prefix += dangerStyle.Render(dangerGlyph + " ")
 	default:
-		if p.risky[p.searching()] || p.recipe {
+		if p.risky[p.searching()] || p.recipe || isCmd { // a command keeps the column for a mark, risky or not, in every list: names start in the same place in every pack
 			prefix += "  "
 		}
 	}
