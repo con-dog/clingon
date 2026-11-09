@@ -173,7 +173,7 @@ func isBuiltin(pack string) bool {
 
 // builtinPackNames lists the built-in packs.
 func builtinPackNames() []string {
-	entries, _ := fs.ReadDir(packFS, "packs")
+	entries, _ := fs.ReadDir(packFS, ".")
 	var out []string
 	for _, e := range entries {
 		if e.IsDir() {
@@ -184,4 +184,4 @@ func builtinPackNames() []string {
 	return out
 }
 
-func builtinDir(pack string) string { return "packs/" + pack }
+func builtinDir(pack string) string { return pack }

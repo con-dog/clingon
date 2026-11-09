@@ -1,22 +1,22 @@
 package mdcolor
 
 import (
-	"os"
-	"path/filepath"
+	"io/fs"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/con-dog/clingon/packs"
 )
 
 // Colour is all it adds: every pack comes through otherwise as it is.
 func TestMarkdownKeepsTheText(t *testing.T) {
-	files, _ := filepath.Glob("../config/packs/*/*.md")
+	files, _ := fs.Glob(packs.FS, "*/*.md")
 	if len(files) < 50 {
 		t.Fatalf("only %d pack files found", len(files))
 	}
 	for _, f := range files {
-		b, err := os.ReadFile(f)
+		b, err := fs.ReadFile(packs.FS, f)
 		if err != nil {
 			t.Fatal(err)
 		}

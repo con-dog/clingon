@@ -2,7 +2,6 @@ package config
 
 import (
 	"bytes"
-	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,14 +9,13 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/con-dog/clingon/packs"
 	"go.yaml.in/yaml/v3"
 )
 
-// Built-in packs: a folder each, as they're installed. (all: because embed
-// otherwise leaves out files starting with _.)
-//
-//go:embed all:packs
-var packFS embed.FS
+// packFS is the built-in packs (the repo's packs folder): a folder each, as
+// they're installed.
+var packFS = packs.FS
 
 // Pack is a folder of modules: one menu item, whose _pack.md says how it
 // looks and whose other files are a module each.
