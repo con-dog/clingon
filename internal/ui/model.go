@@ -2433,11 +2433,22 @@ func (m *Model) View() tea.View {
 	return v
 }
 
+// crumbPart is a step of the breadcrumb: a section's icon, if it's one, and
+// its name. The icon's drawn as the menu draws it, never bold or dimmed with
+// the name: clingon's font has no bold, and a faked one smears its logos.
+type crumbPart struct{ icon, color, name string }
+
 // crumbSection is a section as the breadcrumb names it: its icon, then its
 // name three cells along.
-func crumbSection(s *config.Section) string {
-	icon := slotIcon(s.Icon)
-	return iconStyle(s.Color).Render(icon) + strings.Repeat(" ", 3-ansi.StringWidth(icon)) + s.Name
+func crumbSection(s *config.Section) crumbPart {
+	return crumbPart{slotIcon(s.Icon), s.Color, s.Name}
+}
+
+func (p crumbPart) render(st lipgloss.Style) string {
+	if p.icon == "" {
+		return st.Render(p.name)
+	}
+	return iconStyle(p.color).Render(p.icon) + strings.Repeat(" ", max(3-ansi.StringWidth(p.icon), 1)) + st.Render(p.name)
 }
 
 func (m *Model) view() string {
@@ -2450,18 +2461,18 @@ func (m *Model) view() string {
 	w := m.w
 	top := banner(w, m.intro, "", "")
 	// Category › icon Section, then the command once one is being run.
-	var parts []string
-	in := func(s *config.Section, name string) []string {
+	var parts []crumbPart
+	in := func(s *config.Section, name string) []crumbPart {
 		if s == nil {
-			return []string{name}
+			return []crumbPart{{name: name}}
 		}
-		return []string{s.Category, crumbSection(s)}
+		return []crumbPart{{name: s.Category}, crumbSection(s)}
 	}
 	switch {
 	case m.mode != modeBrowse && m.pending != nil:
-		parts = append(in(m.pending.sec, m.pending.section), m.pending.name)
+		parts = append(in(m.pending.sec, m.pending.section), crumbPart{name: m.pending.name})
 	case m.job != nil:
-		parts = append(in(m.job.ref.sec, m.job.ref.section), m.job.ref.cmd.Name)
+		parts = append(in(m.job.ref.sec, m.job.ref.section), crumbPart{name: m.job.ref.cmd.Name})
 	case m.section != nil:
 		parts = in(m.section, m.section.Name)
 		if m.opened != "" {
@@ -2469,15 +2480,15 @@ func (m *Model) view() string {
 			if name == openedCurrent {
 				name = "Current recipe"
 			}
-			parts = append(parts, name)
+			parts = append(parts, crumbPart{name: name})
 		}
 	}
 	crumb := ""
 	for i, p := range parts { // where you are bright, the way there dim
 		if i < len(parts)-1 {
-			crumb += dimStyle.Render(p) + faintStyle.Render(" › ")
+			crumb += p.render(dimStyle) + faintStyle.Render(" › ")
 		} else {
-			crumb += crumbStyle.Render(p)
+			crumb += p.render(crumbStyle)
 		}
 	}
 	head := []string{top, ansi.Truncate(crumb, w, "…"), ""}

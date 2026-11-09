@@ -3671,7 +3671,7 @@ func TestBreadcrumbNamesLineUpWhateverTheIcon(t *testing.T) {
 		icons = append(icons, sym)
 	}
 	for _, icon := range icons {
-		got := ansi.Strip(crumbSection(&config.Section{Name: "Name", Icon: icon}))
+		got := ansi.Strip(crumbSection(&config.Section{Name: "Name", Icon: icon}).render(lipgloss.NewStyle()))
 		if at := ansi.StringWidth(got) - ansi.StringWidth("Name"); at != 3 {
 			t.Errorf("icon %q: the name starts at column %d, not 3: %q", icon, at, got)
 		}
