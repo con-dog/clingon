@@ -28,7 +28,7 @@ var (
 	text        = lipgloss.Color("#e4e4e4") // 254: text on coloured bands
 	orange      = lipgloss.Color(orangeHex) // 215: cautions
 	red         = lipgloss.Color(redHex)    // 204: errors, danger; the prompt after a failure
-	green       = lipgloss.Color("#5fd7af") // 79: values, all's well
+	green       = lipgloss.Color(GreenHex)  // 79: values, all's well
 	sky         = lipgloss.Color("#87d7ff") // 117: a command's blanks, waiting to be filled: apart from the pinks and purples (what you act on) and the flags' periwinkle
 	ink         = lipgloss.Color("#121212") // 233: dark text on bright bands
 )
@@ -43,6 +43,9 @@ const (
 
 // PinkHex is clingon's pink, for a pack's color field.
 const PinkHex = "#ff87d7"
+
+// GreenHex is clingon's green, for what's to be made: Create a pack's hammer.
+const GreenHex = "#5fd7af"
 
 // The palette, for clingon's other screens (welcome, check).
 var Pink, Soft, Grey, Faint, Red, Green, Orange = accent, soft, grey, faint, red, green, orange
