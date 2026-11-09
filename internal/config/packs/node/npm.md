@@ -2,7 +2,7 @@
 needs: npm
 when: package-lock.json, npm-shrinkwrap.json
 ---
-# npm
+# Npm
 Install, add, remove, update and audit packages, and run scripts and tests with npm
 
 ## Add a package

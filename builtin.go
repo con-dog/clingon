@@ -91,7 +91,7 @@ func builtinSections() []*config.Section {
 	noLocal := unless(len(local) > 0, "You don't have any packs of your own yet: create one first.")
 	noneInstalled := unless(len(installed) > 0, "You haven't added any packs.")
 	sections := []*config.Section{
-		{Name: "Packs", Icon: config.Logos["puzzle"], Color: packsYellow, Category: "Clingon", Groups: []config.Group{
+		{Name: "Packs", Icon: config.Logos["puzzle"], Color: packsYellow, Category: "Clingon", Desc: "Add ready-made commands, or make packs of your own.", Groups: []config.Group{
 			{Name: "My packs", Commands: []config.Command{
 				{Editor: true, Name: "Create a pack", Desc: "Opens a new pack of your own as a form, starting from a working example: fill it in, then esc when you're done, and it asks whether to save it.", Cmd: self + " pack create --menu"},
 				{Name: "Describe a pack", Disabled: noLocal, Desc: "Prints every command in <pack> and exactly what each one runs.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
@@ -126,7 +126,7 @@ func builtinSections() []*config.Section {
 				{Name: "Update packs", Disabled: unless(len(ups) > 0, "Every added pack is up to date."), Desc: "Brings your added packs up to date, replacing their files in packs/remote, and removes any clingon no longer ships: changes you made to those files are lost.", Risk: config.RiskWarn, Cmd: self + " pack update"},
 			}},
 		}},
-		{Name: "General", Icon: config.Logos["gear"], Color: generalGrey, Category: "Clingon", Groups: []config.Group{
+		{Name: "General", Icon: config.Logos["gear"], Color: generalGrey, Category: "Clingon", Desc: "Check, update and look after clingon itself.", Groups: []config.Group{
 			{Name: "Healthchecks", Commands: []config.Command{
 				{Name: "Run all checks", Desc: "Checks tmux, your packs and the tools every added pack needs.", Cmd: self + " doctor"},
 				{Name: "Show last crash", Desc: "Shows why clingon last crashed, with the trace to put in a bug report.", Cmd: self + " crash"},
@@ -143,7 +143,7 @@ func builtinSections() []*config.Section {
 				{Name: "Worth doing", Desc: "Shows the welcome card: updates, packs for tools you have, and anything else worth doing.", Cmd: self + " welcome"},
 			}},
 		}},
-		{Name: ui.CommandLineSection, Icon: config.Logos["terminal"], Category: config.CommandLine, Groups: []config.Group{
+		{Name: ui.CommandLineSection, Icon: config.Logos["terminal"], Category: config.CommandLine, Desc: "Type a line of your own to run, or to use as a step in a recipe.", Groups: []config.Group{
 			{Name: "Custom", Commands: []config.Command{
 				{ID: ui.CommandLineID, Name: "Type a command", Desc: "Runs one line of your own in the shell. In a recipe, it asks for the line each time the recipe gets here.", Cmd: "<command>", Args: []config.Arg{
 					{Name: "command"},

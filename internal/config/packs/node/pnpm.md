@@ -2,7 +2,7 @@
 needs: pnpm
 when: pnpm-lock.yaml
 ---
-# pnpm
+# Pnpm
 Install, add, remove, update and audit packages, and run scripts and tests with pnpm
 
 ## Add a package

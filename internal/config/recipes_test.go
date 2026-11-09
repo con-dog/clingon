@@ -98,6 +98,27 @@ func TestSavedRecipes(t *testing.T) {
 	if err := SaveRecipe("none", nil, nil); err == nil {
 		t.Error("a recipe with no steps should be refused")
 	}
+	// Replacing one keeps its description, written by hand.
+	if err := os.WriteFile(recipeFile("Zed"), []byte("# Zed\n\nMy notes.\n\n1. [A](clingon:a-00000000)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceRecipe("Zed", []string{"b-11111111", "a-00000000"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if rs, _ := Recipes(); !slices.ContainsFunc(rs, func(r Recipe) bool {
+		return r.Name == "Zed" && r.Description == "My notes." && slices.Equal(r.Steps, []string{"b-11111111", "a-00000000"})
+	}) {
+		t.Errorf("replaced, its description kept: %+v", rs)
+	}
+	if err := ReplaceRecipe("Nobody", []string{"a-00000000"}, nil); err == nil {
+		t.Error("replacing what isn't there should be refused")
+	}
+	if err := ReplaceRecipe("Zed", []string{"a-00000000"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveRecipe("Zed", []string{"a-00000000"}, nil); err == nil {
+		t.Error("after replacing, there's still one of that name")
+	}
 	rs, err := Recipes()
 	if err != nil || len(rs) != 2 || rs[0].Name != "alpha" || len(rs[0].Steps) != 2 {
 		t.Fatalf("got %+v %v", rs, err)

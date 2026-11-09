@@ -53,9 +53,9 @@ type packInfo struct {
 }
 
 // Categories are the main menu's headings clingon suggests, in order
-// (alphabetical, Other last); a pack can have one of its own, and those sit
+// (alphabetical, Other too); a pack can have one of its own, and those sit
 // among them alphabetically (see MenuCategories).
-var Categories = []string{"AI", "Code", CommandLine, "Databases", "Infrastructure", "System", Other}
+var Categories = []string{"AI", "Code", CommandLine, "Databases", "Infrastructure", Other, "System"}
 
 const (
 	Other       = "Other"
@@ -72,6 +72,7 @@ type Section struct {
 	Logo     string    `yaml:"logo"`  // a brand logo in clingon's font, by name (see Logos); wins over Icon
 	Color    string    `yaml:"color"` // the icon's colour, #rrggbb; grey if unset
 	Category string    `yaml:"category"`
+	Desc     string    `yaml:"description"` // what the pack's for, under it in the menu's info pane
 	Groups   []Group   `yaml:"groups"`
 	Commands []Command `yaml:"commands"` // ungrouped commands, shown first
 	Needs    []string  `yaml:"-"`        // tools its pack requires, checked when the menu shows it
@@ -325,7 +326,7 @@ func assemble(folder string, parts []parsedFile) *Config {
 			if s.Color == "" {
 				s.Color = logoColors[s.Logo]
 			}
-			s.Needs = p.info.Requires
+			s.Needs, s.Desc = p.info.Requires, p.info.Description
 		case p.group != nil:
 			s.Groups = append(s.Groups, *p.group)
 		}
@@ -356,6 +357,9 @@ func (c *Config) merge(o *Config) {
 		if dst.Color == "" {
 			dst.Color = s.Color
 		}
+		if dst.Desc == "" {
+			dst.Desc = s.Desc
+		}
 		// dst keeps its own Needs: the status bar checks the pack that
 		// made the section, not every pack that adds to it.
 		dst.Commands = append(dst.Commands, s.Commands...)
@@ -364,6 +368,9 @@ func (c *Config) merge(o *Config) {
 				dg.Commands = append(dg.Commands, g.Commands...)
 				if len(dg.Requires) == 0 {
 					dg.Requires = g.Requires
+				}
+				if dg.Description == "" {
+					dg.Description = g.Description
 				}
 			} else {
 				dst.Groups = append(dst.Groups, g)
@@ -668,22 +675,21 @@ func canonical(name string) string {
 }
 
 // MenuCategories are the main menu's headings for sections, in order: the
-// ones clingon suggests and any of your own, alphabetically, Other last.
+// ones clingon suggests and any of your own, alphabetically, Other among
+// them. (Clingon's own sections go after them all: see the ui's showRoot.)
 func MenuCategories(sections []Section) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, c := range Categories {
-		if c != Other {
-			seen[c], out = true, append(out, c)
-		}
+		seen[c], out = true, append(out, c)
 	}
 	for _, s := range sections {
-		if c := s.Category; c != Other && !seen[c] {
+		if c := s.Category; !seen[c] {
 			seen[c], out = true, append(out, c)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
-	return append(out, Other)
+	return out
 }
 
 // sort puts sections, groups, commands and fixed options in alphabetical

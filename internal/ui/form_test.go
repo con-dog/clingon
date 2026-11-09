@@ -604,6 +604,73 @@ func TestPackFormPreviewsItsFile(t *testing.T) {
 	}
 }
 
+// The preview wraps a long line rather than cutting it off: prose plainly, a
+// list item's rows under its text, a code line's after a faint ↪ so they
+// aren't taken for lines of their own. A marked line is marked on every row.
+func TestPackFormPreviewWraps(t *testing.T) {
+	f := newTestForm(t)
+	c := &f.pack.Files[0].Group.Commands[0]
+	c.Desc = strings.TrimSpace(strings.Repeat("greets ", 12)) + " end."
+	c.Cmd = `echo "` + strings.Repeat("hello ", 10) + `<who>."`
+	c.Args[0].Prompt = strings.TrimSpace(strings.Repeat("who ", 12)) + " last"
+	f.refresh("")
+	f.onRow(t, "0/0/desc")
+	got := f.preview(30, 60)
+	plain := ansi.Strip(strings.Join(got, "\n"))
+	for _, l := range strings.Split(plain, "\n") {
+		if ansi.StringWidth(l) > 30+panelPad {
+			t.Errorf("a row wider than the pane: %q", l)
+		}
+	}
+	if strings.Contains(plain, "…") || !strings.Contains(plain, "end.") || !strings.Contains(plain, "last") || !strings.Contains(plain, `<who>."`) {
+		t.Errorf("nothing cut off:\n%s", plain)
+	}
+	if !strings.Contains(plain, "↪ ") {
+		t.Errorf("a code line's rows go on after ↪:\n%s", plain)
+	}
+	if n := strings.Count(strings.Join(got, "\n"), cursorBar(cursorStyle)); n < 2 {
+		t.Errorf("every row of the marked description marked, got %d:\n%s", n, plain)
+	}
+	lines := strings.Split(plain, "\n")
+	for i, l := range lines {
+		if strings.Contains(l, "`<who>`") && i+1 < len(lines) {
+			at := strings.Index(l, "`<who>`")
+			if next := lines[i+1]; len(next) <= at || strings.TrimSpace(next[:at]) != "" || next[at] == ' ' {
+				t.Errorf("a list item's rows hang under its text:\n%s\n%s", l, next)
+			}
+		}
+	}
+}
+
+// The form's foot says what the row the cursor's on is for, over a second
+// rule with the save question under it, and is as tall as the menu's info
+// pane, so nothing below the rows moves.
+func TestPackFormFootSaysWhatARowIsFor(t *testing.T) {
+	f := newTestForm(t)
+	f.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	f.onRow(t, "0/0/risk")
+	lines := strings.Split(ansi.Strip(f.view()), "\n")
+	var rules []int
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "────") {
+			rules = append(rules, i)
+		}
+	}
+	if len(rules) != 2 {
+		t.Fatalf("two rules in the foot, got %d:\n%s", len(rules), strings.Join(lines, "\n"))
+	}
+	between := strings.Join(lines[rules[0]:rules[1]], " ")
+	if !strings.Contains(between, "Whether clingon asks before it runs") {
+		t.Errorf("what the row is for, between the rules:\n%s", strings.Join(lines[rules[0]:], "\n"))
+	}
+	if !strings.Contains(lines[rules[1]+1], "SAVE") || !strings.Contains(lines[len(lines)-1], "Discard changes") {
+		t.Errorf("the save question under the second rule, to the foot:\n%s", strings.Join(lines[rules[0]:], "\n"))
+	}
+	if got := len(lines) - rules[0]; got != infoTop(40) {
+		t.Errorf("the foot as tall as the menu's info pane: %d, want %d", got, infoTop(40))
+	}
+}
+
 // Values start in the same column whatever's open: a command opening, with
 // its labels further in, doesn't move them.
 func TestPackFormValuesStayPut(t *testing.T) {
@@ -861,6 +928,32 @@ func TestPackFormLines(t *testing.T) {
 	}
 }
 
+// Pasted text goes into the box that's open, as if typed there: a field
+// being edited (lines joined) or the filter. With no box open a paste does
+// nothing, so a pasted ? or / doesn't act as a key.
+func TestPackFormPaste(t *testing.T) {
+	f := newTestForm(t)
+	f.onRow(t, "0/0/cmd")
+	press(f, kEnter)
+	f.input.SetValue("")
+	f.Update(tea.PasteMsg{Content: "git log\n--oneline"})
+	press(f, kEnter)
+	if c := f.pack.Files[0].Group.Commands[0].Cmd; c != "git log --oneline" {
+		t.Errorf("pasted into the command: %q", c)
+	}
+
+	f.Update(tea.PasteMsg{Content: "?"})
+	if f.help || f.filtering || f.editing != nil {
+		t.Error("a paste with no box open should do nothing")
+	}
+
+	press(f, tea.KeyPressMsg{Code: '/', Text: "/"})
+	f.Update(tea.PasteMsg{Content: "git"})
+	if f.filter.Value() != "git" {
+		t.Errorf("pasted into the filter: %q", f.filter.Value())
+	}
+}
+
 // The arrows move through what's typed and then on out of it, as they move
 // everywhere: ← past its start and → past its end leave the field, keeping
 // what's typed.
@@ -999,25 +1092,33 @@ func TestPackFormLongList(t *testing.T) {
 	if n := count(p); n != 10 || !strings.Contains(p, fmt.Sprintf("↓ %d more", len(config.PackLogos)-10)) {
 		t.Fatalf("ten at a time, %d shown:\n%s", n, p)
 	}
-	for range len(config.PackLogos) {
+	for range len(config.PackLogos) - 1 {
 		press(f, kDown)
 	}
 	if p := lines(); !strings.Contains(p, "↑ ") || !strings.Contains(p, config.TitleWords(config.PackLogos[len(config.PackLogos)-1])) {
 		t.Errorf("at its end, the last in view, and what's above:\n%s", p)
 	}
+	press(f, kDown) // round to the first
+	if f.opt != 0 {
+		t.Errorf("↓ on the last option goes round to the first: on %d", f.opt)
+	}
+	press(f, kUp)
+	if f.opt != len(f.options)-1 {
+		t.Errorf("↑ on the first option goes round to the last: on %d", f.opt)
+	}
 }
 
 // The form's foot has a rule level with the menu's info pane's, beside it, at
-// any height: the two panes read as one.
+// any height: the two panes read as one. (The form's foot has a second rule,
+// over its save question, below it.)
 func TestPackFormRuleLevelWithTheMenus(t *testing.T) {
 	ruleAt := func(lines []string, w int) int {
-		at := -1
 		for i, l := range lines {
 			if strings.HasPrefix(strings.TrimSpace(ansi.Strip(ansi.Cut(l, 0, w))), "────") {
-				at = i
+				return i
 			}
 		}
-		return at
+		return -1
 	}
 	for _, h := range []int{20, 30, 45} {
 		sec := config.Section{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "Edit a pack", Cmd: "x"}}}
@@ -1075,5 +1176,32 @@ func TestPackFormFilterKeys(t *testing.T) {
 	}
 	if got := config.FormKeys(); !slices.Contains(got, "/ edit filter") || !slices.Contains(got, "esc clear") || slices.Contains(got, "esc done") {
 		t.Errorf("filtered: %q", got)
+	}
+}
+
+// ↑ and ↓ go round the form's ends, as every list does; a page (pgup,
+// pgdown) stops at them, and so do the save question's answers go round.
+func TestPackFormWraps(t *testing.T) {
+	f := newTestForm(t)
+	f.sel = -1
+	f.step(1) // the first row the cursor can be on
+	first := f.sel
+	press(f, kUp)
+	last := f.sel
+	if last == first {
+		t.Fatalf("↑ on the first row should go round to the last")
+	}
+	press(f, kDown)
+	if f.sel != first {
+		t.Errorf("↓ on the last row should go round to the first: on %d, want %d", f.sel, first)
+	}
+	press(f, tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if f.sel != first {
+		t.Errorf("pgup at the top stops: on %d", f.sel)
+	}
+	f.saving, f.saveOpt = true, 0
+	press(f, kUp)
+	if f.saveOpt != len(saveChoices)-1 {
+		t.Errorf("↑ on the first save answer goes round to the last: %d", f.saveOpt)
 	}
 }

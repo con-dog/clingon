@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // catalog.go is every built-in pack's details, so a run needn't parse
@@ -108,4 +109,16 @@ func parse(name string, data []byte) (*Config, error) {
 		return nil, err
 	}
 	return &c, nil
+}
+
+// Every module's name starts with a capital, as the menu's headings do:
+// Npm and Uv, not npm and uv beside Pip and venv.
+func TestModuleNamesStartWithACapital(t *testing.T) {
+	for _, p := range catalog {
+		for _, m := range p.Modules {
+			if r := []rune(m.Name); len(r) == 0 || unicode.IsLower(r[0]) {
+				t.Errorf("%s/%s: %q should start with a capital", p.Name, m.Slug, m.Name)
+			}
+		}
+	}
 }

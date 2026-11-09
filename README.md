@@ -49,9 +49,11 @@ A recipe runs several commands in order, and stops if one fails or clingon can't
 
 1. Open a section and press `1` on the first command.
 2. Press `2` on the next, from the same section or any other.
-3. Press `r` to see the recipe, then `enter` on **Run recipe**.
+3. Press `r` to see the recipe, then `enter` on **Run**.
 
-clingon offers to add the recipe before it runs, unless you've already added those commands. Your recipes are listed under **Saved recipes**, at **Clingon › Recipes**, where you can run, describe or remove them.
+The recipe's own list shows its numbered steps, each with its pack, under a heading that says how many there are, how many are risky and whether it's saved. Under the steps: **Run**, **Save as…**, **Describe** and **Clear**.
+
+**Clingon › Recipes** lists the current recipe and your **Saved recipes**, each with how many steps it has and a mark if any step is risky. Open a saved one to see its steps, then **Run**, **Describe**, **Edit** or **Remove** it. **Edit** makes it the current recipe: change it with the number keys, then **Save as…** under the same name to save over it.
 
 Each saved recipe is a Markdown file in `~/.clingon/recipes/`, next to your packs: a name, an optional description, and a numbered list of links to each command's heading in its pack's file. You can edit one by hand, or add a description:
 
@@ -73,7 +75,7 @@ Pull, then see what changed.
 
 **Blanks are asked for when each command is reached**, so earlier commands have already had their effect. Answers aren't kept: a recipe asks again every run. Risky commands still ask before they run.
 
-**Run from anywhere.** Press `enter` on a command in the recipe's list to run the recipe from there, leaving out the ones before it. If a command stops the recipe, the cursor waits on it when you press `r`: press `enter` to run it again and carry on, or move down a row to skip it, say if you've fixed things by hand in the shell. **Run recipe** always starts from the top.
+**Run from anywhere.** Press `enter` on a command in the recipe's list to run the recipe from there, leaving out the ones before it. If a command stops the recipe, the cursor waits on it when you press `r`: press `enter` to run it again and carry on, or move down a row to skip it, say if you've fixed things by hand in the shell. **Run** always starts from the top.
 
 **Need a command that isn't in a pack?** Number **Command Line › Commands › Type a command** like any other command. It asks what to run each time the recipe gets there. If you run the same line every time, [add it to a pack of your own](#your-own-commands).
 

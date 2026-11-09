@@ -1,4 +1,4 @@
-# pip and venv
+# Pip and venv
 Make and use virtualenvs, install packages and requirements with pip, and save requirements
 
 ## Activate virtualenv

@@ -2,7 +2,7 @@
 needs: bun
 when: bun.lock, bun.lockb
 ---
-# bun
+# Bun
 Install, add, remove and update packages, run scripts and tests with bun
 
 ## Add a package

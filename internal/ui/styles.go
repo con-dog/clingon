@@ -20,6 +20,7 @@ var (
 	accent      = lipgloss.Color(PinkHex)   // 212 pink: the cursor, marks, what you act on
 	purple      = lipgloss.Color("#875fff") // 99: the menu's headings, the prompt's folder
 	ghostPurple = lipgloss.Color("#5f5faf") // 61: the headings' purple, dimmed: a form's "+ ADD MODULE", where one would go
+	ghostRed    = lipgloss.Color("#af5f5f") // 131: the errors' red, muted: a form's "− REMOVE", as ghostPurple is its ADD
 	soft        = lipgloss.Color("#afafff") // 147 periwinkle: headings and keys in the shell's output, far enough from the prompt's purple; flags
 	grey        = lipgloss.Color(greyHex)   // 103 lavender: secondary text, the prompt's branch
 	faint       = lipgloss.Color("#5f5f87") // 60: chrome: rules, frames, placeholders

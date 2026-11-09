@@ -24,9 +24,11 @@ type item struct {
 	value    string
 	header   bool
 	accent   bool   // header in the accent colour (clingon's own section)
-	rule     bool   // header drawn as a divider line
+	pinned   bool   // in the list's foot, kept in view under the rest when the list doesn't fit (clingon's own section)
 	risk     string // config.RiskWarn or RiskDanger: drawn with a mark (danger in red)
 	where    string // a search result's section › group, drawn faint after it
+	detail   string // with header: drawn faint after the heading, as written: "4 steps · unsaved"
+	right    string // drawn dim at the row's right end: a recipe's "4 steps", a step's pack
 	disabled bool   // drawn greyed out; can be highlighted but not opened
 	missing  string // a section's tools that aren't installed: drawn dim, naming them, but it opens as usual
 	indent   bool   // sits under the row above it
@@ -41,13 +43,17 @@ type item struct {
 // a non-empty filter matches against search instead of items (the root menu
 // lists sections but searches every command).
 type picker struct {
-	items   []item
-	search  []item
-	view    []item
-	multi   bool
-	chosen  map[int]bool
-	iconW   int     // widest icon among items, so names line up
-	risky   [2]bool // some row has a risk mark, in items [0] and search [1]: every row keeps a slot for one, so names line up
+	items  []item
+	search []item
+	view   []item
+	multi  bool
+	chosen map[int]bool
+	iconW  int     // widest icon among items, so names line up
+	risky  [2]bool // some row has a risk mark, in items [0] and search [1]: every row keeps a slot for one, so names line up
+	// recipe: a recipe's own list. Every row keeps a slot for a risk mark, so
+	// adding a risky step moves nothing and Remove's mark sits where the
+	// others' would.
+	recipe  bool
 	cursor  int
 	blurred bool             // focus is elsewhere: the cursor's row in grey, not pink
 	step    func(item) []int // a command's places in the recipe, ascending, if this list shows them
@@ -271,6 +277,28 @@ func score(q, s string) int {
 // heading. Greyed out rows too, so the info pane can say why they are.
 func (p *picker) selectable(i int) bool { return !p.view[i].header }
 
+// wrap moves the cursor round a list's ends, as every list and form does:
+// ↑ (step -1) on its first row to its last, and ↓ (step 1) on its last back
+// to its first. It says whether it did: not unless the cursor's at that end.
+func (p *picker) wrap(step int) bool {
+	for i := p.cursor + step; i >= 0 && i < len(p.view); i += step {
+		if p.selectable(i) {
+			return false // not at that end
+		}
+	}
+	i := len(p.view) - 1 // ↑: the last row, from the foot up
+	if step > 0 {
+		i = 0 // ↓: the first, from the top down
+	}
+	for ; i != p.cursor && i >= 0 && i < len(p.view); i += step {
+		if p.selectable(i) {
+			p.cursor = i
+			return true
+		}
+	}
+	return false
+}
+
 // move steps the cursor delta rows, skipping headings.
 func (p *picker) move(delta int) {
 	step := 1
@@ -471,11 +499,15 @@ func (p *picker) values() []string {
 
 func (p *picker) update(msg tea.KeyPressMsg) tea.Cmd {
 	switch keyName(msg) {
-	case "up", "ctrl+p", "ctrl+k":
-		p.move(-1)
+	case "up", "ctrl+p", "ctrl+k": // at the top, round to the foot
+		if !p.wrap(-1) {
+			p.move(-1)
+		}
 		return nil
-	case "down", "ctrl+n", "ctrl+j":
-		p.move(1)
+	case "down", "ctrl+n", "ctrl+j": // at the foot, round to the top
+		if !p.wrap(1) {
+			p.move(1)
+		}
 		return nil
 	// [ and ] jump between headings in every terminal; Shift+↑/↓ too, in
 	// terminals that send it (Terminal.app sends them as plain ↑/↓).
@@ -516,6 +548,30 @@ func (p *picker) update(msg tea.KeyPressMsg) tea.Cmd {
 
 func (p *picker) render(width, height int) string {
 	height = max(1, height)
+	// A foot of pinned rows stays in view under the rest when the list doesn't
+	// fit, so what's above scrolls and it doesn't: on the cursor or off it,
+	// the rows above stay where they are.
+	k := 0
+	for k < len(p.view) && p.view[len(p.view)-1-k].pinned {
+		k++
+	}
+	if k > 0 && k < len(p.view) && len(p.view) > height && height-k >= minForMoreRow {
+		all, cursor := p.view, p.cursor
+		foot := all[len(all)-k:]
+		p.view = all[:len(all)-k]
+		if cursor >= len(p.view) {
+			p.cursor = -1 // on the foot: what's above keeps its place
+		}
+		lines := strings.Split(p.render(width, height-k), "\n")
+		p.view, p.cursor = all, cursor
+		for len(lines) < height-k { // a list just too long: the foot at the bottom all the same
+			lines = append(lines, "")
+		}
+		for i, it := range foot {
+			lines = append(lines, p.row(it, len(all)-k+i == cursor, width))
+		}
+		return strings.Join(lines, "\n")
+	}
 	// A list that doesn't fit gives its last row to saying so.
 	overflows := len(p.view) > height && height >= minForMoreRow
 	if overflows {
@@ -586,7 +642,7 @@ func rowCount(items []item) int {
 
 // tally is the list's size for the filter's row, in its noun: "34 commands",
 // or "12 of 34 commands" while a filter is applied. Rows that aren't what the
-// noun names, like a recipe's Run recipe, don't count.
+// noun names, like a recipe's Run, don't count.
 func (p *picker) tally() string {
 	if p.noun == "" {
 		return ""
@@ -594,7 +650,7 @@ func (p *picker) tally() string {
 	count := func(items []item) int {
 		n := 0
 		for i := range items {
-			if _, isCmd := items[i].ref.(cmdRef); !items[i].header && (isCmd || p.noun != "command") {
+			if _, isCmd := items[i].ref.(cmdRef); !items[i].header && (isCmd || items[i].stepAt > 0 || p.noun != "command") {
 				n++
 			}
 		}
@@ -624,16 +680,13 @@ func (p *picker) tally() string {
 
 // sticky is the heading of the group scrolled into, pinned above its
 // rows so you can still see whose they are: -1 if the top row is a
-// heading anyway, or a divider is the nearest one.
+// heading anyway.
 func (p *picker) sticky() int {
 	if p.height < 2 || p.offset <= 0 || p.offset >= len(p.view) || p.view[p.offset].header {
 		return -1
 	}
 	for i := p.offset - 1; i >= 0; i-- {
 		if p.view[i].header {
-			if p.view[i].rule {
-				return -1
-			}
 			return i
 		}
 	}
@@ -689,9 +742,6 @@ func CommandBlock(c *config.Command, w int) []string {
 }
 
 func (p *picker) row(it item, active bool, width int) string {
-	if it.rule {
-		return faintStyle.Render(strings.Repeat("─", width))
-	}
 	if it.note {
 		return faintStyle.Render("  " + ansi.Truncate(it.title, max(width-2, 1), "…"))
 	}
@@ -700,14 +750,18 @@ func (p *picker) row(it item, active bool, width int) string {
 		if it.accent {
 			st = cursorStyle
 		}
-		return st.Render(ansi.Truncate(strings.ToUpper(it.title), width, "…"))
+		head := st.Render(ansi.Truncate(strings.ToUpper(it.title), width, "…"))
+		if room := width - ansi.StringWidth(it.title) - 3; it.detail != "" && room > 4 {
+			head += faintStyle.Render(" · " + ansi.Truncate(it.detail, room, "…"))
+		}
+		return head
 	}
 	// Commands keep the last cells for their number's badge, set or not, so
 	// badges share a column and a name doesn't change where it's cut. More
 	// badges, for a command that's more than one step, grow to the left.
 	full := width
 	_, isCmd := it.ref.(cmdRef)
-	numbered := isCmd && p.step != nil
+	numbered := (isCmd || it.stepAt > 0) && p.step != nil // a saved recipe's steps too
 	var badges string
 	badgesW := stepW
 	if numbered {
@@ -742,15 +796,21 @@ func (p *picker) row(it item, active bool, width int) string {
 	case it.risk == config.RiskDanger:
 		prefix += dangerStyle.Render(dangerGlyph + " ")
 	default:
-		if p.risky[p.searching()] {
+		if p.risky[p.searching()] || p.recipe {
 			prefix += "  "
 		}
 	}
 	if it.icon != "" {
 		prefix += iconStyle(it.color).Render(it.icon) + strings.Repeat(" ", max(0, p.iconW-ansi.StringWidth(it.icon))) + " "
 	}
-	// Descriptions live in the info pane, never inline.
-	title := ansi.Truncate(it.title, width-ansi.StringWidth(prefix), "…")
+	// Descriptions live in the info pane, never inline. What's said at the
+	// right keeps its room, a cell either side.
+	rightW := 0
+	if it.right != "" {
+		rightW = ansi.StringWidth(it.right) + 2
+		width -= rightW
+	}
+	title := ansi.Truncate(it.title, max(width-ansi.StringWidth(prefix), 1), "…")
 	switch {
 	case it.disabled:
 		title = faintStyle.Render(title)
@@ -769,6 +829,9 @@ func (p *picker) row(it item, active bool, width int) string {
 		title += dimStyle.Render(" · " + ansi.Truncate(it.where, room, "…"))
 	}
 	line := prefix + title
+	if it.right != "" {
+		line += strings.Repeat(" ", max(0, width-ansi.StringWidth(line)+1)) + dimStyle.Render(it.right) + " "
+	}
 	if badges != "" {
 		line += strings.Repeat(" ", max(0, full-badgesW-1-ansi.StringWidth(line))) + badges + " "
 	}

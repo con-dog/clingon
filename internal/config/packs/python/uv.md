@@ -1,7 +1,7 @@
 ---
 needs: uv
 ---
-# uv
+# Uv
 Start a project, add packages, sync the environment and run things with uv
 
 ## Add a package

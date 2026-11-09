@@ -2,7 +2,7 @@
 needs: yarn
 when: yarn.lock
 ---
-# yarn
+# Yarn
 Install, add and remove packages, run scripts and tests, and see why one is installed with yarn
 
 ## Add a package

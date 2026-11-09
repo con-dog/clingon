@@ -172,10 +172,8 @@ func (f *PackForm) saveKey(k string) tea.Cmd {
 		return f.discardKey(k)
 	}
 	switch k {
-	case "up":
-		f.saveOpt = max(f.saveOpt-1, 0)
-	case "down":
-		f.saveOpt = min(f.saveOpt+1, len(saveChoices)-1)
+	case "up", "down":
+		f.saveOpt = round(f.saveOpt, k, len(saveChoices))
 	case "left", "esc":
 		f.saving = false
 	case "right", "enter":
@@ -207,10 +205,8 @@ var discardChoices = []string{"No", "Yes"}
 // save choices, on Discard changes; Yes throws the changes away.
 func (f *PackForm) discardKey(k string) tea.Cmd {
 	switch k {
-	case "up":
-		f.discardOpt = max(f.discardOpt-1, 0)
-	case "down":
-		f.discardOpt = min(f.discardOpt+1, len(discardChoices)-1)
+	case "up", "down":
+		f.discardOpt = round(f.discardOpt, k, len(discardChoices))
 	case "left", "esc":
 		f.discard = false
 	case "right", "enter":
@@ -226,6 +222,21 @@ func (f *PackForm) discardKey(k string) tea.Cmd {
 		return tea.Quit
 	}
 	return nil
+}
+
+// rowHelp is what the row the cursor's on is for, or, once esc has asked,
+// what saving does.
+func (f *PackForm) rowHelp() string {
+	switch {
+	case f.saving && f.discard:
+		return "Throws away every change since the form opened."
+	case f.saving:
+		return "Save writes your changes to the pack's files. Keep editing goes back to the form."
+	}
+	if r := f.selectedRow(); r != nil {
+		return r.help
+	}
+	return ""
 }
 
 // saveLines is the question, under the form's foot rule, level with the
@@ -347,10 +358,10 @@ func (f *PackForm) refresh(focus string) {
 	}
 	f.sel = min(max(was, 0), len(f.rows)-1)
 	if f.rows[f.sel].still() {
-		f.move(1)
+		f.step(1)
 	}
 	if f.rows[f.sel].still() {
-		f.move(-1)
+		f.step(-1)
 	}
 }
 
@@ -495,13 +506,45 @@ func (f *PackForm) matching(rows []formRow) []formRow {
 // still says whether the cursor passes a row by: a heading, or a title.
 func (r formRow) still() bool { return r.header && r.key == "" || r.title }
 
-func (f *PackForm) move(d int) {
+// step takes the cursor d rows on, past those it can't be on, stopping at
+// the form's ends. It says whether it moved.
+func (f *PackForm) step(d int) bool {
 	for i := f.sel + d; i >= 0 && i < len(f.rows); i += d {
+		if !f.rows[i].still() {
+			f.sel = i
+			return true
+		}
+	}
+	return false
+}
+
+// move is ↑ (d -1) or ↓ (d 1): a row on, and past the form's last row round
+// to its first, or before its first to its last, as every list does.
+func (f *PackForm) move(d int) {
+	if f.step(d) {
+		return
+	}
+	i := 0 // ↓ at the foot: from the top
+	if d < 0 {
+		i = len(f.rows) - 1 // ↑ at the top: from the foot
+	}
+	for ; i != f.sel && i >= 0 && i < len(f.rows); i += d {
 		if !f.rows[i].still() {
 			f.sel = i
 			return
 		}
 	}
+}
+
+// round is i moved one on by ↑ or ↓ among n choices, going round at the ends.
+func round(i int, k string, n int) int {
+	if n == 0 {
+		return 0
+	}
+	if k == "up" {
+		return (i - 1 + n) % n
+	}
+	return (i + 1) % n
 }
 
 func joined(l []string) string { return strings.Join(l, ", ") }
@@ -892,8 +935,26 @@ func (f *PackForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := f.key(msg)
 		f.tellKeys()
 		return f, cmd
+	case tea.PasteMsg:
+		return f, f.paste(msg)
 	}
 	return f, nil
+}
+
+// paste puts pasted text into the box that's open, the field being typed in
+// or the filter, as if typed there; with no box open it does nothing, so a
+// pasted ? or / can't act as a key. Lines pasted into a field are joined.
+func (f *PackForm) paste(msg tea.PasteMsg) tea.Cmd {
+	var cmd tea.Cmd
+	switch {
+	case f.saving || f.help:
+	case f.editing != nil:
+		*f.input, cmd = f.input.Update(msg)
+	case f.filtering:
+		f.filter, cmd = f.filter.Update(msg)
+		f.refresh("")
+	}
+	return cmd
 }
 
 // barKeys are the keys that work in the form right now, for the status bar:
@@ -1061,10 +1122,8 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	case f.choosing != nil:
 		switch k {
-		case "up":
-			f.opt = max(f.opt-1, 0)
-		case "down":
-			f.opt = min(f.opt+1, len(f.options)-1)
+		case "up", "down":
+			f.opt = round(f.opt, k, len(f.options))
 		case "pgup", "[":
 			f.opt = max(f.opt-max(f.pageSize, 1), 0)
 		case "pgdown", "]":
@@ -1105,13 +1164,13 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 		f.move(-1)
 	case "down":
 		f.move(1)
-	case "pgup":
+	case "pgup": // a page stops at the end
 		for range max(f.pageSize, 1) {
-			f.move(-1)
+			f.step(-1)
 		}
 	case "pgdown":
 		for range max(f.pageSize, 1) {
-			f.move(1)
+			f.step(1)
 		}
 	case "[":
 		f.jump(-1)
@@ -1223,8 +1282,18 @@ func (f *PackForm) view() string {
 	// path (row 2), the filter by its filter (row 4), the form from row 6 by
 	// its list; the help and keys at the bottom, a row from the edge.
 	top := []string{"", "", f.crumb(inner), "", f.filterLine(inner), ""}
-	// Its foot, under a rule level with the menu's info pane's, stays put.
-	panel := append([]string{faintStyle.Render(strings.Repeat("─", inner))}, f.saveLines(inner)...)
+	// Its foot, under a rule level with the menu's info pane's, stays put:
+	// what the row the cursor's on is for, then under a rule of its own the
+	// save question, its rows and no more. With no room for both, the
+	// question.
+	rule := faintStyle.Render(strings.Repeat("─", inner))
+	save := f.saveLines(inner)
+	panel := []string{rule}
+	if k := infoTop(f.h) - 2 - len(save); k > 0 {
+		panel = append(panel, strings.Split(styledBlock(dimStyle, f.rowHelp(), inner, k), "\n")...)
+		panel = append(panel, rule)
+	}
+	panel = append(panel, save...)
 	room := max(f.h-len(top)-len(foot)-infoTop(f.h), 1)
 	body, at, row, heads := f.cards(inner)
 	if f.help {
@@ -1622,12 +1691,12 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 			st = cursorStyle
 		}
 		rest = " " + st.Render("+") + " " + st.Render(word)
-	case r.confirm != "" && flatForm: // a remove: an amber − and REMOVE, as an add's + and ADD; enter asks No or Yes under it
-		st := lipgloss.NewStyle().Foreground(ghostPurple)
+	case r.confirm != "" && flatForm: // a remove: a muted red − and REMOVE, as an add's + and ADD; enter asks No or Yes under it
+		st := lipgloss.NewStyle().Foreground(ghostRed)
 		if on || open {
 			st = cursorStyle
 		}
-		rest = " " + warnStyle.Render("−") + " " + st.Render("REMOVE")
+		rest = " " + st.Render("−") + " " + st.Render("REMOVE")
 	case r.do != nil && r.confirm == "": // an add
 		st := accentStyle
 		if on {
@@ -1799,31 +1868,84 @@ func filePreview(name, text string, on map[int]bool, near, w, h int) []string {
 	rule := pad + faintStyle.Render(strings.Repeat("─", w))
 	head := []string{pad + labelStyle.Render(ansi.Truncate(strings.ToUpper(name), w, "…")), rule}
 	var body []string
-	first := -1
+	first, last := -1, -1 // the marked rows, first and last
+	plain := strings.Split(text, "\n")
+	code := false   // in a fenced code block
+	var rowOf []int // each line's first row
 	for i, l := range strings.Split(strings.TrimRight(micro.Markdown(text), "\n"), "\n") {
-		l = ansi.Truncate(l, w, "…")
-		if on[i] {
-			if first < 0 {
-				first = i
-			}
-			body = append(body, marked1(l, w))
-			continue
+		src := ""
+		if i < len(plain) {
+			src = plain[i]
 		}
-		body = append(body, pad+l)
+		fence := strings.HasPrefix(strings.TrimSpace(src), "```")
+		rowOf = append(rowOf, len(body))
+		rows := wrapPreview(l, src, code && !fence, w)
+		if fence {
+			code = !code
+		}
+		for _, r := range rows {
+			if on[i] {
+				if first < 0 {
+					first = len(body)
+				}
+				last = len(body)
+				body = append(body, marked1(r, w))
+				continue
+			}
+			body = append(body, pad+r)
+		}
+	}
+	if near >= len(rowOf) { // past the file's end: its end
+		near = len(body) - 1
+	} else if near >= 0 {
+		near = rowOf[near]
 	}
 	body = append(body, rule)
 	room := max(h-len(head), 1)
 	if first < 0 { // nothing of the row's in the file yet (no risk, say): where it goes, in view
-		first = near
+		first, last = near, near
 	}
-	if len(body) > room { // the marked lines in view, a little way down
+	if len(body) > room { // the marked rows in view, a little way down, all of them if they fit
 		start := 0
 		if first >= 0 {
 			start = min(max(first-room/3, 0), len(body)-room)
+			if last >= start+room {
+				start = min(last-room+1, first)
+			}
 		}
 		body = body[start : start+room]
 	}
 	return append(head, body...)
+}
+
+// listItem is a Markdown list item's marker, and a heading's: what a long
+// one's wrapped rows hang under.
+var listItem = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|#{1,6})\s+`)
+
+// wrapPreview is one line of a pack's file, coloured, in rows w wide,
+// broken between words (and inside a word too long for a row). A list
+// item's or heading's rows hang under its text; a code line's go on after a
+// faint ↪, so they can't be taken for lines of their own.
+func wrapPreview(styled, plain string, code bool, w int) []string {
+	if ansi.StringWidth(styled) <= w {
+		return []string{styled}
+	}
+	lead := ""
+	switch {
+	case code:
+		ind := len(plain) - len(strings.TrimLeft(plain, " \t"))
+		lead = strings.Repeat(" ", ind) + faintStyle.Render("↪") + " "
+	default:
+		lead = strings.Repeat(" ", ansi.StringWidth(listItem.FindString(plain)))
+	}
+	if ansi.StringWidth(lead) > w/2 {
+		lead = ""
+	}
+	rows := strings.Split(lipgloss.Wrap(styled, max(w-ansi.StringWidth(lead), 1), ""), "\n")
+	for i := 1; i < len(rows); i++ {
+		rows[i] = lead + rows[i]
+	}
+	return rows
 }
 
 // partLine is the line of a module's file the row keyed key is part of, for

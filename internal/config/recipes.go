@@ -177,6 +177,16 @@ func HasRecipe(rs []Recipe, name string) bool {
 // same name. labels are what each step's link says (the command's name); a
 // missing one is made from the step.
 func SaveRecipe(name string, steps, labels []string) error {
+	return saveRecipe(name, steps, labels, false)
+}
+
+// ReplaceRecipe saves a recipe over the one of that name, keeping its
+// description: what Edit, then Save as… under the same name, does.
+func ReplaceRecipe(name string, steps, labels []string) error {
+	return saveRecipe(name, steps, labels, true)
+}
+
+func saveRecipe(name string, steps, labels []string, replace bool) error {
 	if name = strings.TrimSpace(name); name == "" {
 		return errors.New("a recipe needs a name")
 	}
@@ -191,11 +201,24 @@ func SaveRecipe(name string, steps, labels []string) error {
 		return err
 	}
 	path := recipeFile(name)
-	if _, err := os.Stat(path); HasRecipe(rs, name) || err == nil {
+	desc := ""
+	if replace {
+		i := slices.IndexFunc(rs, func(r Recipe) bool { return strings.EqualFold(r.Name, name) })
+		if i < 0 {
+			return fmt.Errorf("you don't have a recipe called %q to replace", name)
+		}
+		desc = rs[i].Description
+		if err := RemoveRecipe(rs[i].Name); err != nil {
+			return err
+		}
+	} else if _, err := os.Stat(path); HasRecipe(rs, name) || err == nil {
 		return fmt.Errorf("you already have a recipe called %q", name)
 	}
 	var b strings.Builder
 	b.WriteString("# " + name + "\n\n")
+	if desc != "" {
+		b.WriteString(desc + "\n\n")
+	}
 	for i, st := range steps {
 		label := ""
 		if i < len(labels) {

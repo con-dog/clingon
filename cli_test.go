@@ -485,6 +485,20 @@ func TestRecipeCommands(t *testing.T) {
 	if _, err := run("describe", "Nope"); err == nil {
 		t.Error("describing what isn't there should say so")
 	}
+	// One not saved, the menu's current recipe, is described by its steps.
+	if out, err := run("describe", "--steps", id); err != nil || !strings.Contains(ansi.Strip(out), "This recipe") || !strings.Contains(ansi.Strip(out), " 1  Ship · Mine") {
+		t.Errorf("describe --steps: %v\n%s", err, out)
+	}
+	// --replace saves over one of that name, and only one that's there.
+	if out, err := run("add", "--replace", "Ship it", id); err != nil || !strings.Contains(out, "replaced") {
+		t.Errorf("replace: %q %v", out, err)
+	}
+	if out, _ := run("list"); !strings.Contains(out, "Ship it\t"+id+"\n") {
+		t.Errorf("replaced, one step: %q", out)
+	}
+	if _, err := run("add", "--replace", "Nothing here", id); err == nil {
+		t.Error("replacing what isn't there should say so")
+	}
 	if _, err := run("remove", "My AWS ECS flow"); err != nil {
 		t.Error(err)
 	}

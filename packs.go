@@ -440,13 +440,15 @@ func commandCmd(args []string) error {
 }
 
 const recipeUsage = `Usage:
-  clingon recipe add NAME ID...
+  clingon recipe add [--replace] NAME ID...
   clingon recipe remove NAME
   clingon recipe list
   clingon recipe describe NAME
+  clingon recipe describe --steps ID...
 
-A recipe runs commands in order. The menu adds one for you when you run it, from
-Clingon › Recipes, and lists it there; each ID is one of its commands. Each is
+A recipe runs commands in order. Build one in the menu with 1-9, then Save as…
+from Clingon › Recipes, where it's listed; each ID is one of its commands.
+--replace saves over the recipe of that name, keeping its description. Each is
 a Markdown file in recipes/, next to packs/, that you can edit too.
 `
 
@@ -457,8 +459,12 @@ func recipeCmd(args []string) error {
 	}
 	switch args[0] {
 	case "add":
+		replace := len(args) > 1 && args[1] == "--replace"
+		if replace {
+			args = append(args[:1:1], args[2:]...)
+		}
 		if len(args) < 3 {
-			return errors.New("usage: clingon recipe add NAME ID...")
+			return errors.New("usage: clingon recipe add [--replace] NAME ID...")
 		}
 		var labels []string // each link says its command's name, where that's known
 		if found, err := commandsByID(); err == nil {
@@ -466,10 +472,14 @@ func recipeCmd(args []string) error {
 				labels = append(labels, found[id].name())
 			}
 		}
-		if err := config.SaveRecipe(args[1], args[2:], labels); err != nil {
+		save, did := config.SaveRecipe, "added"
+		if replace {
+			save, did = config.ReplaceRecipe, "replaced"
+		}
+		if err := save(args[1], args[2:], labels); err != nil {
 			return err
 		}
-		say(ok, "added recipe %q", args[1])
+		say(ok, "%s recipe %q", did, args[1])
 		return nil
 	case "remove", "rm":
 		if len(args) != 2 {
@@ -502,8 +512,11 @@ func recipeCmd(args []string) error {
 		}
 		return nil
 	case "describe":
+		if len(args) > 2 && args[1] == "--steps" { // a recipe not saved yet: the menu's current one
+			return describeSteps("This recipe", args[2:])
+		}
 		if len(args) != 2 {
-			return errors.New("usage: clingon recipe describe NAME")
+			return errors.New("usage: clingon recipe describe NAME, or --steps ID...")
 		}
 		return describeRecipe(args[1])
 	}
@@ -522,11 +535,17 @@ func describeRecipe(name string) error {
 	if i < 0 {
 		return fmt.Errorf("you don't have a recipe called %q (see `clingon recipe list`)", name)
 	}
+	return describeSteps(rs[i].Name, rs[i].Steps)
+}
+
+// describeSteps says what a recipe called name, of these steps, does, step
+// by step.
+func describeSteps(name string, steps []string) error {
 	cmds, err := commandsByID()
 	if err != nil {
 		return err
 	}
-	r := rs[i]
+	r := config.Recipe{Name: name, Steps: steps}
 	const indent = "    " // under the name, past the step's badge
 	w := cardWidth()
 	inner := w - 4 - len(indent)

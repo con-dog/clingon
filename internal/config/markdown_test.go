@@ -169,7 +169,7 @@ func TestPackSection(t *testing.T) {
 		t.Errorf("typed: %q %v", s, err)
 	}
 	cats := MenuCategories([]Section{{Category: "Work Tools"}, {Category: Other}, {Category: "Code"}})
-	if strings.Join(cats, ",") != "AI,Code,Command Line,Databases,Infrastructure,System,Work Tools,Other" {
+	if strings.Join(cats, ",") != "AI,Code,Command Line,Databases,Infrastructure,Other,System,Work Tools" {
 		t.Errorf("headings: %v", cats)
 	}
 	if _, err := parsePackFile("s.md", []byte("---\nmenu: code\n---\n# S\n")); err == nil {
