@@ -18,3 +18,6 @@ node_modules/
 .vscode/
 *.swp
 *~
+
+# History from trying clingon's shell files out: never embed or ship it
+internal/shell/files/**/.*_history

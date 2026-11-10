@@ -51,7 +51,9 @@ func serverWith(t *testing.T, shell string) (*Client, string) {
 
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	// Generous: a cold CI runner under -race can take seconds to start a
+	// shell, and this only polls, so a pass is no slower for it.
+	for end := time.Now().Add(30 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
 		if ok() {
 			return
 		}

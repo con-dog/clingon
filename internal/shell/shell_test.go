@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,8 +58,10 @@ func run(t *testing.T, shell, rcName, rc string, lines ...string) string {
 		out, _ := exec.Command("tmux", "-S", sock, "capture-pane", "-p").Output()
 		return string(out)
 	}
+	// Generous: a cold CI runner under -race can take seconds to start the
+	// first shell, and this only polls, so a pass is no slower for it.
 	wait := func(what string, ok func(string) bool) string {
-		for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		for end := time.Now().Add(30 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
 			if s := capture(); ok(s) {
 				return s
 			}
@@ -158,4 +161,19 @@ func TestOtherShellsAreRefused(t *testing.T) {
 			t.Errorf("%q: %v", sh, err)
 		}
 	}
+}
+
+// setup writes every embedded file over the user's copy, so only clingon's
+// own shell files may be embedded: never a history or anything else.
+func TestOnlyShellFilesAreEmbedded(t *testing.T) {
+	want := map[string]bool{
+		"files/bash/bashrc": true, "files/zsh/.zshenv": true,
+		"files/zsh/.zprofile": true, "files/zsh/.zshrc": true,
+	}
+	_ = fs.WalkDir(files, "files", func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && !want[path] {
+			t.Errorf("%s is embedded, and setup would write it over the user's copy", path)
+		}
+		return err
+	})
 }

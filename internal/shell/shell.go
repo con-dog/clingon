@@ -16,7 +16,11 @@ import (
 	"syscall"
 )
 
-//go:embed all:files
+// Named one by one, not all:files: setup writes every embedded file over the
+// copy in the config folder, so a stray file here (a .zsh_history from trying
+// clingon out) would ship, and replace each user's history on every launch.
+//
+//go:embed files/bash/bashrc files/zsh/.zshenv files/zsh/.zprofile files/zsh/.zshrc
 var files embed.FS
 
 // setup writes clingon's shell files into base/shell (when changed) and
