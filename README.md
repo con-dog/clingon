@@ -28,7 +28,7 @@ Press `?` in clingon for every key.
 - **Its files** are in `~/.clingon`: your packs and recipes, plus its own files in `~/.clingon/config`. Set `$CLINGON_CONFIG` to move it.
 - **Over SSH**, use `eval "$(clingon print)"` to pick a command and run it.
 - **Something wrong?** Run `clingon doctor`, or `clingon crash` to see why it last crashed. Update with `clingon update`.
-- **Zero Telemetry.** Clingon never phones home, and never collects data about you or your commands.
+- **Zero Telemetry.** Clingon collects nothing about you or your commands. It only goes online to check for a new release once a day, and when you add or update packs.
 
 ## Removing clingon
 
