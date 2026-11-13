@@ -7,7 +7,7 @@ brew install con-dog/tap/clingon
 clingon
 ```
 
-![clingon: pick commands from a menu, run them in a real shell beside it](media/clingon-intro.gif.png)
+![clingon: pick commands from a menu, run them in a real shell beside it](media/ai-driver.gif.png)
 
 Needs macOS, with zsh or bash. Opens in its own window, with its own custom font and colours.
 
@@ -19,6 +19,16 @@ Needs macOS, with zsh or bash. Opens in its own window, with its own custom font
 **Packs:** `files`, `network`, `package-managers`, `ssh` and `system` to begin with. Add `aws`, `claude-code`, `codex`, `docker`, `dotnet`, `git`, `github`, `go`, `macos`, `node`, `playwright`, `postgres`, `python`, `redis` and `security` with `clingon pack add <name>`. More to come!
 
 Press `?` in clingon for every key.
+
+## Why clingon?
+
+| | clingon | navi | tldr | fzf |
+|---|:-:|:-:|:-:|:-:|
+| Finds commands you've never run | ✓ | ✓ | ✓ | – |
+| Fills in the blanks for you | ✓ | ✓ | – | – |
+| Runs it in your shell | ✓ | ✓ | – | ✓ |
+| Asks before risky commands | ✓ | – | – | – |
+| Chains commands into recipes | ✓ | – | – | – |
 
 ## Good to know
 
