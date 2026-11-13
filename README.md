@@ -26,6 +26,7 @@ Needs macOS, with zsh or bash. Opens in its own window in Terminal or iTerm2 (Gh
 | Finds commands you've never run | ✓ | ✓ | ✓ | – |
 | Fills in the blanks for you | ✓ | ✓ | – | – |
 | Runs it in your shell | ✓ | ✓ | – | ✓ |
+| Runs plain Markdown | ✓ | – | – | – |
 | Asks before risky commands | ✓ | – | – | – |
 | Chains commands into recipes | ✓ | – | – | – |
 | Has an AI that does it for you | ✓ | – | – | – |
