@@ -22,7 +22,7 @@ All of this is also in the menu, under **Clingon › Packs**.
 
 ```sh
 clingon pack guide               # how packs work, with an example to copy
-clingon pack create              # starts one from a working example, as a form
+clingon pack create              # starts one as a form, with greyed hints to fill in
 clingon pack edit work-tools
 clingon check                    # find mistakes
 ```

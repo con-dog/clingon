@@ -28,7 +28,7 @@ Press `?` in clingon for every key.
 - **Its files** are in `~/.clingon`: your packs and recipes, plus its own files in `~/.clingon/config`. Set `$CLINGON_CONFIG` to move it.
 - **Over SSH**, use `eval "$(clingon print)"` to pick a command and run it.
 - **Something wrong?** Run `clingon doctor`, or `clingon crash` to see why it last crashed. Update with `clingon update`.
-- **Zero Telemetry.** Clingon collects nothing about you or your commands. It only goes online to check for a new release once a day, and when you add or update packs.
+- **Zero Telemetry.** Clingon collects nothing about you or your commands. It only goes online to check for a new release once a day, and when you add or update packs. The AI is off until you add an OpenRouter key; then each task you give it goes to OpenRouter and the model's maker, with the menu as text and the shell's last lines.
 
 ## Removing clingon
 

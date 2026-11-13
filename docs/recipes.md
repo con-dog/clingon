@@ -8,9 +8,9 @@ A recipe runs several commands in order, and stops if one fails or clingon can't
 2. Press `2` on the next, from the same section or any other.
 3. Press `r` to see the recipe, then `enter` on **Run**.
 
-The recipe's own list shows its numbered steps, each with its pack, under a heading that says how many there are, how many are risky and whether it's added. Above the steps: **Run**, **Add as…**, **Describe** and **Clear**.
+The recipe's own list shows its numbered steps, each with its pack, under a heading that says how many there are and how many are risky. Once it's added, or run from **My recipes**, the heading is its name. Above the steps: **Run**, **Add as…**, **Describe** and **Clear**; for one of My recipes, unchanged, **Run**, **Describe**, **Clear** and **Remove**.
 
-**Clingon › Recipes** lists the current recipe and **My recipes**, each with how many steps it has and a mark if any step is risky. Open one to see its steps, then **Run**, **Describe**, **Edit** or **Remove** it. **Edit** makes it the current recipe: change it with the number keys, then **Add as…** under the same name to replace it.
+**Clingon › Recipes** lists the current recipe and **My recipes**, each with how many steps it has and a mark if any step is risky. Each recipe is listed once: one of My recipes that's current, unchanged, is marked *current* there. Open one to see its steps, then **Run**, **Describe**, **Edit** or **Remove** it. **Edit** makes it the current recipe: change it with the number keys, then **Add as…** under the same name to replace it.
 
 Each recipe you add is a Markdown file in `~/.clingon/recipes/`, next to your packs: a name, an optional description, and a numbered list of links to each command's heading in its pack's file. You can edit one by hand, or add a description:
 
