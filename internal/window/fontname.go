@@ -5,7 +5,8 @@ package window
 // The font's name changes with its contents, so a terminal never uses
 // an older one it has cached.
 const (
-	fontFamily   = "Clingon Mono 19a8ec53"
-	fontPS       = "ClingonMono-19a8ec53" // the PostScript name, which Terminal and iTerm match on
-	fontFileName = "ClingonMono-19a8ec53.otf"
+	fontFamily       = "Clingon Mono a300ae5e"
+	fontPS           = "ClingonMono-a300ae5e" // the PostScript name, which Terminal and iTerm match on
+	fontFileName     = "ClingonMono-a300ae5e.otf"
+	fontBoldFileName = "ClingonMono-a300ae5e-Bold.otf" // the bold of the same family, which a terminal uses for bold text
 )

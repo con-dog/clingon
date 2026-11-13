@@ -3,7 +3,7 @@
 // that window: the terminal's default profile and every other window stay as
 // they are.
 //
-// clingon's font, Clingon Mono, is JetBrains Mono plus brand logos for
+// clingon's font, Clingon Mono, is Intel One Mono plus brand logos for
 // packs (font/build.py); clingon always runs in this window, so the logos
 // can be counted on.
 package window
@@ -27,10 +27,16 @@ import (
 //go:embed font/ClingonMono-Regular.otf
 var fontFile []byte
 
+// The family's bold, installed beside it: a terminal uses it for bold text,
+// where without one it would fake a bold by striking the regular twice.
+//
+//go:embed font/ClingonMono-Bold.otf
+var fontBoldFile []byte
+
 const (
 	fontSize = 13 // fontFamily, fontPS and fontFileName are in fontname.go
 
-	// The window's own colours, in clingon's palette (internal/ui/styles.go):
+	// The window's own colours, in clingon's palette (internal/palette):
 	// its ink, text, cursor and selection.
 	bg, fg, bold, cursor, selection = "#1a1724", "#e8e6f0", "#ffffff", "#ff87d7", "#3d3555"
 
@@ -63,21 +69,32 @@ func fontDir(home string) string {
 // it's there already, and removes older versions of it. It reports whether
 // it installed it just now.
 func InstallFont(home string) (bool, error) {
-	dst := filepath.Join(fontDir(home), fontFileName)
-	if have, err := os.ReadFile(dst); err == nil && bytes.Equal(have, fontFile) {
+	files := map[string][]byte{ // both weights: the regular, and its bold
+		filepath.Join(fontDir(home), fontFileName):     fontFile,
+		filepath.Join(fontDir(home), fontBoldFileName): fontBoldFile,
+	}
+	there := true
+	for dst, want := range files {
+		if have, err := os.ReadFile(dst); err != nil || !bytes.Equal(have, want) {
+			there = false
+		}
+	}
+	if there {
 		return false, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(fontDir(home), 0o755); err != nil {
 		return false, err
 	}
 	old, _ := filepath.Glob(filepath.Join(fontDir(home), "ClingonMono-*.otf"))
 	for _, f := range old {
-		if f != dst {
+		if _, ours := files[f]; !ours {
 			_ = os.Remove(f)
 		}
 	}
-	if err := os.WriteFile(dst, fontFile, 0o644); err != nil {
-		return false, err
+	for dst, want := range files {
+		if err := os.WriteFile(dst, want, 0o644); err != nil {
+			return false, err
+		}
 	}
 	return true, nil
 }

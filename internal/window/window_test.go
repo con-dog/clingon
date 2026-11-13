@@ -131,8 +131,17 @@ func TestInstallFontOnlyOnce(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(fontDir(home), fontFileName)); !bytes.Equal(b, fontFile) {
 		t.Fatal("the font file should be there, whole")
 	}
+	if b, _ := os.ReadFile(filepath.Join(fontDir(home), fontBoldFileName)); !bytes.Equal(b, fontBoldFile) {
+		t.Fatal("its bold should be there beside it, whole")
+	}
 	if again, _ := InstallFont(home); again {
 		t.Error("already there: nothing to do")
+	}
+	if err := os.Remove(filepath.Join(fontDir(home), fontBoldFileName)); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := InstallFont(home); !again {
+		t.Error("the bold gone missing: installed again")
 	}
 	if !bytes.HasPrefix(fontFile, []byte("OTTO")) {
 		t.Error("the bundled font should be an OpenType file")

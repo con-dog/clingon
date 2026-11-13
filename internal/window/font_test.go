@@ -33,6 +33,27 @@ func TestEmbeddedFontIsTheOneNamed(t *testing.T) {
 	}
 }
 
+// The bold is the same family (so a terminal finds it as the family's bold,
+// and never fakes one), under a name of its own, with every logo, twin and
+// drawn character the regular has: a logo in a bold heading is still the logo.
+func TestBoldIsTheSameFamilyWithTheSameCharacters(t *testing.T) {
+	if got := fontName(t, fontBoldFile, 1); got != fontFamily {
+		t.Errorf("the bold's family is %q, not the regular's %q", got, fontFamily)
+	}
+	if got := fontName(t, fontBoldFile, 2); got != "Bold" {
+		t.Errorf("the bold's style is %q", got)
+	}
+	if got := fontName(t, fontBoldFile, 6); got != fontPS+"-Bold" || !strings.HasPrefix(fontBoldFileName, got) {
+		t.Errorf("the bold's PostScript name is %q, its file %q", got, fontBoldFileName)
+	}
+	regular, bold := fontCmap(t, fontFile), fontCmap(t, fontBoldFile)
+	for r, g := range regular {
+		if g != 0 && bold[r] == 0 {
+			t.Errorf("U+%04X is in the regular but not the bold", r)
+		}
+	}
+}
+
 func TestEveryLogoAndSymbolIsInTheFont(t *testing.T) {
 	cmap := fontCmap(t, fontFile)
 	if cmap['A'] == 0 || cmap[0xE7FF] != 0 { // the reader itself: a letter's there, an unused codepoint isn't
@@ -115,7 +136,16 @@ func TestEverythingClingonShowsIsInTheFont(t *testing.T) {
 	if len(seen) == 0 || seen['☠'] == "" {
 		t.Fatalf("the scan found nothing to check: %d characters", len(seen))
 	}
+	// Never drawn in clingon's window, so never in its font.
+	elsewhere := map[rune]string{
+		'▷': "the greyed cursor's mark in the menu as text, for the AI to read",
+		'⊞': "a pack suggestion's mark outside clingon's window, in the terminal's own font",
+		'⊕': "the suggestion to make a pack, outside clingon's window too",
+	}
 	for r, where := range seen {
+		if elsewhere[r] != "" {
+			continue
+		}
 		if cmap[r] == 0 {
 			t.Errorf("%c (U+%04X), used in %s, isn't in the embedded font: use one that is, or add it to DRAWN in build.py", r, r, where)
 		}
