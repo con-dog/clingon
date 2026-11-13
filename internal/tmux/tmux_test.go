@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/con-dog/clingon/internal/config"
 )
 
 // server starts a private tmux server whose one pane runs sh, and returns
@@ -32,6 +34,11 @@ func serverWith(t *testing.T, shell string) (*Client, string) {
 		t.Fatal(err)
 	}
 	c.setEnv("ENV=") // no shell startup files
+	// Each prompt marked, as clingon's own rc files have their shells do: how
+	// WaitIdle hears a command's finished.
+	c.ReadyFile = filepath.Join(dir, "ready")
+	c.setEnv("CLINGON_READY=" + c.ReadyFile)
+	c.setEnv(`PROMPT_COMMAND=printf . >> "$CLINGON_READY"`) // sh and bash
 	pane, err := c.run("-f", "/dev/null", "new-session", "-d", "-s", "clingon", "-x", "120", "-y", "40",
 		// Set here, not in the environment: tmux may start this through
 		// bash ($SHELL), which unsets PS1 when it isn't interactive.
@@ -46,6 +53,16 @@ func serverWith(t *testing.T, shell string) (*Client, string) {
 		left, _, ok := c.cursorLine(pane)
 		return ok && strings.TrimSpace(left) != "" && c.State(pane).Busy == "" && c.Path(pane) != ""
 	})
+	if strings.Contains(shell, "zsh") { // zsh marks its prompts from the line editor, as clingon's .zshrc does
+		before := c.prompts()
+		if _, err := c.run("send-keys", "-t", pane, "-l", `_r() { zle -R; print -n . >> $CLINGON_READY }; zle -N zle-line-init _r`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.run("send-keys", "-t", pane, "Enter"); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, "zsh to mark its prompts", func() bool { return c.prompts() > before })
+	}
 	return c, pane
 }
 
@@ -156,17 +173,26 @@ func TestLayout(t *testing.T) {
 	if err := c.layout(self, shell, filepath.Dir(c.Socket), []string{"-e", "CLINGON=1"}); err != nil {
 		t.Fatal(err)
 	}
-	out, err := c.run("list-panes", "-F", "#{pane_id} #{pane_width} #{pane_active} #{@spacer} #{pane_current_command}")
+	out, err := c.run("list-panes", "-F", "#{pane_id} #{pane_width} #{pane_active} #{@spacer} #{pane_height} #{window_width} #{window_height}")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var spacers, menuW, shellW int
+	var spacers, sides, bars, menuW, shellW int
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line + " -")
 		w, _ := strconv.Atoi(f[1])
 		switch {
 		case f[3] == "1":
 			spacers++
+			h, _ := strconv.Atoi(f[4])
+			winW, _ := strconv.Atoi(f[5])
+			winH, _ := strconv.Atoi(f[6])
+			switch {
+			case w == 1 && h == winH: // a side: the window's whole height
+				sides++
+			case h == 1 && w == winW-4: // a bar: between the sides, a border and a spacer in from each edge
+				bars++
+			}
 		case f[0] == shell:
 			shellW = w
 		case f[2] == "1": // the menu has focus
@@ -176,8 +202,20 @@ func TestLayout(t *testing.T) {
 	if spacers != 4 {
 		t.Errorf("want 4 spacer panes framing the others, got %d:\n%s", spacers, out)
 	}
+	// The sides run the window's height and the bars sit between them, so no
+	// rule runs on past a corner of the frame.
+	if sides != 2 || bars != 2 {
+		t.Errorf("want 2 full-height sides and 2 bars between them, got %d and %d:\n%s", sides, bars, out)
+	}
+	if got := c.BarWidth(); got != 120-4 {
+		t.Errorf("BarWidth() = %d, want the bar's own width, %d", got, 120-4)
+	}
 	if menuW == 0 || shellW == 0 || menuW > shellW {
 		t.Errorf("want the focused menu on the narrower left third: menu %d, shell %d:\n%s", menuW, shellW, out)
+	}
+	// The menu's pane is named, for the pack form to line up with it.
+	if menu, err := c.run("show-options", "-gv", "@clingon-menu"); err != nil || menu == "" || menu == shell {
+		t.Errorf("@clingon-menu %q, err %v", menu, err)
 	}
 }
 
@@ -445,5 +483,116 @@ func TestSendLeavesFocusAlone(t *testing.T) {
 			t.Errorf("after %.20q focus is on %s, want the menu %s", cmd, got, menu)
 		}
 		c.WaitIdle(pane)
+	}
+}
+
+// The panel, open as a one-row strip, grows to the full panel when asked,
+// and stays that tall: resizing it sets off its own keep-the-height hook,
+// which mustn't put it back to the strip.
+func TestPanelGrowsWhenOpen(t *testing.T) {
+	c, shell := server(t)
+	p := c.NewPanel(shell, shell)
+	height := func() int {
+		out, _ := c.run("display-message", "-p", "-t", p.pane, "#{pane_height}")
+		h, _ := strconv.Atoi(strings.TrimSpace(out))
+		return h
+	}
+	if p.Open(1) == 0 || height() != 1 {
+		t.Fatalf("the strip: %d rows", height())
+	}
+	p.Open(12)
+	time.Sleep(200 * time.Millisecond) // for any hook to have run
+	if h := height(); h != 12 {
+		t.Errorf("open already, asked for 12 rows: %d", h)
+	}
+	if w, _ := c.run("show-options", "-gv", "@clingon-ai-working"); w != "1" {
+		t.Errorf("the full panel: the AI's at work, said %q", w)
+	}
+	p.Open(1)
+	time.Sleep(200 * time.Millisecond)
+	if h := height(); h != 1 {
+		t.Errorf("back to the strip: %d rows", h)
+	}
+	if w, _ := c.run("show-options", "-gv", "@clingon-ai-working"); w != "0" {
+		t.Errorf("the strip: not at work, said %q", w)
+	}
+	p.Close()
+}
+
+// tmux tells the menu when focus moves or a pane scrolls: its hooks append
+// to $CLINGON_CHANGED, and a watch on it wakes, with nothing polled.
+func TestChangesWakeTheWatch(t *testing.T) {
+	c, shell := server(t)
+	self := filepath.Join(filepath.Dir(c.Socket), "fake-clingon")
+	if err := os.WriteFile(self, []byte("#!/bin/sh\nexec sleep 60\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	changed := filepath.Join(filepath.Dir(c.Socket), "changed")
+	if err := os.WriteFile(changed, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.run("set-environment", "-g", "CLINGON_CHANGED", changed); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.layout(self, shell, filepath.Dir(c.Socket), []string{"-e", "CLINGON=1"}); err != nil {
+		t.Fatal(err)
+	}
+	w, err := config.WatchPath(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { w.Close(); w.Wait() }()
+	woke := func(what string, change func()) {
+		t.Helper()
+		before := size(changed)
+		done := make(chan bool, 1)
+		go func() { done <- w.Wait() }()
+		change()
+		select {
+		case ok := <-done:
+			if !ok {
+				t.Fatalf("%s: the watch ended", what)
+			}
+		case <-time.After(5 * time.Second): // only so a missing hook fails rather than hangs
+			t.Fatalf("%s didn't wake it", what)
+		}
+		for end := time.Now().Add(5 * time.Second); size(changed) == before && time.Now().Before(end); {
+			if !w.Wait() { // an earlier hook's byte woke it: this one's next
+				t.Fatal("the watch ended")
+			}
+		}
+		if size(changed) == before {
+			t.Fatalf("%s wrote nothing", what)
+		}
+	}
+	woke("focus moving to the shell", func() { c.Focus(shell) })
+	woke("the shell scrolling back", func() { _, _ = c.run("copy-mode", "-t", shell) })
+}
+
+func size(path string) int64 {
+	st, err := os.Stat(path)
+	if err != nil {
+		return -1
+	}
+	return st.Size()
+}
+
+// The cursor's row in a pane's screen is found by its bar: a pink-backed
+// blank starting the row, after nothing but colour and the form's guide
+// lines. One in another colour (the grey of a pane without focus) isn't it.
+func TestCursorCellFindsThePinkBar(t *testing.T) {
+	for line, want := range map[string]bool{
+		"\x1b[48;5;212m \x1b[0m\x1b[40m Name  Demo": true,
+		"\x1b[38;5;60m│\x1b[48;5;212m \x1b[0m Name": true,
+		"\x1b[48;2;255;135;215m \x1b[0m Name":       true,
+		"\x1b[48;5;103m \x1b[0m Name":               false,
+		"Name  \x1b[48;5;212m \x1b[0m":              false,
+	} {
+		if got := cursorCell.MatchString(line); got != want {
+			t.Errorf("%q: the cursor's row %v, want %v", line, got, want)
+		}
+	}
+	if got := cursorCell.ReplaceAllString("\x1b[38;5;60m│\x1b[48;5;212m \x1b[0m Name", "${1}▶"); !strings.Contains(got, "▶") {
+		t.Errorf("marked %q", got)
 	}
 }
