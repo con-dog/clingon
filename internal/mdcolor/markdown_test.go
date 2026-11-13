@@ -33,7 +33,7 @@ func TestMarkdownColoursWhatMatters(t *testing.T) {
 	got := Markdown(src)
 	for _, want := range []string{
 		"\x1b[38;5;147mwhen:\x1b[m",
-		"\x1b[38;5;60m## \x1b[m\x1b[1;38;5;212mHard reset\x1b[m",
+		"\x1b[38;5;60m## \x1b[m\x1b[1;38;5;99mHard reset\x1b[m",
 		"\x1b[1;38;5;204m> [!CAUTION]\x1b[m",
 		"\x1b[38;5;147mneeds=\x1b[m",
 		"\x1b[38;5;79mgit\x1b[m",
