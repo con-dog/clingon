@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -70,7 +71,8 @@ func LoadEditable(name string) (*EditablePack, error) {
 }
 
 // SyncBlanks makes a command's blanks match the <blanks> in its command: a new
-// one gets a question from its name, one no longer used goes, and the rest
+// one starts with its question empty (the pack form hints at one, and
+// without one it's asked by its name), one no longer used goes, and the rest
 // keep what they had, in the order the command has them.
 func SyncBlanks(c *Command) {
 	var args []Arg
@@ -85,7 +87,7 @@ func SyncBlanks(c *Command) {
 			args = append(args, c.Args[i])
 			continue
 		}
-		a := Arg{Name: name, Prompt: sectionTitle(name), Optional: true}
+		a := Arg{Name: name, Optional: true}
 		if IsSecretName(name) {
 			a.Type, a.Quote = "secret", true
 		}
@@ -146,6 +148,48 @@ func (p *EditablePack) Markdown() map[string]string {
 // Check finds what Save would refuse: each file is read back the way clingon
 // reads packs, and the whole is checked as `clingon check` checks it.
 func (p *EditablePack) Check() error {
+	return p.standIns().check()
+}
+
+// standIns is a copy of the pack with what's still empty filled in by
+// stand-ins, so a part not yet filled in doesn't stop a change elsewhere:
+// checkFilled says what's empty, when it's saved.
+func (p *EditablePack) standIns() *EditablePack {
+	data, err := json.Marshal(p)
+	c := &EditablePack{}
+	if err != nil || json.Unmarshal(data, c) != nil {
+		return p
+	}
+	c.dir = p.dir
+	if strings.TrimSpace(c.Title) == "" {
+		c.Title = "Unnamed"
+	}
+	for i := range c.Files {
+		g := &c.Files[i].Group
+		if strings.TrimSpace(g.Name) == "" {
+			g.Name = fmt.Sprintf("Unnamed module %d", i+1)
+		}
+		for j := range g.Commands {
+			cmd := &g.Commands[j]
+			if strings.TrimSpace(cmd.Name) == "" {
+				cmd.Name = fmt.Sprintf("Unnamed command %d", j+1)
+			}
+			if strings.TrimSpace(cmd.Cmd) == "" {
+				cmd.Cmd = "true"
+			}
+			for a := range cmd.Args {
+				for o := range cmd.Args[a].Options {
+					if strings.TrimSpace(cmd.Args[a].Options[o].Value) == "" {
+						cmd.Args[a].Options[o].Value = fmt.Sprintf("option-%d", o+1)
+					}
+				}
+			}
+		}
+	}
+	return c
+}
+
+func (p *EditablePack) check() error {
 	var parts []parsedFile
 	for name, text := range p.Markdown() {
 		part, err := parsePackFile(filepath.Join(p.Dir(), name), []byte(text))
@@ -166,9 +210,42 @@ func (p *EditablePack) Check() error {
 	return nil
 }
 
+// CheckFilled finds what's still empty that has to be filled in: the names,
+// each command, each option's value.
+func (p *EditablePack) CheckFilled() error {
+	if strings.TrimSpace(p.Title) == "" {
+		return errors.New("the pack needs a name")
+	}
+	for _, f := range p.Files {
+		g := f.Group
+		if strings.TrimSpace(g.Name) == "" {
+			return errors.New("every module needs a name")
+		}
+		for _, c := range g.Commands {
+			if strings.TrimSpace(c.Name) == "" {
+				return fmt.Errorf("every command in %s needs a name", g.Name)
+			}
+			if strings.TrimSpace(c.Cmd) == "" {
+				return fmt.Errorf("%s needs its command", c.Name)
+			}
+			for _, a := range c.Args {
+				for _, o := range a.Options {
+					if strings.TrimSpace(o.Value) == "" {
+						return fmt.Errorf("%s: every option of <%s> needs what it types", c.Name, a.Name)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // Save writes the pack's files if they check out, removing any module's file
 // that's gone.
 func (p *EditablePack) Save() error {
+	if err := p.CheckFilled(); err != nil { // said plainly: what's still to fill in
+		return err
+	}
 	if err := p.Check(); err != nil {
 		return err
 	}

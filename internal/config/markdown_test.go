@@ -162,7 +162,7 @@ func TestPackSection(t *testing.T) {
 	}
 	// In any case: the file's values are lowercase, but Work Tools, Grey and
 	// Rocket are read as the form shows them.
-	if p, err := parsePackFile(PackInfoFile, []byte("---\nmenu: Command Line\nlogo: Rocket\ntint: Grey\n---\n# X\n")); err != nil || p.info.Section != "command-line" || p.info.Logo != "rocket" || p.info.Color != colorHex("grey") {
+	if p, err := parsePackFile(PackInfoFile, []byte("---\nmenu: Command Line\nlogo: Rocket\ntint: Grey\n---\n# X\n")); err != nil || p.info.Section != "command-line" || p.info.Logo != "rocket" || p.info.Color != ColorHex("grey") {
 		t.Errorf("any case: %v %+v", err, p.info)
 	}
 	if s, err := SectionSlug("  Work Tools "); s != "work-tools" || err != nil {

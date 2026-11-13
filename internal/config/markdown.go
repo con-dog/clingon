@@ -235,7 +235,7 @@ func parsePack(path string, data []byte) (*packInfo, error) {
 	}
 	hex := ""
 	if c := fm["tint"]; c != "" {
-		if hex = colorHex(strings.ToLower(c)); hex == "" {
+		if hex = ColorHex(strings.ToLower(c)); hex == "" {
 			return nil, m.errf(keyAt("tint"), "there's no tint called %s: use one of %s", c, colorNames())
 		}
 	}

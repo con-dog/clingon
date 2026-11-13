@@ -214,7 +214,7 @@ func (a Arg) Label() string {
 	if a.Prompt != "" {
 		return a.Prompt
 	}
-	return a.Name
+	return sectionTitle(a.Name) // asked by its name, as words: <file-name> asks "File name"
 }
 
 // Known reports whether name is a declared arg, i.e. whether <name> is a placeholder.
@@ -444,11 +444,23 @@ func quotedArgs(c *Command) []string {
 
 // inQuotes reports whether the placeholder for name is inside quotes in script.
 func inQuotes(script, name string, known func(string) bool) bool {
+	for _, q := range QuotesAt(script, name, known) {
+		if q != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// QuotesAt says which quote each placeholder for name sits inside in script,
+// in order: a single quote, a double quote, or 0 for none.
+func QuotesAt(script, name string, known func(string) bool) []byte {
 	var quote byte
+	var out []byte
 	for _, seg := range tmpl.Parse(script, known) {
 		if seg.Arg != "" {
-			if seg.Arg == name && quote != 0 {
-				return true
+			if seg.Arg == name {
+				out = append(out, quote)
 			}
 			continue
 		}
@@ -467,7 +479,7 @@ func inQuotes(script, name string, known func(string) bool) bool {
 			}
 		}
 	}
-	return false
+	return out
 }
 
 // commandText is everything in a command that's run or shown as text.

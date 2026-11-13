@@ -59,7 +59,7 @@ func TestEditablePack(t *testing.T) {
 	// A new command's blanks come from its command.
 	c := Command{Name: "Ship it", Cmd: "./ship.sh <env> <token>"}
 	SyncBlanks(&c)
-	if len(c.Args) != 2 || c.Args[0].Prompt != "Env" || c.Args[1].Kind() != "secret" {
+	if len(c.Args) != 2 || c.Args[0].Prompt != "" || c.Args[0].Label() != "Env" || c.Args[1].Kind() != "secret" { // no question yet: asked by its name
 		t.Fatalf("blanks %+v", c.Args)
 	}
 	p.Files = append(p.Files, EditableFile{Slug: p.NewSlug("Deploy"), Group: Group{Name: "Deploy", Commands: []Command{c}}})

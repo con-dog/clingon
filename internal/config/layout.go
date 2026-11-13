@@ -103,8 +103,8 @@ var PackColors = []struct{ Name, Hex string }{
 // LogoColor is a logo's own colour, or "" for the menu's grey.
 func LogoColor(logo string) string { return logoColors[logo] }
 
-// colorHex is a colour name's hex, or "" if there's no such colour.
-func colorHex(name string) string {
+// ColorHex is a colour name's hex, or "" if there's no such colour.
+func ColorHex(name string) string {
 	for _, c := range PackColors {
 		if c.Name == name {
 			return c.Hex

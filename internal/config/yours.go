@@ -270,7 +270,7 @@ func NewPackWithLogo(name, logo, color string) error {
 	if _, ok := Logos[logo]; !ok {
 		return fmt.Errorf("there's no logo called %s: try one of %s", logo, strings.Join(PackLogos, ", "))
 	}
-	if color != "" && colorHex(color) == "" {
+	if color != "" && ColorHex(color) == "" {
 		return fmt.Errorf("there's no tint called %s: try one of %s", color, colorNames())
 	}
 	if err := checkPackName(name); err != nil {

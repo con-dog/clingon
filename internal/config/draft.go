@@ -21,26 +21,13 @@ type draft struct {
 // DraftFile is where the pack form's draft is kept.
 func DraftFile() string { return filepath.Join(Dir(), "pack-draft.json") }
 
-// NewEditable is a new pack, not yet saved anywhere: the starter pack's
-// example module, under a name not already taken.
+// NewEditable is a new pack, not yet saved anywhere: one module with one
+// command, every name and command empty for the form's greyed hints to
+// show what goes there. There's nothing of an example's to clear first.
 func NewEditable() (*EditablePack, error) {
-	part, err := parsePackFile("examples.md", Starter)
-	if err != nil {
-		return nil, err
-	}
-	p := &EditablePack{Section: "other", Logo: DefaultPackLogo, Color: "grey", Files: []EditableFile{{Slug: "examples", Group: *part.group}}}
-	p.Title = uniqueTitle("New pack")
+	p := &EditablePack{Section: "other", Logo: DefaultPackLogo, Color: "grey", Files: []EditableFile{{Slug: "commands", Group: Group{Commands: []Command{{}}}}}}
 	p.Folder = p.NewFolder()
 	return p, nil
-}
-
-// uniqueTitle is base, or base 2, 3, … if you have a pack called that.
-func uniqueTitle(base string) string {
-	name := base
-	for n := 2; folderTaken(slugOf(name)); n++ {
-		name = fmt.Sprintf("%s %d", base, n)
-	}
-	return name
 }
 
 // folderTaken says whether you have a pack in a folder called name.
@@ -139,53 +126,40 @@ func (p *EditablePack) Changed() bool {
 	return false
 }
 
-// SaveDraft saves the form's draft as a pack, and removes the draft. It says
-// which pack, by name.
-func SaveDraft() (string, error) {
-	p, err := ReadDraft()
-	if err != nil || p == nil {
-		return "", err
-	}
-	if p.IsNew() {
-		p.Folder = p.NewFolder()
-	}
-	if err := p.Save(); err != nil {
-		return p.Title, err
-	}
-	return p.Title, RemoveDraft()
-}
-
-// askFile marks the draft as waiting on the menu's question, while the form
-// stays open beside it.
-func askFile() string { return filepath.Join(Dir(), "pack-draft.ask") }
-
-// Ask marks the form's draft as waiting for the menu to ask whether to save it.
-func Ask() error { return writeWhole(askFile(), nil) }
-
-// Asking says whether the form's draft is waiting for the menu's question.
-func Asking() bool { return exists(askFile()) }
-
-// StopAsking unmarks it: answered, or gone back to the form.
-func StopAsking() {
-	_ = os.Remove(askFile())
-}
-
 // formNameFile holds the name of the pack the open form is editing, as it
 // changes, for the menu beside it to say what's being edited.
 func formNameFile() string { return filepath.Join(Dir(), "pack-form.name") }
 
-// WriteFormName keeps the name of the pack the form is editing.
-func WriteFormName(name string) error {
+// WriteFormName keeps the name of the pack the form is editing, and the
+// menu heading it's under.
+func WriteFormName(name, place string, modules, commands int) error {
 	if err := os.MkdirAll(Dir(), 0o755); err != nil {
 		return err
 	}
-	return writeWhole(formNameFile(), []byte(name))
+	return writeWhole(formNameFile(), []byte(fmt.Sprintf("%s\n%s\n%d %d", name, place, modules, commands)))
 }
 
-// FormName is the name of the pack the open form is editing, or "".
-func FormName() string {
+// FormName is the name of the pack the open form is editing, or "", and the
+// menu heading it's under.
+func FormName() (name, place string) {
 	data, _ := os.ReadFile(formNameFile())
-	return strings.TrimSpace(string(data))
+	lines := strings.SplitN(string(data), "\n", 3)
+	for len(lines) < 2 {
+		lines = append(lines, "")
+	}
+	return strings.TrimSpace(lines[0]), strings.TrimSpace(lines[1])
+}
+
+// FormCounts is how many modules and commands the pack in the open form has,
+// as it stands; ok is false with no form open.
+func FormCounts() (modules, commands int, ok bool) {
+	data, _ := os.ReadFile(formNameFile())
+	lines := strings.SplitN(string(data), "\n", 3)
+	if len(lines) < 3 {
+		return 0, 0, false
+	}
+	n, _ := fmt.Sscanf(lines[2], "%d %d", &modules, &commands)
+	return modules, commands, n == 2
 }
 
 // RemoveFormName forgets it, and its keys: the form's closed.
@@ -210,8 +184,62 @@ func WriteFormKeys(keys []string) error {
 // refused, while it was, for the bar to say instead of the keys.
 const FormIssuePrefix = "! "
 
+// ChangedFile is where tmux and clingon's shell say something the menu shows
+// has changed (focus moved, the shell scrolled or back at its prompt): each
+// appends a byte, and the menu, watching it, wakes. $CLINGON_CHANGED in
+// clingon's window.
+func ChangedFile() string { return filepath.Join(Dir(), "changed") }
+
+// ReadyFile is where clingon's shell says its prompt is up and waiting for a
+// line: it appends a byte each time ($CLINGON_READY, in its rc files). How
+// many bytes it holds is how many prompts there have been, so "the command
+// just sent has finished" is "it's grown since": heard, not looked for.
+func ReadyFile() string { return filepath.Join(Dir(), "ready") }
+
+// WatchChanged starts watching ChangedFile, made first if it isn't there,
+// and empties it when it's grown: it's only ever written to wake the menu.
+func WatchChanged() (*Watch, error) {
+	if err := os.MkdirAll(Dir(), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(ChangedFile(), os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if st, err := f.Stat(); err == nil && st.Size() > 1<<16 {
+		_ = f.Truncate(0)
+	}
+	_ = f.Close()
+	return WatchPath(ChangedFile())
+}
+
+// FormStatePrefix starts the line of the form's keys that says what your keys
+// are doing in it now (typing into a field, or the filter), for clingon's AI,
+// which sees the form as text, without the text cursor. The bar doesn't say it.
+const FormStatePrefix = "@ "
+
 // FormKeys are the keys that work in the open form now, or none.
 func FormKeys() []string {
+	var keys []string
+	for _, l := range formKeyLines() {
+		if !strings.HasPrefix(l, FormStatePrefix) {
+			keys = append(keys, l)
+		}
+	}
+	return keys
+}
+
+// FormState is what the open form says your keys are doing in it now, or "".
+func FormState() string {
+	for _, l := range formKeyLines() {
+		if s, ok := strings.CutPrefix(l, FormStatePrefix); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func formKeyLines() []string {
 	data, _ := os.ReadFile(formKeysFile())
 	if s := strings.TrimSpace(string(data)); s != "" {
 		return strings.Split(s, "\n")
