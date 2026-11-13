@@ -30,6 +30,8 @@ Needs macOS, with zsh or bash. Opens in its own window in Terminal or iTerm2 (Gh
 <tr><td nowrap>Asks before risky commands</td><td align="center">✓</td><td align="center">–</td><td align="center">–</td><td align="center">–</td></tr>
 <tr><td nowrap>Chains commands into recipes</td><td align="center">✓</td><td align="center">–</td><td align="center">–</td><td align="center">–</td></tr>
 <tr><td nowrap>Has an AI that does it for you</td><td align="center">✓</td><td align="center">–</td><td align="center">–</td><td align="center">–</td></tr>
+<tr><td nowrap>Works in any terminal</td><td align="center">–</td><td align="center">✓</td><td align="center">✓</td><td align="center">✓</td></tr>
+<tr><td nowrap>Runs on Linux</td><td align="center">–</td><td align="center">✓</td><td align="center">✓</td><td align="center">✓</td></tr>
 </table>
 
 ## Good to know
