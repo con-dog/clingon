@@ -19,11 +19,40 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/con-dog/clingon/internal/config"
+	"github.com/con-dog/clingon/internal/llm"
 	"github.com/con-dog/clingon/internal/tmpl"
 )
 
 type Options struct {
 	Config *config.Config
+	// Panel is the AI's panel under the shell; ShellTail is the shell's last
+	// lines, for the AI to read. Nil in print mode, where there's no AI.
+	Panel     Panel
+	ShellTail func() string
+	// ShellKey presses a key in the shell's pane (a tmux key name, or text
+	// typed as it is), and ShellScreen is that pane as text: for the AI, while
+	// the pack form's open there.
+	ShellKey    func(key string, text bool) error
+	ShellScreen func() string
+	// ShellStill sleeps until the shell's screen has stopped changing: heard
+	// from its output, not looked at again and again. With afterNext, that's
+	// once it's changed first. It says false if over is closed before then
+	// (what was waited on has finished). Nil: no one's told, and a command
+	// that never finishes is waited on for good.
+	ShellStill func(afterNext bool, over <-chan struct{}) bool
+	// AIClient makes the AI's client: nil for the user's key and model.
+	AIClient func() (*llm.Client, error)
+	// HasAIKey says whether there's a key for the AI: nil asks the Keychain.
+	HasAIKey func() bool
+	// FocusSelf moves focus to the menu's own pane (from the AI's panel, say).
+	FocusSelf func()
+	// Focused says which pane has focus, as tmux knows it: "menu", "shell",
+	// "form", "panel" or "". Nil: the menu goes by its own focus events.
+	Focused func() string
+	// Changed sleeps until tmux says something the menu shows has changed:
+	// focus moved, the shell scrolled or let go, its prompt drawn again. False
+	// if it can't wait. nil outside clingon's window.
+	Changed func() bool
 	// Builtin builds clingon's own sections (at the foot of the main menu),
 	// again whenever the packs change, since what's available depends on them.
 	Builtin func() []*config.Section
@@ -58,6 +87,14 @@ type Options struct {
 	// foot of the menu instead.
 	Bar      func(line string)
 	BarWidth func() int
+	// TopBar draws the recipe's bar, as wide, over clingon's frame. Nil: the
+	// recipe shares the status bar instead.
+	TopBar func(line string)
+	// AIDriving frames, in the AI's gold, the pane it's working in while it
+	// drives: "menu", or "shell" while its keys go there (the pack form, a
+	// program it's waiting on); "" once it isn't driving. Nil: no frames to
+	// colour.
+	AIDriving func(where string)
 	// Headline is the status bar's news on the top level, worked out each
 	// time the top level is shown. Nil: nothing to say there.
 	Headline func() Headline
@@ -89,8 +126,8 @@ type HeadlineKind int
 
 const (
 	Good      HeadlineKind = iota // grey: all's well, nothing to do
-	Info                          // purple glyph: worth knowing
-	Attention                     // pink glyph: worth doing
+	Info                          // periwinkle glyph: worth knowing
+	Attention                     // green glyph: worth doing
 )
 
 type mode int
@@ -103,7 +140,6 @@ const (
 	modeTyped    // the shell has something typed: go there, or clear it and run
 	modeQuit     // quitting closes the shell: stay, or quit
 	modeSaveName // what to save it as
-	modeSavePack // back from the pack form with changes: save them, or not
 )
 
 // projectRef is the top-level row for a project pack that isn't in use:
@@ -133,13 +169,14 @@ type pending struct {
 	section, name, cmd string
 	sec                *config.Section
 	risk               string
-	desc               string // the filled-in description, for the No/Yes screen
-	shown              string // cmd as the user sees it (secrets as <name>), shown for risk: danger
-	code               string // risk: danger: a random code you type to go on (see newCode)
-	typed              bool   // risk: danger: code typed correctly, so on to No/Yes
-	cleared            bool   // the shell's prompt was just cleared for it
-	editor             bool   // it opens an editor: focus goes to the shell while it's open
-	editing            string // an editor's: what it's editing (its first blank's answer), for the status bar
+	desc               string          // the filled-in description, for the No/Yes screen
+	shown              string          // cmd as the user sees it (secrets as <name>), shown for risk: danger
+	code               string          // risk: danger: a random code you type to go on (see newCode)
+	typed              bool            // risk: danger: code typed correctly, so on to No/Yes
+	cleared            bool            // the shell's prompt was just cleared for it
+	editor             bool            // it opens an editor: focus goes to the shell while it's open
+	editing            string          // an editor's: what it's editing (its first blank's answer), for the status bar
+	of                 *config.Command // the menu's command it is, if it's one: its inputs, for the info pane's foot
 }
 
 // notice is shown in place of the list for a few seconds (or until a key),
@@ -157,13 +194,6 @@ type noticeTick struct{ seq int }
 const busyGrace = 500 * time.Millisecond
 
 type busyGraceMsg struct{}
-
-// shellLook is how often the shell is looked at again while the status bar
-// has a warning about it: it can end with no word to the menu (a quote closed
-// by hand, say), and focus may not come back to prompt a look.
-const shellLook = time.Second
-
-type shellLookMsg struct{}
 
 const noticeSeconds = 3
 
@@ -188,52 +218,70 @@ type idleMsg struct {
 }
 
 type Model struct {
-	opt       Options
-	w, h      int
-	mode      mode
-	section   *config.Section
-	list      picker
-	job       *job
-	pending   *pending
-	builtin   []*config.Section
-	busy      string                      // what's running in the shell: nothing can be sent until it ends
-	looking   bool                        // a shellLookMsg is on its way
-	recipe    []recipeStep                // the numbered commands, in order: at most 9
-	run       *recipeRun                  // the recipe going through its steps, if it is
-	stopped   int                         // the command the recipe stopped at, where its list starts; 0 if it didn't
-	resume    tea.Cmd                     // cursors to start blinking again, after a key brought focus back
-	quiet     bool                        // that's locked, but not worth a status bar's band yet
-	editing   string                      // what the editor in the shell is editing, while busy is that editor
-	form      *pending                    // the pack form last opened, to open again to carry on with its draft
-	draft     *config.EditablePack        // the pack form's changes, while asking whether to save them
-	formKeys  []string                    // the keys that work in the open pack form now, as it says them
-	waiting   bool                        // a wait for the shell to finish (started on focus) is under way
-	scrolling bool                        // the shell is scrolled back: nothing can be sent until it stops
-	typed     string                      // what's typed at the shell's prompt: sending asks first
-	hint      string                      // a dim one-line tip, until the next key
-	notice    notice                      // a short-lived message in place of the list
-	yes       bool                        // on the risky-command screen, "Yes, run it" is highlighted
-	errMsg    string                      // shown until the next key
-	missing   map[string][]config.Missing // by section: tools its pack needs that can't be run
-	here      *config.Here                // answers `when:` for the shell's folder
-	project   *config.Project             // the project pack for the shell's folder, if any
-	word      textinput.Model             // where the confirm word is typed
-	wrong     bool                        // the confirm word typed didn't match
-	nameWhy   string                      // why the recipe's name was refused
-	listed    []config.Recipe             // the saved recipes the list was last drawn with
-	opened    string                      // the recipe whose own list is showing: a saved one's name, or openedCurrent
-	from      string                      // the added recipe the current one was run or edited from: Add as… may replace it
-	removing  string                      // the saved recipe being removed, until the shell's done
-	help      bool                        // the keys screen is showing
-	blurred   bool                        // focus is in the shell: the cursor's row is drawn quietly
-	news      *Headline                   // the top level's status bar
-	intro     int                         // logo columns drawn so far; -1 once it's all there
-	jobs      []string                    // what quitting would end, for the quit screen
-	trustTop  int                         // the trust screen's first command line on screen
-	trustMax  int                         // trustTop at the last line; -1 before it's drawn
-	runSeq    int                         // bumped per command sent, and when the user comes back by hand
-	barW      int                         // the bar pane's width, when Options.Bar draws it
-	barLine   string                      // the line last sent there
+	opt                       Options
+	w, h                      int
+	mode                      mode
+	section                   *config.Section
+	list                      picker
+	job                       *job
+	pending                   *pending
+	builtin                   []*config.Section
+	busy                      string       // what's running in the shell: nothing can be sent until it ends
+	recipe                    []recipeStep // the numbered commands, in order: at most 9
+	run                       *recipeRun   // the recipe going through its steps, if it is
+	stopped                   int          // the command the recipe stopped at, where its list starts; 0 if it didn't
+	resume                    tea.Cmd      // cursors to start blinking again, after a key brought focus back
+	quiet                     bool         // that's locked, but not worth a status bar's band yet
+	editing                   string       // what the editor in the shell is editing, while busy is that editor
+	form                      *pending     // the pack form last opened, to open again to carry on with its draft
+	formNew                   bool         // the open pack form is a new pack's: not in the menu until it's added
+	formKeys                  []string     // the keys that work in the open pack form now, as it says them
+	formModules, formCommands int          // how many the pack in the open form has, as it says
+	formCounted               bool
+	formWatch                 *config.Watch               // hears the open form as it writes, not on a timer
+	waiting                   bool                        // a wait for the shell to finish (started on focus) is under way
+	scrolling                 bool                        // the shell is scrolled back: nothing can be sent until it stops
+	typed                     string                      // what's typed at the shell's prompt: sending asks first
+	hint                      string                      // a dim one-line tip, until the next key
+	notice                    notice                      // a short-lived message in place of the list
+	yes                       bool                        // on the risky-command screen, "Yes, run it" is highlighted
+	errMsg                    string                      // shown until the next key
+	missing                   map[string][]config.Missing // by section: tools its pack needs that can't be run
+	here                      *config.Here                // answers `when:` for the shell's folder
+	project                   *config.Project             // the project pack for the shell's folder, if any
+	word                      textinput.Model             // where the confirm word is typed
+	wrong                     bool                        // the confirm word typed didn't match
+	nameWhy                   string                      // why the recipe's name was refused
+	listed                    []config.Recipe             // the saved recipes the list was last drawn with
+	opened                    string                      // the recipe whose own list is showing: a saved one's name, or openedCurrent
+	from                      string                      // the added recipe the current one was run or edited from: Add as… may replace it
+	removing                  string                      // the saved recipe being removed, until the shell's done
+	help                      bool                        // the keys screen is showing
+	ai                        *aiRun                      // the AI, while it's doing a task and until its panel's closed
+	focus                     string                      // which pane has focus, as tmux last said ("" if it can't be asked)
+	aiKeyed                   bool                        // the AI had a key when clingon's own sections were last built
+	aiModel                   string                      // the AI's model, for the panel's strip: read again as the menu catches up
+	panelOpen                 bool                        // the AI's panel, always there in clingon's window, is open
+	panelW                    int                         // and this wide
+	panelHeight               int                         // and this tall: a strip at rest, the full panel at work
+	panelDrawn                string                      // what it last showed
+	lastRun                   string                      // how the AI's last run went, for the panel at rest
+	lastRunOK                 bool                        // it finished, rather than stopped
+	blurred                   bool                        // focus is in the shell: the cursor's row is drawn quietly
+	news                      *Headline                   // the top level's status bar
+	intro                     int                         // logo columns drawn so far; -1 once it's all there
+	jobs                      []string                    // what quitting would end, for the quit screen
+	trustTop                  int                         // the trust screen's first command line on screen
+	trustMax                  int                         // trustTop at the last line; -1 before it's drawn
+	runSeq                    int                         // bumped per command sent, and when the user comes back by hand
+	barW                      int                         // the bar pane's width, when Options.Bar draws it
+	barLine                   string                      // the line last sent there
+	hintLive                  func() bool                 // while this holds, hintFor is still true; nil for a hint that just answers a key
+	hintFor                   string                      // the hint hintLive is about
+	framedDriving             string                      // the pane framed in the AI's gold when last drawn: "menu", "shell", or "" for none
+	topLine                   string                      // the line last sent to the top bar
+	formName                  string                      // the open pack form's pack, as it's named now
+	formPlace                 string                      // and the menu heading it's under
 
 	Quit    bool     // user escaped out of the top menu
 	Result  string   // print mode: the chosen command
@@ -245,11 +293,46 @@ func New(opt Options) *Model {
 	if opt.Builtin != nil {
 		m.builtin = opt.Builtin()
 	}
+	m.aiKeyed = m.hasAIKey()
+	m.aiModel = llm.LoadSettings(config.StateDir()).Model
 	m.showRoot("")
 	return m
 }
 
-func (m *Model) Init() tea.Cmd { return introTick() }
+func (m *Model) Init() tea.Cmd { return tea.Batch(introTick(), m.askFocus(), m.awaitChange()) }
+
+// changeMsg is tmux saying something the menu shows has changed (focus has
+// moved, the shell scrolled back or let go, its prompt drawn again), with
+// where focus is now. waited says it came from awaitChange, which goes on.
+type changeMsg struct {
+	where  string
+	waited bool
+}
+
+// awaitChange sleeps, off the UI thread, until tmux says something's
+// changed: no polling. Then it asks where focus is.
+func (m *Model) awaitChange() tea.Cmd {
+	wait, ask := m.opt.Changed, m.opt.Focused
+	if wait == nil || ask == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		if !wait() {
+			return nil
+		}
+		return changeMsg{where: ask(), waited: true}
+	}
+}
+
+// askFocus asks tmux once, off the UI thread, where focus is: at the start,
+// and when the menu knows it's changed (the pack form has started).
+func (m *Model) askFocus() tea.Cmd {
+	ask := m.opt.Focused
+	if ask == nil {
+		return nil
+	}
+	return func() tea.Msg { return changeMsg{where: ask()} }
+}
 
 // The logo draws itself in when the menu opens, a column at a time; keys
 // work all the while.
@@ -268,7 +351,7 @@ func heading(items []item, title string) []item {
 }
 
 // showRoot lists sections under the fixed category headings, then clingon's
-// own sections below a divider, under an accent heading. focus names the
+// own sections below a divider, under their own heading. focus names the
 // section to put the cursor on.
 func (m *Model) showRoot(focus string) {
 	var items, search []item
@@ -278,7 +361,8 @@ func (m *Model) showRoot(focus string) {
 		add := func(where string, cmds []config.Command) {
 			for i := range cmds {
 				c := &cmds[i]
-				search = append(search, item{title: c.Name, where: where, desc: s.Name, keywords: c.Cmd, risk: c.Risk, disabled: m.unavailable(c) != "", unmet: m.here.Unmet(c) != "", ref: cmdRef{s.Name, s, c}})
+				// Found by its name first, then its module, what it does and what it runs.
+				search = append(search, item{title: c.Name, where: where, desc: s.Name, keywords: where + " " + c.Desc + " " + c.Cmd, risk: c.Risk, disabled: m.unavailable(c) != "", unmet: m.here.Unmet(c) != "", ref: cmdRef{s.Name, s, c}})
 			}
 		}
 		add(s.Name, s.Commands)
@@ -344,7 +428,7 @@ func (m *Model) showRoot(focus string) {
 			if len(items) > 0 {
 				items = append(items, item{header: true, pinned: true})
 			}
-			items = append(items, item{title: s.Category, header: true, accent: true, pinned: true})
+			items = append(items, item{title: s.Category, header: true, pinned: true})
 		}
 		it := sectionItem(s)
 		it.pinned = true // at the foot, in view however many packs there are
@@ -354,6 +438,8 @@ func (m *Model) showRoot(focus string) {
 	m.section, m.opened = nil, ""
 	m.list = newPicker(items, search, false)
 	m.list.noun = "command"
+	m.list.scope = "every command"
+	m.list.filter.Placeholder = "type to filter every command"
 	m.list.step = m.itemSteps
 	if m.opt.Headline != nil {
 		h := m.opt.Headline()
@@ -461,8 +547,11 @@ func (m *Model) showSection(s *config.Section) {
 	m.section = s
 	m.list = newPicker(items, nil, false)
 	m.list.noun = "command"
+	m.list.scope = s.Name // only this pack's: / at the top searches every command
+	m.list.filter.Placeholder = "type to filter " + s.Name
 	m.list.step = m.itemSteps
 	if s == m.recipesSection() {
+		m.list.marks = true            // its recipes start where a pack's commands do
 		m.list.recipe = m.opened != "" // a recipe's own list: a slot for every mark, its steps counted
 		if m.list.recipe {
 			m.list.noun = "step"
@@ -530,21 +619,12 @@ func (m *Model) readShell() {
 	switch {
 	case st.Busy == "":
 		m.busy, m.editing = "", ""
+		m.stopFormWatch()
 	case m.busy == "": // keep "Edit a pack" rather than the program's name
 		m.busy, m.quiet = st.Busy, st.Starting
 	}
 	m.scrolling, m.typed = st.Scrolling, st.Typed
 	m.regrey()
-}
-
-// watchShell keeps looking at the shell while a warning about it is up. One
-// look at a time, and it stops by itself when there's nothing left to warn of.
-func (m *Model) watchShell() tea.Cmd {
-	if m.looking || m.opt.Shell == nil || (m.typed == "" && !m.scrolling) {
-		return nil
-	}
-	m.looking = true
-	return tea.Tick(shellLook, func(time.Time) tea.Msg { return shellLookMsg{} })
 }
 
 // regrey works out again which listed commands can't be used right now.
@@ -563,9 +643,56 @@ func (m *Model) regrey() {
 // packs, and what fits its folder. It's for when a command finishes and when the
 // user comes back from the shell, the two ways the shell gets to change anything.
 func (m *Model) catchUp() {
+	m.aiModel = llm.LoadSettings(config.StateDir()).Model // `clingon ai model`, say
+	if m.recheckAIKey() {
+		return
+	}
 	if !m.reload() { // a reload has looked again already
 		m.lookAgain()
 	}
+}
+
+// hasAIKey says whether the AI has a key, in clingon's own window (where
+// there's a panel for it); elsewhere there's no AI to have one.
+func (m *Model) hasAIKey() bool {
+	switch {
+	case m.opt.Panel == nil:
+		return false
+	case m.opt.HasAIKey != nil:
+		return m.opt.HasAIKey()
+	}
+	return llm.HasKey(config.StateDir())
+}
+
+// recheckAIKey rebuilds clingon's own sections if the AI's key has come or
+// gone (`clingon ai key`, say), so Give a task is greyed out or not as it
+// should be: a key isn't a pack, so a reload doesn't see it. The cursor
+// stays where it was. It says whether it rebuilt.
+func (m *Model) recheckAIKey() bool {
+	if m.opt.Builtin == nil || m.opt.Panel == nil || m.mode != modeBrowse {
+		return false
+	}
+	k := m.hasAIKey()
+	if k == m.aiKeyed {
+		return false
+	}
+	m.aiKeyed = k
+	at := ""
+	if it := m.list.selected(); it != nil {
+		at = it.title
+	}
+	m.builtin = m.opt.Builtin()
+	if s := m.section; s != nil && m.sectionNamed(s.Name) != nil {
+		m.showSection(m.sectionNamed(s.Name))
+	} else {
+		m.showRoot("")
+	}
+	for i, it := range m.list.view {
+		if m.list.selectable(i) && it.title == at {
+			m.list.cursor = i
+		}
+	}
+	return true
 }
 
 // lookAgain is for coming back to the menu, perhaps after a cd: the top
@@ -608,6 +735,12 @@ func (m *Model) missingFor(s *config.Section) []config.Missing {
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	_, cmd := m.update(msg)
+	if m.ai != nil {
+		if _, key := msg.(tea.KeyPressMsg); key && !m.ai.typing { // you've answered a risky command's question: it carries on
+			cmd = tea.Batch(cmd, m.aiAfterKey())
+		}
+	}
+	m.aiDraw() // always there: as it is now
 	if m.resume != nil {
 		cmd, m.resume = tea.Batch(cmd, m.resume), nil
 	}
@@ -627,7 +760,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // drawBar sends the status bar to its own pane when it's changed, off the
 // UI thread.
+// hintWhile says text on the status bar for as long as still holds, and not
+// a moment longer: a hint about a state (the AI's working, a recipe's
+// running) goes when the state does, whoever ended it and wherever your
+// focus is. Nothing has to remember to take it down.
+func (m *Model) hintWhile(text string, still func() bool) {
+	m.hint, m.hintFor, m.hintLive = text, text, still
+}
+
+// freshen drops what the status bar can no longer truthfully say. It runs
+// after every message, before the bar's drawn, so the bar is always worked
+// out from how things are now.
+func (m *Model) freshen() {
+	if m.hint != m.hintFor { // another hint since, or none: nothing to watch
+		m.hintFor, m.hintLive = "", nil
+	}
+	if m.hintLive != nil && !m.hintLive() {
+		m.hint, m.hintFor, m.hintLive = "", "", nil
+	}
+}
+
 func (m *Model) drawBar(msg tea.Msg) tea.Cmd {
+	m.freshen()
 	if m.opt.Bar == nil {
 		return nil
 	}
@@ -637,13 +791,56 @@ func (m *Model) drawBar(msg tea.Msg) tea.Cmd {
 	if m.barW <= 0 {
 		return nil
 	}
-	line := m.statusBar(m.barW)
-	if line == m.barLine {
+	var draws []func()
+	driving := "" // where the AI's working: focus and the gold frame go there (not while it's asked you something: those keys are yours)
+	if m.aiState() == "driving" && m.ai.question == "" {
+		driving = "menu"
+		if m.formOpen() || m.ai.inShell {
+			driving = "shell"
+		}
+	}
+	if driving != m.framedDriving && m.opt.AIDriving != nil {
+		m.framedDriving = driving
+		set := m.opt.AIDriving
+		draws = append(draws, func() { set(driving) })
+	}
+	if line := m.statusBar(m.barW); line != m.barLine {
+		m.barLine = line
+		draw, line := m.opt.Bar, in256(line)
+		draws = append(draws, func() { draw(line) })
+	}
+	if m.opt.TopBar != nil {
+		if line := m.topBar(m.barW); line != m.topLine {
+			m.topLine = line
+			draw, line := m.opt.TopBar, in256(line)
+			draws = append(draws, func() { draw(line) })
+		}
+	}
+	if len(draws) == 0 {
 		return nil
 	}
-	m.barLine = line
-	draw, line := m.opt.Bar, in256(line)
-	return func() tea.Msg { draw(line); return nil }
+	return func() tea.Msg {
+		for _, d := range draws {
+			d()
+		}
+		return nil
+	}
+}
+
+// topBar is the bar over clingon's frame, the recipe's: its steps as you
+// number them, and r and x for it. With none yet, how to start one.
+func (m *Model) topBar(w int) string {
+	if len(m.recipe) > 0 {
+		return m.recipeBar(w)
+	}
+	if m.recipesSection() == nil {
+		return onBg("", raised, w)
+	}
+	// What a recipe is and how one starts, not that there isn't one: this is
+	// the window's first line, and recipes are worth it. As the bottom bar
+	// says things: grey words, faint dots, keys as keys.
+	hint := lipgloss.NewStyle().Foreground(text).Bold(true).Render("Recipes") + dimStyle.Render(" run commands in order") + faintStyle.Render(" · ") + dimStyle.Render("press ") + renderKey("1-9") + dimStyle.Render(" on each command to line them up")
+	return onBg(" "+ansi.Truncate(hint, max(w-2, 0), "…"), raised, w)
 }
 
 // in256 puts a line's colours into the 256 of clingon's palette. The bar goes
@@ -668,16 +865,10 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BlurMsg:
 		m.blurred = true
 		m.blurInputs()
-		return m, m.watchShell()
+		return m, nil
 	case tea.FocusMsg:
 		m.blurred = false
-		m.runSeq++                                     // the user is back: no need to bring them
-		if m.mode != modeSavePack && config.Asking() { // sent here by the pack form, to ask about its changes
-			if d, err := config.ReadDraft(); err == nil && d != nil {
-				m.draft, m.mode, m.yes = d, modeSavePack, false
-				m.pending, m.job = nil, nil
-			}
-		}
+		m.runSeq++ // the user is back: no need to bring them
 		// What the shell's doing first: the same look at it gets its folder,
 		// which looking again (below) then needn't ask for.
 		m.readShell()
@@ -704,18 +895,31 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quiet = false
 		return m, nil
 	case formNameMsg:
-		if m.busy == "" || m.form == nil || m.editing == "" {
-			return m, nil // the form's closed
+		if msg.watch != m.formWatch {
+			return m, nil // an old form's
 		}
-		if name := config.FormName(); name != "" {
+		if m.busy == "" || m.form == nil || m.editing == "" { // the form's closed: stop listening
+			m.formWatch.Close()
+			m.formWatch, m.formCounted = nil, false
+			return m, awaitForm(msg.watch) // to let it go
+		}
+		name, place := config.FormName()
+		if name != "" {
 			_, how, _ := strings.Cut(m.editing, " · ")
 			m.editing = name + " · " + how
 		}
+		m.formName, m.formPlace = name, place
+		started := len(m.formKeys) == 0 // its first word: it's running in the shell now, so focus is in the form
+		m.formModules, m.formCommands, m.formCounted = config.FormCounts()
 		m.formKeys = config.FormKeys()
-		if bar := m.drawBar(msg); bar != nil {
-			return m, tea.Batch(formNameTick(), bar)
+		next := awaitForm(msg.watch)
+		if started {
+			next = tea.Batch(next, m.askFocus())
 		}
-		return m, formNameTick()
+		if bar := m.drawBar(msg); bar != nil {
+			return m, tea.Batch(next, bar)
+		}
+		return m, next
 	case noticeTick:
 		if msg.seq != m.notice.seq || m.notice.text == "" {
 			return m, nil
@@ -730,18 +934,16 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.waiting = false
 		}
 		m.busy, m.editing = "", ""
+		m.stopFormWatch()
 		m.readShell()
 		m.catchUp() // it may have added a pack, or changed folder
 		m.relistSaved()
 		m.removing = ""
-		if m.form != nil && msg.seq == m.runSeq {
-			if d, err := config.ReadDraft(); err == nil && d != nil { // left with changes: ask here
-				m.draft, m.mode, m.yes = d, modeSavePack, false
-				m.pending, m.job = nil, nil
-				if m.opt.FocusMenu != nil {
-					m.opt.FocusMenu()
+		if m.form != nil && msg.seq == m.runSeq { // the pack form's closed: its changes were written as they were made
+			if d, err := config.ReadDraft(); err == nil && d != nil { // one that couldn't be added yet: kept, and said so
+				if why := d.CheckFilled(); why != nil {
+					m.hint = "Not added yet: " + why.Error() + " · Create a pack carries on from it"
 				}
-				return m, m.watchShell()
 			}
 		}
 		// Back to the menu only if the shell is really done: one left
@@ -755,29 +957,50 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if back && (m.run == nil || m.mode != modeBrowse) {
 				m.opt.FocusMenu()
 			}
-			return m, tea.Batch(cmd, m.watchShell())
+			return m, tea.Batch(cmd, m.aiIdle())
 		}
 		if back && msg.seq == m.runSeq {
 			m.opt.FocusMenu()
 		}
-		return m, m.watchShell()
-	case shellLookMsg:
-		m.looking = false
-		if m.busy != "" { // the wait for it looks again as it ends
-			return m, nil
+		return m, m.aiIdle()
+	case changeMsg:
+		if m.focus == "menu" && msg.where != "menu" {
+			m.hint = "" // a hint answers a key pressed in the menu: you've left it
 		}
-		if m.mode != modeTyped { // that question is about what it saw when asked
+		m.focus = msg.where
+		var cmds []tea.Cmd
+		if msg.waited {
+			cmds = append(cmds, m.awaitChange()) // and on listening
+		}
+		// The shell may have changed too: scrolled back or let go, or back
+		// at its prompt with what was typed run or gone. Not while a command
+		// from the menu runs (the wait for it says when it's done), nor under
+		// the question about what was typed (it asks about what it saw).
+		if m.busy == "" && m.mode != modeTyped && m.opt.Shell != nil {
 			m.readShell()
+			if m.busy != "" && !m.waiting { // what was typed is running now
+				m.waiting = true
+				cmds = append(cmds, m.waitIdle(-1))
+			}
 		}
-		var wait tea.Cmd
-		if m.busy != "" && !m.waiting { // what was typed is running now
-			m.waiting = true
-			wait = m.waitIdle(-1)
-		}
-		return m, tea.Batch(wait, m.watchShell())
+		return m, tea.Batch(cmds...)
 	case tea.PasteMsg: // as if typed, wherever the keys are going
 		return m.Update(typed(msg.Content))
+	case aiReplyMsg, aiTickMsg, aiSpinMsg, aiStillMsg:
+		cmd, _ := m.aiMsg(msg)
+		return m, cmd
 	case tea.KeyPressMsg:
+		if m.blurred && m.panelOpen && (m.ai == nil || !m.ai.typing) && m.opt.Panel.Focused() { // pressed in the AI's panel: its, not the menu's
+			if m.ai == nil {
+				return m, m.idlePanelKey(msg)
+			}
+			return m, m.aiPanelKey(msg)
+		}
+		if m.ai != nil && !m.ai.typing {
+			if cmd, handled := m.aiUserKey(msg); handled {
+				return m, cmd
+			}
+		}
 		if m.blurred { // keys mean focus is here, focus event or not: blurred inputs would drop them
 			m.blurred = false
 			var blinks []tea.Cmd
@@ -806,8 +1029,6 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.typedKey(msg)
 		case modeQuit:
 			return m, m.quitKey(msg)
-		case modeSavePack:
-			return m, m.savePackKey(msg)
 		case modeSaveName:
 			return m, m.saveNameKey(msg)
 		case modeBrowse:
@@ -841,7 +1062,7 @@ func (m *Model) quit() tea.Cmd {
 		m.readShell() // one may have started since the last look
 	}
 	if m.busy != "" {
-		m.hint = m.busy + " is running in the shell: finish it there before quitting"
+		m.hintWhile(m.busy+" is running in the shell: finish it there before quitting", func() bool { return m.busy != "" })
 		return nil
 	}
 	if m.opt.Send == nil {
@@ -875,76 +1096,6 @@ func (m *Model) quitKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	m.Quit = true
 	return tea.Quit
-}
-
-// savePackKey handles "save the pack?", back from the pack form with changes:
-// No (first) throws them away, Yes saves them, and ← goes back to the form,
-// to carry on with them.
-func (m *Model) savePackKey(msg tea.KeyPressMsg) tea.Cmd {
-	if m.busy != "" && !config.Asking() { // gone back to the form, which is still open: nothing to answer
-		m.mode, m.draft = modeBrowse, nil
-		return nil
-	}
-	switch keyName(msg) {
-	case "up", "down", "ctrl+p", "ctrl+n", "ctrl+k", "ctrl+j", "tab":
-		m.yes = !m.yes
-		return nil
-	case "esc", "left":
-		m.mode, m.draft = modeBrowse, nil
-		if config.Asking() { // the form's still open, waiting: back to it
-			config.StopAsking()
-			if m.opt.FocusShell != nil {
-				m.opt.FocusShell()
-			}
-			return nil
-		}
-		if m.form == nil {
-			return nil
-		}
-		return m.finish(*m.form) // it closed: open it again, carrying on from the draft
-	case "enter", "right":
-	default:
-		return nil
-	}
-	d := m.draft
-	m.mode, m.draft = modeBrowse, nil
-	config.StopAsking() // the form closes once its draft's gone
-	if !m.yes {
-		if err := config.RemoveDraft(); err != nil {
-			return m.showNotice("The changes are still kept", err.Error())
-		}
-		return nil
-	}
-	name, err := config.SaveDraft()
-	if err != nil {
-		return m.showNotice("Not saved", err.Error()+"\n\nThe changes are kept: open the pack's form to carry on with them.")
-	}
-	m.catchUp() // the menu shows the pack as it is now
-	if d.IsNew() {
-		m.hint = "✓ Added " + name
-	} else {
-		m.hint = "✓ Saved " + name
-	}
-	return nil
-}
-
-// savePackView asks whether to save the pack form's changes.
-func (m *Model) savePackView(w int) string {
-	row := func(on bool, s string) string {
-		if on {
-			return cursorStyle.Render("› " + s)
-		}
-		return "  " + s
-	}
-	name := "the pack"
-	if m.draft != nil {
-		name = m.draft.Title
-	}
-	title, why, no, yes := "Save the changes to "+name+"?", "Made in the pack's form.", "No, throw them away", "Yes, save them"
-	if m.draft != nil && m.draft.IsNew() {
-		title, why, no, yes = "Add "+name+"?", "A new pack, made in the form.", "No, throw it away", "Yes, add it"
-	}
-	return headerStyle.Render(title) + "\n" + lipgloss.NewStyle().Width(w).Render(dimStyle.Render(why)) + "\n\n" + panel([]string{row(!m.yes, no), row(m.yes, yes)}, w)
 }
 
 // quitView asks whether to quit, saying what would end with it.
@@ -991,6 +1142,10 @@ func (m *Model) browseKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return nil
 	case "right", "enter":
+		if m.list.filtering { // done typing: onto the results, the grey row live; it doesn't run it
+			m.list.stopFiltering()
+			return nil
+		}
 		return m.open()
 	case "/":
 		if m.list.filtering { // opening it is below, with the rest of what's typed
@@ -1045,7 +1200,7 @@ func (m *Model) numberKey(msg tea.KeyPressMsg) bool {
 		return false
 	}
 	if m.run != nil { // the steps can't move under it
-		m.hint = "The recipe is running: x clears it"
+		m.hintWhile("The recipe is running: x clears it", func() bool { return m.run != nil })
 		return true
 	}
 	n := int(k[0] - '0')
@@ -1094,15 +1249,24 @@ func (m *Model) recipeItems() []item {
 			cmds = append(cmds, st.ref.cmd)
 			steps = append(steps, m.stepItem(i, st.ref, st.ref))
 		}
-		state := "not added"
+		state, title := "not added", "Recipe"
 		if name := m.currentName(); name != "" {
-			state = "added as " + name
+			// Run from My recipes, it's loaded here to run: named, so it's
+			// plainly the same recipe.
+			state, title = "", name+" · current recipe"
 		}
-		items := []item{{title: "Recipe", header: true, detail: recipeDetail(cmds, state)},
+		items := []item{{title: title, header: true, detail: recipeDetail(cmds, state)},
 			{title: "Run", accent: true, ref: runRecipeRef{}},
 			{title: "Add as…", ref: saveRecipeRef{}},
 			{title: "Describe", ref: describeCurrentRef{}},
 			{title: "Clear", ref: clearRecipeRef{}}}
+		if name := m.currentName(); name != "" {
+			// One of My recipes, as it was added: it's that recipe, so its
+			// actions are that recipe's. (Adding it again, or editing what's
+			// already current, would do nothing.)
+			items = []item{items[0], items[1], items[3], items[4],
+				{title: "Remove", risk: config.RiskWarn, ref: removeRecipeRef{name}}}
+		}
 		return append(heading(items, "Steps"), steps...)
 	}
 	if i := slices.IndexFunc(saved, func(r config.Recipe) bool { return r.Name == m.opened }); i >= 0 {
@@ -1127,19 +1291,25 @@ func (m *Model) recipeItems() []item {
 		return append(heading(items, "Steps"), steps...)
 	}
 	m.opened = "" // gone, or never was
+	// A recipe is listed once: the current one, when it's one of My recipes
+	// as added, is that row there, marked current.
+	cur := ""
+	if len(m.recipe) > 0 {
+		cur = m.currentName()
+	}
 	items := []item{{title: "Current recipe", header: true}}
-	if len(m.recipe) == 0 {
+	switch {
+	case len(m.recipe) == 0:
 		items = append(items, item{title: "Nothing yet", header: true, note: true})
-	} else {
+	case cur != "": // a note, not a second row for it
+		items = append(items, item{title: cur + ", in My recipes", header: true, note: true})
+	default:
 		var cmds []*config.Command
 		for _, st := range m.recipe {
 			cmds = append(cmds, st.ref.cmd)
 		}
-		title := m.currentName()
-		if title == "" {
-			title = "New recipe" // not added yet
-		}
-		items = append(items, item{title: title, risk: worstRisk(cmds), right: plural(len(m.recipe), "step"), ref: openCurrentRef{}})
+		// Not added yet, or changed since: it's new, whatever it started from.
+		items = append(items, item{title: "New recipe", risk: worstRisk(cmds), right: plural(len(m.recipe), "step"), ref: openCurrentRef{}})
 	}
 	if len(saved) > 0 {
 		now := m.commandsByID()
@@ -1150,6 +1320,10 @@ func (m *Model) recipeItems() []item {
 				if c, ok := now[id]; ok {
 					cmds = append(cmds, c.cmd)
 				}
+			}
+			if r.Name == cur {
+				items = append(items, item{title: r.Name, desc: r.Description, risk: worstRisk(cmds), right: "current · " + plural(len(r.Steps), "step"), ref: openCurrentRef{}})
+				continue
 			}
 			items = append(items, item{title: r.Name, desc: r.Description, risk: worstRisk(cmds), right: plural(len(r.Steps), "step"), ref: openRecipeRef{r}})
 		}
@@ -1327,7 +1501,7 @@ func (m *Model) recipeBar(w int) string {
 		longest, total = max(longest, nw), total+nw
 	}
 	label := dimStyle.Render("Recipe")
-	if m.recipesSection() != nil { // the keys in pink, as everywhere else
+	if m.recipesSection() != nil { // the keys in periwinkle, as everywhere else
 		label = strings.Join(keyHints([]string{"r recipe", "x clear"}), faintStyle.Render(" · "))
 	}
 	const arrow = " →"
@@ -1370,7 +1544,7 @@ func (m *Model) open() tea.Cmd {
 		}
 	case cmdRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x clears it"
+			m.hintWhile("The recipe is running: x clears it", func() bool { return m.run != nil })
 			return nil
 		}
 		if it.stepAt > 0 { // a row of the recipe's own list: the recipe, from here
@@ -1385,7 +1559,7 @@ func (m *Model) open() tea.Cmd {
 		return m.startCommand(r)
 	case runRecipeRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x clears it"
+			m.hintWhile("The recipe is running: x clears it", func() bool { return m.run != nil })
 			return nil
 		}
 		return m.startRecipe()
@@ -1409,7 +1583,7 @@ func (m *Model) open() tea.Cmd {
 		m.loadRecipe(r.Recipe)
 	case saveRecipeRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x clears it"
+			m.hintWhile("The recipe is running: x clears it", func() bool { return m.run != nil })
 			return nil
 		}
 		return m.askName()
@@ -1418,7 +1592,7 @@ func (m *Model) open() tea.Cmd {
 		m.errMsg, m.hint = "", "Recipe cleared"
 	case describeCurrentRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x clears it"
+			m.hintWhile("The recipe is running: x clears it", func() bool { return m.run != nil })
 			return nil
 		}
 		if m.blocked() != "" {
@@ -1435,7 +1609,7 @@ func (m *Model) open() tea.Cmd {
 		return done
 	case describeRecipeRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x clears it"
+			m.hintWhile("The recipe is running: x clears it", func() bool { return m.run != nil })
 			return nil
 		}
 		if m.blocked() != "" {
@@ -1453,7 +1627,7 @@ func (m *Model) open() tea.Cmd {
 		return done
 	case removeRecipeRef:
 		if m.run != nil {
-			m.hint = "The recipe is running: x clears it"
+			m.hintWhile("The recipe is running: x clears it", func() bool { return m.run != nil })
 			return nil
 		}
 		if m.blocked() != "" {
@@ -1514,7 +1688,7 @@ type editRecipeRef struct{ config.Recipe }
 // It says whether it could: not while one's running, nor with a step gone.
 func (m *Model) loadRecipe(r config.Recipe) bool {
 	if m.run != nil {
-		m.hint = "The recipe is running: x clears it"
+		m.hintWhile("The recipe is running: x clears it", func() bool { return m.run != nil })
 		return false
 	}
 	now := m.commandsByID()
@@ -1730,12 +1904,23 @@ func (m *Model) saveCommand(name string, replace bool) string {
 // startCommand asks for what a command needs, if anything, and runs it.
 func (m *Model) startCommand(r cmdRef) tea.Cmd {
 	c := r.cmd
+	// A filter that found it has done its job: the list behind is the
+	// command's own pack, whole, the cursor on the command, so ← from its
+	// blanks comes back to it there.
+	if m.mode == modeBrowse && m.list.filtered() && m.run == nil && r.sec != nil {
+		m.showSection(r.sec)
+		for i, it := range m.list.view {
+			if got, ok := it.ref.(cmdRef); ok && got.cmd == c && m.list.selectable(i) {
+				m.list.cursor = i
+			}
+		}
+	}
 	if len(c.Args) == 0 {
 		editing := ""
 		if c.Editor && strings.Contains(c.Cmd, " pack create") { // nothing to name it by yet
 			editing = "a new pack · esc when done"
 		}
-		return m.finish(pending{section: r.section, sec: r.sec, name: c.Name, cmd: c.Cmd, shown: c.Cmd, risk: c.Risk, desc: describe(c, nil, nil, -1, "", ""), editor: c.Editor, editing: editing})
+		return m.finish(pending{section: r.section, sec: r.sec, name: c.Name, cmd: c.Cmd, shown: c.Cmd, risk: c.Risk, desc: describe(c, nil, nil, -1, "", ""), editor: c.Editor, editing: editing, of: c})
 	}
 	m.job = &job{ref: r, vals: map[string]string{}, said: map[string]string{}}
 	m.mode = modeFill
@@ -1856,6 +2041,10 @@ func (m *Model) prepare() tea.Cmd {
 				col = config.LogoColor(j.vals[a.IconFrom])
 			}
 		}
+		// An option's row is its value and nothing else. What it means (its
+		// label) is said in the info pane when the cursor's on it, never
+		// beside it: a list's rows have no room for descriptions, and cut
+		// short they're noise down the whole list.
 		items = append(items, item{title: o.Value, desc: o.Label, value: o.Value, indent: o.Indent, icon: icon, color: col})
 	}
 	return m.pickStep(items, a, prev)
@@ -1923,7 +2112,23 @@ func (m *Model) accept(v string) tea.Cmd {
 		return m.prepare()
 	}
 	c := j.ref.cmd
+	if c.ID == AITaskID { // not for the shell: the AI does it, in the menu
+		task := strings.TrimSpace(j.vals[c.Args[0].Name])
+		m.job, m.mode = nil, modeBrowse
+		m.refresh()
+		if task == "" {
+			m.hint = "Say what it should do"
+			return nil
+		}
+		return m.startAI(task)
+	}
 	vals, shown := shellValues(c, j.vals), shellValues(c, j.vals)
+	if m.ai != nil && !m.ai.done && j.ref.section != CommandLineSection { // what the AI typed is only ever text: never shell
+		if why := aiQuote(c, j.vals, vals, shown); why != "" {
+			m.errMsg = "✗ " + why
+			return nil
+		}
+	}
 	for _, a := range c.Args {
 		if v := j.vals[a.Name]; a.Kind() == "secret" && v != "" {
 			ref, err := m.keepSecret(v)
@@ -1938,7 +2143,7 @@ func (m *Model) accept(v string) tea.Cmd {
 	if c.Editor && len(c.Args) > 0 {
 		editing = j.vals[c.Args[0].Name] + " · esc when done" // the pack form's key
 	}
-	return m.finish(pending{editor: c.Editor, editing: editing, section: j.ref.section, sec: j.ref.sec, name: c.Name, cmd: tmpl.Render(c.Cmd, c.Known, vals),
+	return m.finish(pending{editor: c.Editor, editing: editing, of: c, section: j.ref.section, sec: j.ref.sec, name: c.Name, cmd: tmpl.Render(c.Cmd, c.Known, vals),
 		shown: tmpl.Render(c.Cmd, c.Known, shown), risk: c.Risk, desc: desc})
 }
 
@@ -2027,6 +2232,10 @@ func (m *Model) fillKey(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 	case "enter", "right":
+		if j.usePick && j.pick.filtering && j.pick.selected() != nil { // done typing: onto the results; with none, what's typed is the answer
+			j.pick.stopFiltering()
+			return nil
+		}
 		a := m.arg()
 		v := j.current(a)
 		if v == "" && !a.Optional && !a.Multi() {
@@ -2051,12 +2260,18 @@ func (m *Model) fillKey(msg tea.KeyPressMsg) tea.Cmd {
 		if !j.pick.filtering {
 			return m.keyOnClosedList(&j.pick, msg)
 		}
+		if j.pick.multi && keyName(msg) == "space" { // it's a space in the filter, as it should be: say how to tick instead
+			m.hint = "Space typed · ↓ to select"
+		}
 		return j.pick.update(msg)
 	}
 	return typeInto(&j.input, msg)
 }
 
 func (m *Model) finish(p pending) tea.Cmd {
+	if m.ai != nil && p.section == CommandLineSection && p.risk == "" { // a line the AI typed itself: you say whether it runs
+		p.risk = config.RiskWarn
+	}
 	m.pending, m.yes, m.wrong = &p, false, false
 	switch p.risk {
 	case config.RiskDanger: // type the code first
@@ -2275,7 +2490,7 @@ func (m *Model) trustView(w, avail int) string {
 	end := min(m.trustTop+room, len(cmds))
 	lines = append(lines, cmds[m.trustTop:end]...)
 	if end < len(cmds) {
-		lines = append(lines, accentStyle.Render(fmt.Sprintf("  ↓ %d more to read before you can say yes", len(cmds)-end)))
+		lines = append(lines, warnStyle.Render(fmt.Sprintf("  ↓ %d more to read before you can say yes", len(cmds)-end)))
 	}
 	lines = append(lines, foot...)
 	return strings.Join(lines, "\n")
@@ -2283,25 +2498,48 @@ func (m *Model) trustView(w, avail int) string {
 
 // helpView lists every key.
 func (m *Model) helpView(w int) string {
-	keys := [][2]string{
-		{"↑ ↓", "move; at a list's top or foot, round to the other end"},
-		{"→ or enter", "go: open, next blank, run, or take the choice"},
-		{"←", "back"},
-		{"[ ]", "jump to the previous or next heading"},
-		{"/", "filter (on the top level, every command); again stops"},
-		{"esc", "clear the filter, go back, or quit at the top"},
-		{"space", "select or unselect, in a select-many list"},
-		{"1-9", "recipe position: clears later ones; again removes it"},
-		{"r", "go to the current recipe"},
-		{"x", "clear the recipe"},
-		{"tab/shift-tab", "switch panes: tab to the shell, shift-tab back"},
-		{"?", "this screen"},
+	keys := helpKeys
+	// Headings as every list's are: in capitals, their rows straight under them.
+	// What each does is said whole: too long for its row, it goes on under
+	// itself, never cut short with an ellipsis.
+	const keyW = 14
+	row := func(key, does string) []string {
+		var out []string
+		for i, l := range wrapSpaces(does, max(w-keyW, 8)) {
+			if i == 0 {
+				out = append(out, key+l)
+			} else {
+				out = append(out, strings.Repeat(" ", keyW)+l)
+			}
+		}
+		return out
 	}
-	lines := []string{headerStyle.Render("Keys"), ""}
+	lines := []string{headerStyle.Render("KEYS")}
 	for _, k := range keys {
-		lines = append(lines, ansi.Truncate(cursorStyle.Render(fmt.Sprintf("%-13s", k[0]))+" "+k[1], w, "…"))
+		lines = append(lines, row(renderKey(fmt.Sprintf("%-*s", keyW, k[0])), k[1])...)
 	}
+	// What the marks beside commands mean: they change what running one asks.
+	lines = append(lines, "", headerStyle.Render("MARKS"))
+	lines = append(lines, row(warnStyle.Render(fmt.Sprintf("%-*s", keyW, warnGlyph)), "risky: asks No or Yes before it runs")...)
+	lines = append(lines, row(dangerStyle.Render(fmt.Sprintf("%-*s", keyW, dangerGlyph)), "can't be undone: type a short code, then it asks")...)
 	return strings.Join(lines, "\n")
+}
+
+// helpKeys is every key the help screen lists, and what each does.
+var helpKeys = [][2]string{
+	{"↑ ↓", "move; at a list's top or foot, round to the other end"},
+	{"→ or enter", "go: open, next blank, run, or take the choice"},
+	{"←", "back"},
+	{"[ ]", "jump to the previous or next heading"},
+	{"home end", "first or last row"},
+	{"/", "filter; ↓ or enter to the results"},
+	{"esc", "clear the filter, go back, or quit at the top"},
+	{"space", "select or unselect, in a select-many list"},
+	{"1-9", "add to the recipe as that step; again removes it"},
+	{"r", "go to the current recipe"},
+	{"x", "clear the recipe"},
+	{"tab/shift-tab", "switch panes: tab to the shell, shift-tab back"},
+	{"?", "this screen"},
 }
 
 // goBack leaves the risky-command screen without running: to the last
@@ -2331,10 +2569,24 @@ func (m *Model) backFrom(step int) tea.Cmd {
 	return m.prepare()
 }
 
-// refresh rebuilds the current list and clears the filter.
+// refresh rebuilds the current list and clears the filter. In a pack, the
+// cursor stays on the command it was on (the one just run, say), so running
+// it again is one key away.
 func (m *Model) refresh() {
 	if m.section != nil {
+		var at *config.Command
+		if it := m.list.selected(); it != nil && m.section != m.recipesSection() { // the recipe's list places its own cursor
+			if r, ok := it.ref.(cmdRef); ok {
+				at = r.cmd
+			}
+		}
 		m.showSection(m.section)
+		for i, it := range m.list.view {
+			if r, ok := it.ref.(cmdRef); ok && at != nil && r.cmd == at && m.list.selectable(i) {
+				m.list.cursor = i
+				break
+			}
+		}
 	} else {
 		m.list.clearFilter()
 	}
@@ -2368,7 +2620,7 @@ func (m *Model) send() tea.Cmd {
 		m.errMsg = oneLine(err.Error())
 		return nil
 	}
-	if p.editor && m.opt.FocusShell != nil { // you type in the editor; the menu gets focus back once it closes
+	if p.editor && m.opt.FocusShell != nil && m.ai == nil { // you type in the editor; the menu gets focus back once it closes (the AI types there itself: you keep the menu, and esc stops it)
 		m.opt.FocusShell()
 	}
 	m.form = nil
@@ -2387,6 +2639,7 @@ func (m *Model) send() tea.Cmd {
 	m.editing = ""
 	if p.editor {
 		m.editing = p.editing
+		m.formNew = strings.HasPrefix(p.editing, "a new pack")
 	}
 	m.refresh()
 	wait := m.awaitIdle()
@@ -2394,10 +2647,18 @@ func (m *Model) send() tea.Cmd {
 		m.run.sent, m.run.seq = true, m.runSeq
 	}
 	var named tea.Cmd
-	if m.form != nil { // the pack form says its pack's name as you change it
+	if m.form != nil { // the pack form says its pack's name, counts and keys as you change them
 		config.RemoveFormName() // not an old form's
-		m.formKeys = nil
-		named = formNameTick()
+		m.formKeys, m.formCounted = nil, false
+		if m.formWatch != nil {
+			m.formWatch.Close()
+		}
+		m.formWatch = nil
+		if err := os.MkdirAll(config.Dir(), 0o755); err == nil {
+			if w, err := config.WatchPath(config.Dir()); err == nil {
+				m.formWatch, named = w, awaitForm(w)
+			}
+		}
 	}
 	return tea.Batch(wait, named, tea.Tick(busyGrace, func(time.Time) tea.Msg { return busyGraceMsg{} }))
 }
@@ -2435,7 +2696,7 @@ func (m *Model) View() tea.View {
 
 // crumbPart is a step of the breadcrumb: a section's icon, if it's one, and
 // its name. The icon's drawn as the menu draws it, never bold or dimmed with
-// the name: clingon's font has no bold, and a faked one smears its logos.
+// the name: a logo's the same logo wherever it's drawn.
 type crumbPart struct{ icon, color, name string }
 
 // crumbSection is a section as the breadcrumb names it: its icon, then its
@@ -2445,8 +2706,11 @@ func crumbSection(s *config.Section) crumbPart {
 }
 
 func (p crumbPart) render(st lipgloss.Style) string {
-	if p.icon == "" {
+	switch {
+	case p.icon == "":
 		return st.Render(p.name)
+	case p.name == "": // the house, alone: drawn across two cells, so the second's kept clear of what follows
+		return iconStyle(p.color).Render(p.icon) + strings.Repeat(" ", max(2-ansi.StringWidth(p.icon), 0))
 	}
 	return iconStyle(p.color).Render(p.icon) + strings.Repeat(" ", max(3-ansi.StringWidth(p.icon), 1)) + st.Render(p.name)
 }
@@ -2479,10 +2743,21 @@ func (m *Model) view() string {
 			name := m.opened
 			if name == openedCurrent {
 				name = "Current recipe"
+				if saved := m.currentName(); saved != "" { // one of My recipes, loaded: by its name, as its heading says
+					name = saved
+				}
 			}
 			parts = append(parts, crumbPart{name: name})
 		}
 	}
+	// Home starts the way: its house, in the menu's grey. At the top that's
+	// where you are, so it's named, bright, as where you are always is; on the
+	// way to somewhere else the house alone says it.
+	home := crumbPart{icon: slotIcon(config.Logos["house"])}
+	if len(parts) == 0 {
+		home.name = "Home"
+	}
+	parts = append([]crumbPart{home}, parts...)
 	crumb := ""
 	for i, p := range parts { // where you are bright, the way there dim
 		if i < len(parts)-1 {
@@ -2491,8 +2766,8 @@ func (m *Model) view() string {
 			crumb += p.render(crumbStyle)
 		}
 	}
-	head := []string{top, ansi.Truncate(crumb, w, "…"), ""}
-	var foot []string // keys are on the status bar, and only there
+	head := []string{top, "", ansi.Truncate(crumb, w, "…"), ""} // a row between the logo and where you are, so neither crowds the other
+	var foot []string                                           // keys are on the status bar, and only there
 	if m.opt.Bar == nil {
 		foot = append(foot, m.statusBar(w))
 	}
@@ -2527,8 +2802,6 @@ func (m *Model) view() string {
 		body = m.trustView(w, avail)
 	case m.mode == modeTyped:
 		body = m.typedView(w)
-	case m.mode == modeSavePack:
-		body = m.savePackView(w)
 	case m.mode == modeQuit:
 		body = m.quitView(w)
 	case m.mode == modeSaveName:
@@ -2559,6 +2832,8 @@ func (m *Model) inputsNote() string {
 	case m.notice.text != "" || m.help:
 	case m.mode == modeFill:
 		c = m.job.ref.cmd
+	case m.mode == modeConfirm && m.pending != nil: // asking No or Yes, or for the code: still the command's
+		c = m.pending.of
 	case m.mode == modeBrowse:
 		if it := m.list.selected(); it != nil {
 			if r, ok := it.ref.(cmdRef); ok {
@@ -2580,37 +2855,52 @@ func (m *Model) inputsNote() string {
 func (m *Model) infoPane(w int) string {
 	n := infoN(m.h)
 	rule := faintStyle.Render(strings.Repeat("─", w))
+	// Every screen's info starts under a rule, level with the top of the AI's
+	// panel when it's at work and with the pack form's foot: one line across
+	// the window. It ends the same on every screen too: a divider level with
+	// the AI's strip's top, then a row, level with the strip, saying how
+	// many: a pack's modules and commands, a command's inputs, a recipe's
+	// steps. Both come out of the rows the pane always had, a row from each
+	// block, so nothing above moves.
+	framed := func(content, count string) string {
+		return strings.Join([]string{rule, content, rule, dimStyle.Render(ansi.Truncate(count, w, "…")), rule}, "\n")
+	}
 	if m.help && m.notice.text == "" {
-		return strings.Join([]string{rule, aboutInfo(w, 2*n+3), rule}, "\n")
+		// What clingon is, laid out as every screen's info is: what it is in the
+		// raised block, how it runs under it.
+		what := lipgloss.NewStyle().Bold(true).Render("Clingon") + faintStyle.Render(" · ") + "a menu of the commands you can never remember, next to a real shell that runs them."
+		return framed(card(what, "Pick a command and fill in the blanks. It's typed into your shell and run, as if you'd typed it yourself.", w, n), plural(len(helpKeys), "key")+", 2 marks")
 	}
 	if m.busy != "" && m.editing != "" && m.mode == modeBrowse && m.notice.text == "" && !m.help {
-		return strings.Join([]string{rule, m.editingInfo(w, n), rule}, "\n")
+		return framed(m.editingInfo(w, n), m.formCount())
 	}
 	if m.mode == modeBrowse && m.notice.text == "" && !m.help { // a recipe's row: its steps, as a pack's row says what's in it
 		if it := m.list.selected(); it != nil {
 			switch r := it.ref.(type) {
 			case openCurrentRef:
-				return strings.Join([]string{rule, stepsInfo(m.currentSteps(), w, 2*n+3), rule}, "\n")
+				return framed(stepsInfo(m.currentSteps(), w, 2*n+1), plural(len(m.currentSteps()), "step"))
 			case openRecipeRef:
-				return strings.Join([]string{rule, stepsInfo(m.savedSteps(r.Recipe), w, 2*n+3), rule}, "\n")
+				steps := m.savedSteps(r.Recipe)
+				return framed(stepsInfo(steps, w, 2*n+1), plural(len(steps), "step"))
 			}
 		}
 	}
 	cmd, desc := m.details()
-	if m.notice.text != "" || m.help || m.mode == modeTrust || m.mode == modeTyped || m.mode == modeQuit || m.mode == modeSavePack {
+	if m.notice.text != "" || m.help || m.mode == modeTrust || m.mode == modeTyped || m.mode == modeQuit {
 		cmd, desc = "", ""
 	} else if s := m.highlightedSection(); s != nil {
 		if s.Name == RecipesSection && len(m.recipe) == 0 {
-			return strings.Join([]string{rule, m.noCurrentRecipeInfo(w, n), rule}, "\n")
+			info, count := m.noCurrentRecipeInfo(w, n)
+			return framed(info, count)
 		}
 		// A section runs nothing itself: what's in it gets the whole area,
 		// its heading's line too (how many it has is by the filter).
 		if s.Name == RecipesSection { // what the recipe is: its steps, in order
-			return strings.Join([]string{rule, stepsInfo(m.currentSteps(), w, 2*n+3), rule}, "\n")
+			return framed(stepsInfo(m.currentSteps(), w, 2*n+1), plural(len(m.currentSteps()), "step"))
 		}
-		return strings.Join([]string{rule, m.sectionInfo(s, w, n), rule}, "\n")
+		return framed(m.sectionInfo(s, w, n), sectionCount(s))
 	} else if m.onEmptyRecipe() {
-		return strings.Join([]string{rule, card("How recipes work", howRecipesWork, w, n), rule}, "\n")
+		return framed(card("How recipes work", howRecipesWork, w, n), "")
 	}
 	empty := cmd == ""
 	if empty {
@@ -2624,26 +2914,21 @@ func (m *Model) infoPane(w int) string {
 	// No headings: the command's block says what it is, and the lines they
 	// had go to the command and the description, one each. How many steps it
 	// takes leads the description.
-	code := strings.Split(block(cmd, w, n+1, tail), "\n")
+	code := strings.Split(block(cmd, w, n, tail), "\n")
 	for i := range code {
 		if !empty {
 			code[i] = onBg(code[i], raised, w)
 		}
 	}
-	if inputs := m.inputsNote(); inputs != "" && desc != "" {
-		desc = inputs + ": " + desc
-	}
-	about := block(dimStyle.Render(desc), w, n+1, tail)
+	about := block(dimStyle.Render(desc), w, n, tail)
 	if warn := m.unmetNote(); warn != "" { // what it needs that isn't here, in amber, before what it does
-		about = warnThen(warn, desc, w, n+1)
+		about = warnThen(warn, desc, w, n)
 	}
-	return strings.Join([]string{
-		rule,
-		strings.Join(code, "\n"),
-		"", // room between the two
-		about,
-		rule,
-	}, "\n")
+	count := ""
+	if desc != "" {
+		count = m.inputsNote()
+	}
+	return framed(strings.Join(code, "\n")+"\n\n"+about, count) // room between the two
 }
 
 // infoN is how many lines each the info pane gives the command and the
@@ -2659,15 +2944,37 @@ func infoN(h int) int {
 }
 
 // infoTop is how far up from the pane's foot the info pane's rule is, in a
-// pane h high with nothing under it: the rule, the two headings, the two
-// blocks and the line between them. The pack form's foot is the same, level.
+// pane h high with nothing under it: the rule, the two blocks, the line
+// between them, the second rule and the count. The pack form's foot is the
+// same, level.
 func infoTop(h int) int { return 2*infoN(h) + 4 }
 
-// formNameMsg is a look at the open pack form's name, to say it as it changes.
-type formNameMsg struct{}
+// formNameMsg says the open pack form has written something: its pack's
+// name, how many modules and commands it has, its keys. The form's another
+// process; it writes them as they change, and the menu hears it then.
+type formNameMsg struct{ watch *config.Watch }
 
-func formNameTick() tea.Cmd {
-	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg { return formNameMsg{} })
+// stopFormWatch stops listening for the form, once it's closed. The wait
+// asleep on it wakes and lets it go.
+func (m *Model) stopFormWatch() {
+	if m.formWatch != nil {
+		m.formWatch.Close()
+		m.formWatch, m.formCounted = nil, false
+	}
+}
+
+// awaitForm sleeps, off the UI thread, until the form writes; after the
+// watch is closed it lets it go and says nothing.
+func awaitForm(w *config.Watch) tea.Cmd {
+	if w == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		if w.Wait() {
+			return formNameMsg{w}
+		}
+		return nil
+	}
 }
 
 // editingAway says a pack's form or file is open in the shell and focus is
@@ -2678,7 +2985,18 @@ func (m *Model) editingAway() bool { return m.blurred && m.busy != "" && m.editi
 // a card: what's being edited, and how you're done.
 func (m *Model) editingInfo(w, n int) string {
 	what, how, _ := strings.Cut(m.editing, " · ")
-	say := upperFirst(how) + " in the form: it asks then whether to save your changes."
+	say := upperFirst(how) + " in the form: your changes are kept as you make them."
+	if m.formPlace != "" { // where to find it
+		where := m.formPlace
+		if m.formName != "" {
+			where += " › " + m.formName
+		}
+		if m.formNew {
+			say = "Once added, it's in the menu under " + where + ". " + say
+		} else {
+			say = "It's in the menu under " + where + ". " + say
+		}
+	}
 	return card(dimStyle.Render("Editing:")+" "+lipgloss.NewStyle().Bold(true).Render(what), say, w, n) // what's being done, quiet; what, bright
 }
 
@@ -2694,17 +3012,17 @@ func quiet(s string) string {
 
 // noCurrentRecipeInfo is what the menu's Recipes row says with nothing
 // numbered, as a card: the recipes you have, or none yet and how to start.
-func (m *Model) noCurrentRecipeInfo(w, n int) string {
+func (m *Model) noCurrentRecipeInfo(w, n int) (info, count string) {
 	how := "A recipe runs several commands in order. Press 1-9 on any command to build one."
 	saved := m.savedRecipes()
 	if len(saved) == 0 {
-		return card("No recipes yet", how, w, n)
+		return card("No recipes yet", how, w, n), ""
 	}
 	var names []string
 	for _, r := range saved {
 		names = append(names, r.Name)
 	}
-	return card(strings.Join(names, faintStyle.Render(" · ")), plural(len(saved), "recipe")+" added: "+how, w, n)
+	return card(strings.Join(names, faintStyle.Render(" · ")), how, w, n), plural(len(saved), "recipe") + " added"
 }
 
 // onEmptyRecipe says whether the Recipes screen has nothing to describe: no
@@ -2900,7 +3218,15 @@ func (j *job) describe() string {
 	// In a checklist, say what the highlighted option does before it's ticked.
 	if j.usePick && j.pick.multi {
 		if it := j.pick.selected(); it != nil && it.desc != "" && !j.pick.chosen[it.idx] && !j.pick.filtering {
-			d += " " + dimStyle.Italic(true).Render("Space adds: "+it.desc+".")
+			adds := "Space adds: " + it.desc
+			if kids := len(j.pick.childrenOf(it.idx)); kids > 0 && !it.indent { // a parent takes its children with it
+				what := "options"
+				if a.CountAs == "pack" {
+					what = "modules"
+				}
+				adds += fmt.Sprintf(", and all %d of its %s", kids, what)
+			}
+			d += " " + dimStyle.Italic(true).Render(adds+".")
 		}
 	}
 	return d
@@ -3129,13 +3455,15 @@ func card(top, desc string, w, n int) string { return cardWarn(top, "", desc, w,
 
 // cardWarn is card with warn, if any, in amber before what it's for.
 func cardWarn(top, warn, desc string, w, n int) string {
-	code := strings.Split(block(top, w, n+1, false), "\n")
+	// In a raised block, exactly where and as a command's code is: the info
+	// pane is the same shape on every screen.
+	code := strings.Split(block(top, w, n, false), "\n")
 	for i := range code {
 		code[i] = onBg(code[i], raised, w)
 	}
-	about := styledBlock(dimStyle, desc, w, n+1)
+	about := styledBlock(dimStyle, desc, w, n)
 	if warn != "" {
-		about = warnThen(warn, desc, w, n+1)
+		about = warnThen(warn, desc, w, n)
 	}
 	return strings.Join([]string{strings.Join(code, "\n"), "", about}, "\n")
 }
@@ -3151,52 +3479,41 @@ func (m *Model) sectionInfo(s *config.Section, w, n int) string {
 		names = append(names, g.Name)
 	}
 	desc := s.Desc
-	if len(names) > 0 {
-		desc = strings.TrimSuffix(plural(len(names), "module")+": "+desc, ": ")
-	}
 	warn := ""
 	if miss := m.missingFor(s); len(miss) > 0 { // what it needs that isn't here, in amber
 		warn = upperFirst(config.Needs(miss))
 	}
-	return cardWarn(strings.Join(names, faintStyle.Render(" · ")), warn, desc, w, n)
+	return cardWarn(strings.Join(names, faintStyle.Render(" · ")), warn, desc, w, n) // always one run of names, however many
 }
 
-// aboutInfo is what clingon is, for the help screen's info pane, n lines w
-// wide, laid out like a section's summary.
-func aboutInfo(w, n int) string {
-	var lines []string
-	for _, p := range [][2]string{
-		{"Clingon:", "a menu of the commands you can never remember, next to a real shell that runs them."},
-		{"How it runs:", "pick a command and fill in the blanks. It's typed into your shell and run, as if you'd typed it yourself."},
-	} {
-		lines = append(lines, hang(words(groupLabelStyle, p[0])+" "+words(dimStyle, p[1]), w)...)
-	}
-	return fit(lines, w, n, false)
+// sectionCount is how many modules and commands a section has, for the info
+// pane's foot.
+func sectionCount(s *config.Section) string {
+	return modulesAndCommands(len(s.Groups), len(s.All()))
 }
 
-// hang wraps a labelled line to w wide with its later lines set in two, so
-// each label starts a paragraph of its own and a long group doesn't run
-// into the next.
-func hang(line string, w int) []string {
-	lines := wrapSpaces(line, w)
-	if len(lines) > 1 {
-		rest := wrapSpaces(strings.Join(lines[1:], " "), max(w-2, 1))
-		lines = lines[:1]
-		for _, l := range rest {
-			lines = append(lines, "  "+l)
-		}
+// modulesAndCommands says how many: "3 modules, 16 commands".
+func modulesAndCommands(modules, commands int) string {
+	var counts []string
+	if modules > 0 {
+		counts = append(counts, plural(modules, "module"))
 	}
-	return lines
+	if commands > 0 {
+		counts = append(counts, plural(commands, "command"))
+	}
+	return strings.Join(counts, ", ")
 }
 
-// words styles each word of s on its own, so it keeps its colour however
-// it's wrapped.
-func words(st lipgloss.Style, s string) string {
-	f := strings.Split(s, " ")
-	for i := range f {
-		f[i] = st.Render(f[i])
+// formCount is how many modules and commands the pack in the open form has,
+// live, as it says: what it'll have once it's added.
+func (m *Model) formCount() string {
+	if !m.formCounted {
+		return ""
 	}
-	return strings.Join(f, " ")
+	if c := modulesAndCommands(m.formModules, m.formCommands); c != "" {
+		return c
+	}
+	return "No commands yet"
 }
 
 func plural(n int, thing string) string {
@@ -3222,6 +3539,12 @@ func (m *Model) promptKeys() []string {
 		return nil // barKeys says the list's
 	case modeFill:
 		j := m.job
+		if j.usePick && j.pick.filtering { // typing: the way out to the results first
+			if j.pick.multi {
+				keys = append(keys, greyed+"space select") // where it always is, greyed: space types a space here
+			}
+			return append(keys, "↓ results", "← back", "esc clear")
+		}
 		keys = []string{"→ go", "← back"}
 		switch {
 		case j.usePick && j.pick.filtering:
@@ -3234,8 +3557,12 @@ func (m *Model) promptKeys() []string {
 		if j.usePick && j.pick.nestedOnly() && !j.pick.filtering {
 			keys = append(keys, "[ ] jump")
 		}
-		if j.usePick && j.pick.multi && !j.pick.filtering {
-			keys = append([]string{"space select"}, keys...)
+		if j.usePick && j.pick.multi { // greyed while the filter's open: space types a space there; / stops filtering
+			sel := "space select"
+			if j.pick.filtering {
+				sel = greyed + sel
+			}
+			keys = append([]string{sel}, keys...)
 		}
 		if j.usePick {
 			keys = append([]string{"↑↓ move"}, keys...)
@@ -3245,10 +3572,10 @@ func (m *Model) promptKeys() []string {
 		if p := m.pending; p.risk == config.RiskDanger && !p.typed {
 			keys = []string{"type the code", "→ go", "← back"}
 		}
-	case modeTrust, modeTyped, modeQuit, modeSavePack:
+	case modeTrust, modeTyped, modeQuit:
 		keys = []string{"↑↓ move", "→ go", "← back"}
-	case modeSaveName:
-		keys = []string{"→ go", "← back"}
+	case modeSaveName: // a text box: every key that's text types, the menu's letters and numbers too
+		keys = []string{"type a name", "→ go", "← back"}
 	}
 	return keys
 }
@@ -3257,7 +3584,7 @@ func (m *Model) promptKeys() []string {
 // keeps its place on the status bar, greyed out, so nothing shifts.
 const greyed = "~"
 
-// keyHints styles "key what it does": the key in pink, the rest in grey, or
+// keyHints styles "key what it does": the key in periwinkle, the rest in grey, or
 // all of it faint when it's greyed out.
 func keyHints(keys []string) []string {
 	out := make([]string, len(keys))
@@ -3273,14 +3600,57 @@ func keyHints(keys []string) []string {
 		case strings.HasPrefix(k, "any key "):
 			key, what = "any key", strings.TrimPrefix(k, "any key ")
 		}
-		out[i] = accentStyle.Render(key) + " " + dimStyle.Render(what)
+		out[i] = renderKey(key) + " " + dimStyle.Render(what)
 	}
 	return out
+}
+
+// renderKey is a key as it's said everywhere: in the bright text colour, its
+// letters bold, so it stands apart from what it does (grey) and from a key
+// that can't be pressed now (faint). Arrows and other glyphs stay out of
+// the bold: they're marks, the same weight wherever they're drawn.
+func renderKey(key string) string {
+	var b strings.Builder
+	run, ascii := []rune{}, false
+	flush := func() {
+		if len(run) == 0 {
+			return
+		}
+		st := keyStyle
+		if ascii {
+			st = st.Bold(true)
+		}
+		b.WriteString(st.Render(string(run)))
+		run = run[:0]
+	}
+	for _, r := range key {
+		if a := r < 128; a != ascii {
+			flush()
+			ascii = a
+		}
+		run = append(run, r)
+	}
+	flush()
+	return b.String()
 }
 
 // barKeys is what the status bar shows when it has nothing else to say: the
 // keys that work right now. Prompts keep theirs in the menu, by the question.
 func (m *Model) barKeys() []string {
+	if m.ai == nil && m.blurred && m.panelOpen && m.opt.Panel.Focused() { // the AI's panel, at rest
+		return []string{"→ give a task", "tab menu"}
+	}
+	if a := m.ai; a != nil && !a.looking && !a.yourTurn {
+		var keys []string // esc is the menu's wherever focus has gone with the AI: no way back to press first
+		switch {
+		case a.done:
+			return append(keys, "esc close AI")
+		case a.question != "":
+			return append(keys, "↑↓ move", "→ answer", "esc stop AI")
+		default:
+			return append(keys, "esc stop AI")
+		}
+	}
 	inClingon := m.opt.FocusMenu != nil // not in print mode: there's no shell pane
 	if m.blurred {
 		if inClingon {
@@ -3292,6 +3662,17 @@ func (m *Model) barKeys() []string {
 		return m.promptKeys()
 	}
 	recipes := m.recipesSection() != nil
+	if m.list.filtering { // typing: the way out to the results first
+		keys := []string{"↓ results"}
+		if m.section != nil {
+			keys = append(keys, "← back")
+		}
+		keys = append(keys, "esc clear")
+		if inClingon {
+			keys = append(keys, "tab shell")
+		}
+		return keys
+	}
 	keys := []string{"↑↓ move", "→ go"}
 	if m.section != nil || m.list.filtered() {
 		keys = append(keys, "← back")
@@ -3314,7 +3695,7 @@ func (m *Model) barKeys() []string {
 		if m.section != nil && m.section != m.recipesSection() {
 			keys = append(keys, "1-9 add")
 		}
-		if len(m.recipe) > 0 { // only with a current recipe to go to
+		if len(m.recipe) > 0 && m.opt.TopBar == nil { // only with a current recipe to go to (a top bar has them, with it)
 			keys = append(keys, "r recipe", "x clear recipe")
 		}
 	}
@@ -3325,19 +3706,77 @@ func (m *Model) barKeys() []string {
 }
 
 // keysBar is the status bar with nothing else to say.
-func (m *Model) keysBar(w int) string {
-	line := strings.Join(keyHints(m.barKeys()), faintStyle.Render(" · "))
+func (m *Model) keysBar(w int) string { return keysBarOf(m.barKeys(), w) }
+
+func keysBarOf(keys []string, w int) string {
+	line := strings.Join(keyHints(keys), faintStyle.Render(" · "))
 	return onBg(" "+ansi.Truncate(line, max(w-2, 0), "…"), raised, w)
+}
+
+// minKeysBeside is the least width the bar needs to show the keys and the
+// recipe side by side; narrower, the recipe has it all.
+const minKeysBeside = 90
+
+// keysAndRecipe is the bar while there's a recipe: the keys that work now
+// on the left, as always, and the recipe on the right (its own r and x
+// with it, so they aren't said twice).
+func (m *Model) keysAndRecipe(w int) string {
+	if w < minKeysBeside {
+		return m.recipeBar(w)
+	}
+	var keys []string
+	for _, k := range m.barKeys() {
+		if k != "r recipe" && k != "x clear recipe" {
+			keys = append(keys, k)
+		}
+	}
+	rw := min(w/2, m.recipeWidth())
+	return keysBarOf(keys, w-rw) + m.recipeBar(rw)
+}
+
+// recipeWidth is how wide recipeBar is with room for every step's whole name.
+func (m *Model) recipeWidth() int {
+	label := ansi.StringWidth(ansi.Strip(strings.Join(keyHints([]string{"r recipe", "x clear"}), " · ")))
+	if m.recipesSection() == nil {
+		label = len("Recipe")
+	}
+	w := 2 + label
+	for i, s := range m.recipe {
+		if i > 0 {
+			w += len(" →")
+		}
+		w += 1 + stepW + 1 + ansi.StringWidth(s.ref.cmd.Name)
+	}
+	return w + 1
 }
 
 // statusBar is the always-there line at the very bottom: the way to every key at
 // its left, the version at its right, and whatever barBody has to say between
 // them. The version gives way first if there's no room.
 func (m *Model) statusBar(w int) string {
-	chip := lipgloss.NewStyle().Background(accent).Foreground(ink).Bold(true).Padding(0, 1)
-	notch := chip.Render("? help")
+	// ? help is a key like the bar's others, not a chip: the one chip is where
+	// you are, beside it.
+	notch := onBg(" "+renderKey("?")+" "+dimStyle.Render("help")+" ", raised, 8)
+	if m.blurred && m.where() != "IN FORMS" { // in the shell (or the AI's panel), ? is typed, not help: greyed out, as keys that don't work are
+		notch = onBg(" "+faintStyle.Render("? help")+" ", raised, 8)
+	}
 	if m.opt.FocusMenu != nil { // in clingon's window, where there's a shell to be in
-		notch += lipgloss.NewStyle().Background(purple).Foreground(text).Bold(true).Padding(0, 1).Render(m.where())
+		// Where you are, in words: on the periwinkle the AI's model chip has,
+		// quiet, for the everyday state. The bright chips are the ones that
+		// want a look: the AI driving, your turn.
+		chip := lipgloss.NewStyle().Background(soft).Foreground(ink)
+		switch m.aiState() { // the AI driving is said where you look for where you are
+		case "driving":
+			chip = lipgloss.NewStyle().Background(gold).Foreground(ink)
+		case "your turn":
+			chip = lipgloss.NewStyle().Background(orange).Foreground(ink)
+		}
+		if m.aiState() != "" { // AI DRIVING and YOUR TURN as wide: the chip stays put as the turn passes
+			chip = chip.Width(len("AI DRIVING") + 2).Align(lipgloss.Center)
+		}
+		// Square, as the bands it sits beside are (a warning's, an error's):
+		// a round end against a square band is two shapes for one bar.
+		notch += chip.Bold(true).Padding(0, 1).Render(m.where())
 	}
 	nw := ansi.StringWidth(notch)
 	if w <= nw {
@@ -3349,7 +3788,7 @@ func (m *Model) statusBar(w int) string {
 		version = lipgloss.NewStyle().Background(raised).Foreground(faint).Padding(0, 1).Render(m.opt.Version)
 	}
 	vw := ansi.StringWidth(version)
-	if w-nw-vw < minBarBody {
+	if w-nw-vw < minBarBody || len(m.recipe) > 0 && m.opt.TopBar == nil { // with a recipe, the keys and it share the bar: no room for it
 		version, vw = "", 0
 	}
 	return notch + m.barBody(w-nw-vw) + version
@@ -3369,6 +3808,8 @@ func (m *Model) barBody(w int) string {
 		return bar(red, m.errMsg, w)
 	case m.hint != "":
 		return bar(raised, m.hint, w)
+	case m.aiState() != "" && m.aiState() != "your turn": // the AI's keys, whatever it's driving
+		return m.keysBar(w)
 	case m.busy != "" && m.editing != "" && m.blurred: // not a wait: you're working there
 		return m.editingBar(w)
 	case m.busy != "" && m.editing != "": // back in the menu, the form open beside it: the menu's keys
@@ -3389,7 +3830,7 @@ func (m *Model) barBody(w int) string {
 	case m.job != nil:
 		s = m.job.ref.sec
 	}
-	if len(m.recipe) > 0 { // wherever you've gone, you can see what you've numbered
+	if len(m.recipe) > 0 && m.opt.TopBar == nil { // wherever you've gone, you can see what you've numbered (with a top bar, it's there)
 		if s != nil {
 			if miss := m.missingFor(s); len(miss) > 0 { // both: the recipe gets what's left of the bar
 				msg := "✗ " + upperFirst(config.Needs(miss))
@@ -3397,7 +3838,7 @@ func (m *Model) barBody(w int) string {
 				return bar(red, msg, left) + m.recipeBar(w-left)
 			}
 		}
-		return m.recipeBar(w)
+		return m.keysAndRecipe(w)
 	}
 	if s == nil { // the top level: news, not problems
 		// Only what needs doing. A suggestion is on the welcome card already.
@@ -3419,14 +3860,11 @@ func upperFirst(s string) string {
 }
 
 // bar is text on a full-width band of colour: dark text on amber or red,
-// light text on grey (all's well) or purple.
+// grey text on the quiet band (all's well).
 func bar(bg color.Color, msg string, w int) string {
 	fg := ink
-	switch bg {
-	case raised:
+	if bg == raised {
 		fg = grey
-	case purple:
-		fg = text
 	}
 	st := lipgloss.NewStyle().Background(bg).Foreground(fg).Bold(bg != raised).Padding(0, 1).Width(w)
 	return st.Render(ansi.Truncate(msg, max(w-2, 0), "…"))
@@ -3454,9 +3892,27 @@ func (m *Model) editingBar(w int) string {
 // where is the chip beside ? help: where you are, the menu, the shell, or
 // the pack form (in the shell's pane, but a place of its own).
 func (m *Model) where() string {
+	switch m.aiState() {
+	case "driving":
+		return "AI DRIVING"
+	case "your turn":
+		return "YOUR TURN"
+	}
+	switch m.focus { // as tmux has it, when it can be asked
+	case "menu":
+		return "IN MENUS"
+	case "panel":
+		return "IN CHATS"
+	case "form":
+		return "IN FORMS"
+	case "shell":
+		return "IN SHELL"
+	}
 	switch {
 	case !m.blurred:
 		return "IN MENUS"
+	case m.panelOpen && m.opt.Panel.Focused():
+		return "IN CHATS"
 	case m.busy != "" && m.editing != "" && m.form != nil && len(m.formKeys) > 0:
 		return "IN FORMS"
 	}
@@ -3471,7 +3927,7 @@ func newsBar(h Headline, w int) string {
 	if h.Kind == Good {
 		st = dimStyle
 	}
-	c := map[HeadlineKind]color.Color{Good: grey, Info: purple, Attention: accent}[h.Kind]
+	c := map[HeadlineKind]color.Color{Good: grey, Info: soft, Attention: green}[h.Kind]
 	if r, _ := utf8.DecodeRuneInString(glyph); r >= 0xE000 && r <= 0xF8FF {
 		glyph += " " // a logo from clingon's font, drawn across two cells
 	}
@@ -3573,9 +4029,13 @@ func filterLine(p *picker, w int) string {
 	case p.filtering:
 		left = inputView(&p.filter, room)
 	case p.filtered(): // closed, and still applied: it should be plain that it is
-		left = ansi.Truncate(accentStyle.Render("❯ ")+p.query(), max(room, 1), "…") // the status bar says how to edit or clear it
+		left = ansi.Truncate(faintStyle.Render("❯ ")+p.query(), max(room, 1), "…") // the status bar says how to edit or clear it; pink only while it's typed in
 	default:
-		left = accentStyle.Render("❯ /") + faintStyle.Render(" to filter")
+		say := " to filter"
+		if p.scope != "" { // what it searches: every command at the top, a pack's own inside it
+			say += " " + p.scope
+		}
+		left = faintStyle.Render("❯ ") + renderKey("/") + faintStyle.Render(ansi.Truncate(say, max(room-3, 1), "…"))
 	}
 	if tally == "" {
 		return left
@@ -3596,22 +4056,31 @@ func preview(c *config.Command, vals map[string]string, step int, tentative stri
 	}
 	var b strings.Builder
 	h := newHighlighter()
-	for _, s := range tmpl.Parse(c.Cmd, c.Known) {
+	filled := shellValues(c, vals)
+	// A blank answered with nothing takes the space before it too, as in the
+	// command that's run (tmpl.Render), so the preview has no double space.
+	emptied := func(s tmpl.Seg) bool { return s.Arg != "" && step >= 0 && index[s.Arg] < step && filled[s.Arg] == "" }
+	segs := tmpl.Parse(c.Cmd, c.Known)
+	for k, s := range segs {
 		i := index[s.Arg]
 		if s.Arg != "" {
 			h.placeholder()
 		}
 		switch {
 		case s.Arg == "":
-			b.WriteString(h.text(s.Text))
+			text := s.Text
+			if k+1 < len(segs) && emptied(segs[k+1]) {
+				text = strings.TrimSuffix(text, " ")
+			}
+			b.WriteString(h.text(text))
 		case step >= 0 && i < step:
-			b.WriteString(valueStyle.Render(shellValues(c, vals)[s.Arg]))
+			b.WriteString(valueStyle.Render(filled[s.Arg]))
 		case i == step && tentative != "":
 			b.WriteString(pendingStyle.Render(shellValues(c, map[string]string{s.Arg: tentative})[s.Arg]))
 		case i == step:
 			b.WriteString(pendingStyle.Render("<" + s.Arg + ">"))
 		default:
-			b.WriteString(lipgloss.NewStyle().Foreground(sky).Render("<" + s.Arg + ">")) // still to come: the one being asked is the pink one
+			b.WriteString(lipgloss.NewStyle().Foreground(sky).Render("<" + s.Arg + ">")) // still to come: the one being asked is underlined
 		}
 	}
 	return b.String()
@@ -3625,7 +4094,7 @@ func (m *Model) fillView(w, h int) string {
 	if r := m.recipeStep(); r != "" {
 		step = r + " · " + step
 	}
-	label := cursorStyle.Render(a.Label())
+	label := headerStyle.Render(a.Label())
 	// How far along stands alone, like a list's filter; the blank and its answer
 	// go together.
 	head := []string{dimStyle.Render(ansi.Truncate(step, inner, "…")), "", label}
@@ -3643,7 +4112,7 @@ func (m *Model) fillView(w, h int) string {
 		used := len(head) + 2
 		return strings.Join(append(append([]string{filterLine(&j.pick, w), ""}, head...), j.pick.render(w, h-used)), "\n")
 	}
-	lines := append(head, panel([]string{inputView(&j.input, inner)}, w))
+	lines := append(head, panel(wrappedInput(&j.input, inner), w))
 	if j.invalid != "" {
 		lines = append(lines, errStyle.Render(ansi.Wrap(j.invalid, w, "")))
 	}
@@ -3661,15 +4130,67 @@ func (m *Model) recipeStep() string {
 // panelWidth is the room for what's in a panel, inside its edge and padding.
 func panelWidth(w int) int { return max(w-3, 1) }
 
-// panel marks where your answer goes, the same wherever that is: a grey block
-// with a pink edge. What's being asked stays outside it. Long lines wrap: nothing
+// panel marks where your answer goes, the same wherever that is: a raised
+// block, set in by its padding. What's being asked stays outside it. Long lines wrap: nothing
 // in it may be cut off.
+// wrappedInput is a text box's lines when what's typed is longer than its
+// width: wrapped at spaces, as the form's fields and previews are, rather than
+// scrolled sideways out of sight, the cursor where it is. A secret's box, and
+// one with nothing in it, are drawn as they are.
+func wrappedInput(in *textinput.Model, w int) []string {
+	val := []rune(in.Value())
+	if in.EchoMode != textinput.EchoNormal || len(val) == 0 {
+		return []string{inputView(in, w)}
+	}
+	room := max(w-2, 4) // after the prompt; later lines set in under it
+	var spans [][2]int
+	for i := 0; i < len(val); {
+		end := min(i+room, len(val))
+		if end < len(val) { // break at the last space that fits
+			for k := end; k > i+1; k-- {
+				if val[k-1] == ' ' {
+					end = k
+					break
+				}
+			}
+		}
+		spans = append(spans, [2]int{i, end})
+		i = end
+	}
+	pos, focused := in.Position(), in.Focused()
+	cursor := lipgloss.NewStyle().Reverse(true)
+	if last := spans[len(spans)-1]; focused && pos == len(val) && last[1]-last[0] >= room {
+		spans = append(spans, [2]int{len(val), len(val)}) // a full last line: the cursor starts the next
+	}
+	var out []string
+	for n, sp := range spans {
+		lead := "  "
+		if n == 0 && focused {
+			lead = accentStyle.Render("❯ ")
+		} else if n == 0 {
+			lead = faintStyle.Render("❯ ")
+		}
+		line := string(val[sp[0]:sp[1]])
+		switch {
+		case !focused:
+		case pos >= sp[0] && pos < sp[1]:
+			at := pos - sp[0]
+			r := []rune(line)
+			line = string(r[:at]) + cursor.Render(string(r[at])) + string(r[at+1:])
+		case pos == len(val) && n == len(spans)-1:
+			line += cursor.Render(" ")
+		}
+		out = append(out, lead+line)
+	}
+	return out
+}
+
 func panel(lines []string, w int) string {
 	inner := panelWidth(w)
 	var out []string
 	for _, line := range lines {
 		for _, l := range strings.Split(ansi.Wrap(line, inner, ""), "\n") {
-			out = append(out, accentStyle.Render("▌")+onBg(" "+l, raised, max(w-1, 1)))
+			out = append(out, onBg("  "+l, raised, w)) // the band and the ❯ say it's a box: no bar as well
 		}
 	}
 	return strings.Join(out, "\n")
@@ -3677,7 +4198,7 @@ func panel(lines []string, w int) string {
 
 // saveNameView asks what to call it.
 func (m *Model) saveNameView(w int) string {
-	lines := []string{cursorStyle.Render("Name this recipe"), panel([]string{inputView(&m.word, panelWidth(w))}, w)}
+	lines := []string{headerStyle.Render("Name this recipe"), panel([]string{inputView(&m.word, panelWidth(w))}, w)}
 	if m.nameWhy != "" {
 		lines = append(lines, errStyle.Render(ansi.Wrap(m.nameWhy, w, "")))
 	}

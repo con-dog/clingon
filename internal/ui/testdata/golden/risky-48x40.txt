@@ -1,0 +1,40 @@
+█▀▀ █   █ █▄ █ █▀▀ █▀█ █▄ █
+█▄▄ █▄▄ █ █ ▀█ █▄█ █▄█ █ ▀█
+
+  › Code ›   Git › Push this branch
+
+❯ / to filter
+
+⚠ This command is risky. Run it?
+
+  › No, go back
+    Yes, run it
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────
+git push -u origin HEAD
+
+
+
+Sends this branch to the remote.
+
+
+────────────────────────────────────────────────
+No inputs
+────────────────────────────────────────────────
+ ? help  ↑↓ move · → go · ← back

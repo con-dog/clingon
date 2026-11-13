@@ -1,0 +1,24 @@
+█▀▀ █   █ █▄ █ █▀▀ █▀█ █▄ █
+█▄▄ █▄▄ █ █ ▀█ █▄█ █▄█ █ ▀█
+
+  Home
+
+❯ / to filter
+
+KEYS
+↑ ↓           move; at a list's top or
+              foot, round to the other
+              end
+→ or enter    go: open, next blank, run,
+              or take the choice
+←             back
+────────────────────────────────────────
+Clingon · a menu of the commands you can
+never remember, next to a real shell…
+
+Pick a command and fill in the blanks.
+It's typed into your shell and run, as…
+────────────────────────────────────────
+13 keys, 2 marks
+────────────────────────────────────────
+ ? help  any key back

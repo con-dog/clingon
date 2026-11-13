@@ -7,48 +7,29 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/con-dog/clingon/internal/config"
+	"github.com/con-dog/clingon/internal/palette"
 )
 
-// clingon's palette. Every colour is one of the 256 standard terminal
-// colours, so it looks the same everywhere: Terminal.app has no 24-bit
-// colour, and inside tmux any other colour is rounded to the nearest of
-// these, which is how near-misses of one purple end up as two. The shell's
-// prompt (internal/shell), tmux (tmux.conf) and pack colouring (internal/mdcolor) use the same ones by
-// number. The background and plain text are the terminal's own, from
-// clingon's window profile (internal/window): that ink is exact.
+// clingon's palette, from internal/palette, where each colour is defined
+// and what it means is said.
 var (
-	accent      = lipgloss.Color(PinkHex)   // 212 pink: the cursor, marks, what you act on
-	purple      = lipgloss.Color("#875fff") // 99: the menu's headings, the prompt's folder
-	ghostPurple = lipgloss.Color("#5f5faf") // 61: the headings' purple, dimmed: a form's "+ ADD MODULE", where one would go
-	ghostRed    = lipgloss.Color("#af5f5f") // 131: the errors' red, muted: a form's "− REMOVE", as ghostPurple is its ADD
-	soft        = lipgloss.Color("#afafff") // 147 periwinkle: headings and keys in the shell's output, far enough from the prompt's purple; flags
-	grey        = lipgloss.Color(greyHex)   // 103 lavender: secondary text, the prompt's branch
-	faint       = lipgloss.Color("#5f5f87") // 60: chrome: rules, frames, placeholders
-	raised      = lipgloss.Color("0")       // ANSI black, which clingon's window makes a step lighter than its background, in its violet (internal/window): the cursor's row, the command block, bars
-	text        = lipgloss.Color("#e4e4e4") // 254: text on coloured bands
-	orange      = lipgloss.Color(orangeHex) // 215: cautions
-	red         = lipgloss.Color(redHex)    // 204: errors, danger; the prompt after a failure
-	green       = lipgloss.Color(GreenHex)  // 79: values, all's well
-	sky         = lipgloss.Color("#87d7ff") // 117: a command's blanks, waiting to be filled: apart from the pinks and purples (what you act on) and the flags' periwinkle
-	ink         = lipgloss.Color("#121212") // 233: dark text on bright bands
+	accent      = palette.Pink.Color()
+	purple      = palette.Purple.Color()
+	ghostPurple = palette.GhostPurple.Color()
+	ghostRed    = palette.GhostRed.Color()
+	soft        = palette.Soft.Color()
+	grey        = palette.Grey.Color()
+	faint       = palette.Faint.Color()
+	raised      = palette.Raised
+	text        = palette.Text.Color()
+	orange      = palette.Orange.Color()
+	red         = palette.Red.Color()
+	green       = palette.Green.Color()
+	sky         = palette.Sky.Color()
+	tan         = palette.Tan.Color()
+	ink         = palette.Ink.Color()
+	gold        = palette.Gold.Color()
 )
-
-// greyHex, orangeHex and redHex are the risk glyphs' colours, for where a
-// colour's given as a hex.
-const (
-	greyHex   = "#8787af"
-	orangeHex = "#ffaf5f"
-	redHex    = "#ff5f87"
-)
-
-// PinkHex is clingon's pink, for a pack's color field.
-const PinkHex = "#ff87d7"
-
-// GreenHex is clingon's green, for what's to be made: Create a pack's hammer.
-const GreenHex = "#5fd7af"
-
-// The palette, for clingon's other screens (welcome, check).
-var Pink, Soft, Grey, Faint, Red, Green, Orange = accent, soft, grey, faint, red, green, orange
 
 var (
 	logoStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
@@ -63,12 +44,11 @@ var (
 	warnStyle    = lipgloss.NewStyle().Foreground(orange)
 	errStyle     = lipgloss.NewStyle().Foreground(red)
 	dangerStyle  = lipgloss.NewStyle().Foreground(red).Bold(true)
-	// groupLabelStyle starts each group's line in a section's summary, in the
-	// headings' purple so the groups stand apart from their commands.
-	groupLabelStyle = headerStyle
-	valueStyle      = lipgloss.NewStyle().Foreground(green)
-	pendingStyle    = lipgloss.NewStyle().Foreground(accent).Underline(true)
-	stepStyle       = lipgloss.NewStyle().Foreground(ink).Background(accent).Bold(true) // a command's place in the recipe
+	valueStyle   = lipgloss.NewStyle().Foreground(green)
+	pendingStyle = lipgloss.NewStyle().Foreground(sky).Underline(true)              // the blank being filled in, in the command: a blank's sky
+	stepStyle    = lipgloss.NewStyle().Foreground(ink).Background(green).Bold(true) // a command's place in the recipe: green, as its name is
+	keyStyle     = lipgloss.NewStyle().Foreground(text)                             // a key, wherever it's said: the status bar, help; bright, above what it does in grey
+	chosenStyle  = lipgloss.NewStyle().Foreground(green)                            // what's chosen: a tick, a run row
 )
 
 const (
@@ -79,7 +59,7 @@ const (
 // iconStyle colours a section's icon: its pack's colour (a brand's, say),
 // else grey, so the few brand colours stand out.
 // warnHead is a caution's heading: the ⚠, then text in bold amber. The mark
-// stays out of the bold: clingon's font has none, and a faked one smears it.
+// stays out of the bold: it's a mark, and reads the same in every heading.
 func warnHead(text string) string {
 	return warnStyle.Render(warnGlyph) + " " + warnStyle.Bold(true).Render(text)
 }
@@ -120,7 +100,7 @@ func banner(width, reveal int, side ...string) string {
 	if width < logoW {
 		return logoStyle.Render("clingon") + "\n\n"
 	}
-	tip := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Bold(true)
+	tip := lipgloss.NewStyle().Foreground(palette.White.Color()).Bold(true)
 	for i := range logo {
 		line := logoStyle.Render(logo[i])
 		if reveal >= 0 && reveal < logoW {
@@ -139,12 +119,12 @@ func banner(width, reveal int, side ...string) string {
 	return strings.Join(logo, "\n")
 }
 
-// onBg puts a whole line, already coloured, on background bg and pads it to
-// w cells. (A style's background alone stops at the first reset inside.)
 // cursorBar is the bar at the start of the cursor's row: a cell filled with
-// st's colour. A filled cell, not a ▌, because some terminals smear a block
-// character a pixel into the row below and never repaint it when the cursor
-// moves up. Without colour (a plain terminal, tests) it's a ▌.
+// st's colour. A filled cell, not a ▌: Terminal.app smears a block character
+// a pixel into the rows beside it and never repaints it when the cursor
+// moves, leaving pink marks down the list. (Tried again on 2026-11-13 with
+// the font's blocks fitted to the cell exactly: it still did.) Without colour
+// (a plain terminal) it's a ▌.
 func cursorBar(st lipgloss.Style) string {
 	cell := lipgloss.NewStyle().Background(st.GetForeground()).Render(" ")
 	if cell == " " {
@@ -153,6 +133,8 @@ func cursorBar(st lipgloss.Style) string {
 	return cell
 }
 
+// onBg puts a whole line, already coloured, on background bg and pads it to
+// w cells. (A style's background alone stops at the first reset inside.)
 func onBg(line string, bg color.Color, w int) string {
 	start, end, ok := strings.Cut(lipgloss.NewStyle().Background(bg).Render("\x00"), "\x00")
 	if pad := w - ansi.StringWidth(line); pad > 0 {

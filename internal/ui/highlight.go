@@ -14,7 +14,7 @@ import (
 var (
 	hlProgram  = lipgloss.NewStyle().Foreground(green)
 	hlFlag     = lipgloss.NewStyle().Foreground(soft)
-	hlString   = lipgloss.NewStyle().Foreground(lipgloss.Color("#d7af87"))
+	hlString   = lipgloss.NewStyle().Foreground(tan)
 	hlOperator = lipgloss.NewStyle().Foreground(grey)
 )
 

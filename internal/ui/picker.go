@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"charm.land/bubbles/v2/textinput"
@@ -23,7 +24,7 @@ type item struct {
 	keywords string // extra text matched by the filter
 	value    string
 	header   bool
-	accent   bool   // header in the accent colour (clingon's own section)
+	accent   bool   // a run row, in green
 	pinned   bool   // in the list's foot, kept in view under the rest when the list doesn't fit (clingon's own section)
 	risk     string // config.RiskWarn or RiskDanger: drawn with a mark (danger in red)
 	where    string // a search result's section › group, drawn faint after it
@@ -54,13 +55,17 @@ type picker struct {
 	// recipe: a recipe's own list. Every row keeps a slot for a risk mark, so
 	// adding a risky step moves nothing and Remove's mark sits where the
 	// others' would.
-	recipe  bool
+	recipe bool
+	// marks: every row keeps a slot for a risk mark, risky or not, so names
+	// start where a pack's commands' do (the Recipes screen's recipes).
+	marks   bool
 	cursor  int
 	blurred bool             // focus is elsewhere: the cursor's row in grey, not pink
 	step    func(item) []int // a command's places in the recipe, ascending, if this list shows them
 	offset  int
 	height  int
 	noun    string // what the list counts, on the filter's row: "" for no count
+	scope   string // what / searches, said on the filter's row: "every command", a pack's name; "" just "to filter"
 	filter  textinput.Model
 	// filtering: / has opened its filter, so keys type into it. / again closes it
 	// with what's been typed still applied (filtered), to use the list as it is.
@@ -144,6 +149,15 @@ func (p *picker) refilter() {
 				hits = append(hits, hit{it, s})
 			}
 		}
+		// What's typed has to be there: rows with every word of it, in their
+		// name, what they do or what they run. Only if none has it do letters
+		// in the right order count, and then only in a row's name (awsec for
+		// aws/ecs): in a command's whole text, almost any word's letters are.
+		exact := slices.DeleteFunc(slices.Clone(hits), func(h hit) bool { return !containsWords(h.it, q) })
+		if len(exact) == 0 {
+			exact = slices.DeleteFunc(slices.Clone(hits), func(h hit) bool { return score(q, strings.ToLower(h.it.title)) <= 0 })
+		}
+		hits = exact
 		// Best first, and what can be used here before what's greyed out.
 		sort.SliceStable(hits, func(i, j int) bool {
 			if hits[i].it.disabled != hits[j].it.disabled {
@@ -151,15 +165,7 @@ func (p *picker) refilter() {
 			}
 			return hits[i].score > hits[j].score
 		})
-		if isTree(src) {
-			// A tree keeps its order, so nothing sorts a loose match to the bottom:
-			// what's typed has to be there. Only if nothing has it do letters in the
-			// right order count, and then only in a row's name: awsec for aws/ecs.
-			exact := slices.DeleteFunc(slices.Clone(hits), func(h hit) bool { return !containsWords(h.it, q) })
-			if len(exact) == 0 {
-				exact = slices.DeleteFunc(slices.Clone(hits), func(h hit) bool { return score(q, strings.ToLower(h.it.title)) <= 0 })
-			}
-			hits = exact
+		if isTree(src) { // a tree keeps its order
 			var matched []item
 			for _, h := range hits {
 				matched = append(matched, h.it)
@@ -501,11 +507,19 @@ func (p *picker) values() []string {
 func (p *picker) update(msg tea.KeyPressMsg) tea.Cmd {
 	switch keyName(msg) {
 	case "up", "ctrl+p", "ctrl+k": // at the top, round to the foot
+		if p.filtering { // out of the box, onto the results: the cursor's live there
+			p.stopFiltering()
+			return nil
+		}
 		if !p.wrap(-1) {
 			p.move(-1)
 		}
 		return nil
 	case "down", "ctrl+n", "ctrl+j": // at the foot, round to the top
+		if p.filtering { // out of the box, onto the results: the cursor's live there
+			p.stopFiltering()
+			return nil
+		}
 		if !p.wrap(1) {
 			p.move(1)
 		}
@@ -520,6 +534,17 @@ func (p *picker) update(msg tea.KeyPressMsg) tea.Cmd {
 	case "]", "shift+down":
 		if !p.filtering {
 			p.jump(1)
+			return nil
+		}
+	case "home", "end": // the first or last row (in the filter's text, its start or end)
+		if !p.filtering {
+			if keyName(msg) == "home" {
+				p.cursor = -1
+				p.move(1)
+			} else {
+				p.cursor = len(p.view)
+				p.move(-1)
+			}
 			return nil
 		}
 	case "pgup":
@@ -605,6 +630,11 @@ func (p *picker) render(width, height int) string {
 		}
 	}
 	end := min(len(p.view), p.offset+rows)
+	// A heading whose rows are all cut off says nothing, and reads as a
+	// mistake: the list stops at the last row in view, and "N more" follows.
+	for overflows && end-1 > p.offset && end-1 != p.cursor && p.view[end-1].header {
+		end--
+	}
 	for i := p.offset; i < end; i++ {
 		lines = append(lines, p.row(p.view[i], i == p.cursor, width))
 	}
@@ -653,7 +683,7 @@ func (p *picker) tally() string {
 		for i := range items {
 			_, isCmd := items[i].ref.(cmdRef)
 			switch {
-			case items[i].header:
+			case items[i].header, items[i].indent: // an indented row is part of the one above (a pack's modules): not one of its own
 			case p.noun == "step" && items[i].stepAt > 0, // a recipe's: its steps, not Run and the rest
 				p.noun == "command" && isCmd,
 				p.noun != "step" && p.noun != "command":
@@ -673,14 +703,8 @@ func (p *picker) tally() string {
 	if p.query() != "" {
 		return fmt.Sprintf("%d of %s", count(p.view), plural(total, p.noun))
 	}
-	if p.search != nil { // the top of the menu: what the highlighted pack has, and only while it's on one
-		if it := p.selected(); it != nil {
-			if s, ok := it.ref.(*config.Section); ok {
-				return plural(len(s.All()), p.noun)
-			}
-		}
-		return ""
-	}
+	// At the top of the menu, that's every command: what / searches. (The
+	// highlighted pack's own count is in its info, below the list.)
 	return plural(total, p.noun)
 }
 
@@ -749,14 +773,14 @@ func CommandBlock(c *config.Command, w int) []string {
 
 func (p *picker) row(it item, active bool, width int) string {
 	if it.note {
-		return faintStyle.Render("  " + ansi.Truncate(it.title, max(width-2, 1), "…"))
+		in := "  "
+		if p.recipe || p.marks { // where the names start, past the marks' slot
+			in = "    "
+		}
+		return faintStyle.Render(in + ansi.Truncate(it.title, max(width-len(in), 1), "…"))
 	}
 	if it.header {
-		st := headerStyle
-		if it.accent {
-			st = cursorStyle
-		}
-		head := st.Render(ansi.Truncate(strings.ToUpper(it.title), width, "…"))
+		head := headerStyle.Render(ansi.Truncate(strings.ToUpper(it.title), width, "…"))
 		if room := width - ansi.StringWidth(it.title) - 3; it.detail != "" && room > 4 {
 			head += faintStyle.Render(" · " + ansi.Truncate(it.detail, room, "…"))
 		}
@@ -775,7 +799,7 @@ func (p *picker) row(it item, active bool, width int) string {
 		width -= badgesW + 2 // a cell either side, off the name and the frame
 	}
 	cur := cursorStyle
-	if p.blurred {
+	if p.blurred || p.filtering { // focus is elsewhere, or in the filter's box: grey, not to be acted on until ↓
 		cur = blurredStyle
 	}
 	prefix := "  "
@@ -787,9 +811,9 @@ func (p *picker) row(it item, active bool, width int) string {
 	}
 	if p.multi {
 		if p.chosen[it.idx] {
-			prefix += accentStyle.Render("✓ ")
+			prefix += chosenStyle.Render("✓ ")
 		} else if p.partly(it.idx) {
-			prefix += accentStyle.Render("− ")
+			prefix += chosenStyle.Render("− ")
 		} else {
 			prefix += faintStyle.Render("• ")
 		}
@@ -802,7 +826,7 @@ func (p *picker) row(it item, active bool, width int) string {
 	case it.risk == config.RiskDanger:
 		prefix += dangerStyle.Render(dangerGlyph + " ")
 	default:
-		if p.risky[p.searching()] || p.recipe || isCmd { // a command keeps the column for a mark, risky or not, in every list: names start in the same place in every pack
+		if p.risky[p.searching()] || p.recipe || p.marks || isCmd { // a command keeps the column for a mark, risky or not, in every list: names start in the same place in every pack
 			prefix += "  "
 		}
 	}
@@ -817,22 +841,30 @@ func (p *picker) row(it item, active bool, width int) string {
 		width -= rightW
 	}
 	title := ansi.Truncate(it.title, max(width-ansi.StringWidth(prefix), 1), "…")
+	st := lipgloss.NewStyle()
 	switch {
 	case it.disabled:
-		title = faintStyle.Render(title)
-	case active && p.blurred: // the bar dims with focus; the name stays readable
-	case active, it.accent:
-		title = cur.Render(title)
+		st = faintStyle
+	case active && (p.blurred || p.filtering): // the bar dims with focus; the name stays readable
+	case active:
+		st = cur
+	case it.accent: // a run row: green, as what runs is
+		st = chosenStyle.Bold(true)
 	case badges != "": // ties the name to its badges, across the gap
-		title = valueStyle.Render(title)
+		st = valueStyle
 	case it.missing != "":
-		title = dimStyle.Render(title)
+		st = dimStyle
 	}
+	var found []bool
+	if q := p.query(); q != "" && !it.typed { // a filter's row: why it's here, in its name
+		found = matchedLetters(q, it.title)
+	}
+	title = markLetters(title, found, st)
 	if it.missing != "" || it.unmet { // missing what it needs, or a file it looks for: the info pane says which
 		title += " " + warnStyle.Render("!")
 	}
 	if room := width - ansi.StringWidth(prefix) - ansi.StringWidth(it.title) - 3; it.where != "" && room > 4 {
-		title += dimStyle.Render(" · " + ansi.Truncate(it.where, room, "…"))
+		title += faintStyle.Render(" · " + ansi.Truncate(it.where, room, "…")) // where it lives: chrome beside the name, a step quieter than it
 	}
 	line := prefix + title
 	if it.right != "" {
@@ -845,6 +877,91 @@ func (p *picker) row(it item, active bool, width int) string {
 		return onBg(line, raised, full)
 	}
 	return line
+}
+
+// matchedLetters says which of title's letters a filter's q found, letter by
+// letter, as score looks for them: all of q where it's there as typed; else
+// each of its words that's there; else, for a row found by its letters in
+// order, those letters. Nil if none of it's in the name: the row was found by
+// what it does or what it runs, and the info pane shows those.
+func matchedLetters(q, title string) []bool {
+	lower := func(s string) []rune {
+		r := []rune(s)
+		for i := range r {
+			r[i] = unicode.ToLower(r[i])
+		}
+		return r
+	}
+	t := lower(title)
+	index := func(q []rune) int {
+		for i := 0; len(q) > 0 && i+len(q) <= len(t); i++ {
+			if slices.Equal(t[i:i+len(q)], q) {
+				return i
+			}
+		}
+		return -1
+	}
+	on := make([]bool, len(t))
+	any := false
+	mark := func(from, n int) {
+		for i := from; i < from+n; i++ {
+			on[i], any = true, true
+		}
+	}
+	whole := lower(strings.TrimSpace(q))
+	if i := index(whole); i >= 0 {
+		mark(i, len(whole))
+		return on
+	}
+	words := strings.Fields(string(whole))
+	for _, w := range words {
+		if i := index([]rune(w)); i >= 0 {
+			mark(i, len([]rune(w)))
+		}
+	}
+	if any || len(words) != 1 { // letters in order count for a name only (see refilter), and only for one word
+		if any {
+			return on
+		}
+		return nil
+	}
+	j := 0
+	for i := 0; i < len(t) && j < len(whole); i++ {
+		if t[i] == whole[j] {
+			on[i] = true
+			j++
+		}
+	}
+	if j < len(whole) {
+		return nil
+	}
+	return on
+}
+
+// markLetters draws title in st with the letters in on underlined: the ones
+// a filter found. Underlined, not coloured: every colour here means something
+// already, and a mark under the letters reads on the cursor's pink row as on
+// any other. With none found it's title in st, as it always was.
+func markLetters(title string, on []bool, st lipgloss.Style) string {
+	if !slices.Contains(on, true) {
+		return st.Render(title)
+	}
+	var b strings.Builder
+	r := []rune(title)
+	for i := 0; i < len(r); {
+		hit := i < len(on) && on[i] && r[i] != '…'
+		j := i + 1
+		for j < len(r) && (j < len(on) && on[j] && r[j] != '…') == hit {
+			j++
+		}
+		if hit {
+			b.WriteString(st.Underline(true).Render(string(r[i:j])))
+		} else {
+			b.WriteString(st.Render(string(r[i:j])))
+		}
+		i = j
+	}
+	return b.String()
 }
 
 // keyName is msg's key name, or "" for a burst of typed text. Fast typing

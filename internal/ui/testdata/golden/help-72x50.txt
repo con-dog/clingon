@@ -1,0 +1,50 @@
+█▀▀ █   █ █▄ █ █▀▀ █▀█ █▄ █
+█▄▄ █▄▄ █ █ ▀█ █▄█ █▄█ █ ▀█
+
+  Home
+
+❯ / to filter
+
+KEYS
+↑ ↓           move; at a list's top or foot, round to the other end
+→ or enter    go: open, next blank, run, or take the choice
+←             back
+[ ]           jump to the previous or next heading
+home end      first or last row
+/             filter; ↓ or enter to the results
+esc           clear the filter, go back, or quit at the top
+space         select or unselect, in a select-many list
+1-9           add to the recipe as that step; again removes it
+r             go to the current recipe
+x             clear the recipe
+tab/shift-tab switch panes: tab to the shell, shift-tab back
+?             this screen
+
+MARKS
+⚠             risky: asks No or Yes before it runs
+☠             can't be undone: type a short code, then it asks
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────
+Clingon · a menu of the commands you can never remember, next to a real
+shell that runs them.
+
+
+Pick a command and fill in the blanks. It's typed into your shell and
+run, as if you'd typed it yourself.
+
+────────────────────────────────────────────────────────────────────────
+13 keys, 2 marks
+────────────────────────────────────────────────────────────────────────
+ ? help  any key back                                            v1.2.3

@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/con-dog/clingon/internal/config"
 	"github.com/con-dog/clingon/internal/mdcolor"
+	"github.com/con-dog/clingon/internal/palette"
 )
 
 // PackForm edits one of your packs as a form, in place of its Markdown. It's
@@ -45,13 +46,11 @@ type PackForm struct {
 
 	issue string // why the last change wasn't made
 
-	menu       bool // opened from the menu: leaving keeps a draft for it to ask about
-	saving     bool // asking, at its foot, whether to save the changes
-	saveOpt    int  // the answer the cursor's on
-	discard    bool // Discard changes taken: asking No/Yes in the save box's place
-	discardOpt int  // the No/Yes answer the cursor's on
-	help       bool // the keys, in place of the form
-	pageSize   int  // rows a page up or down moves
+	menu       bool   // opened from the menu: leaving keeps a draft for it to ask about
+	unfinished string // what a pack still needs before it can be added (written); "" once it is
+	escOnce    bool   // esc refused a typed value once: again, it undoes it
+	help       bool   // the keys, in place of the form
+	pageSize   int    // rows a page up or down moves
 
 	// The part the cursor's in, shown whole; the others are folded to
 	// their heading and name. -1 is the pack, -2 nothing (Add a module).
@@ -62,7 +61,22 @@ type PackForm struct {
 
 	named string // the pack's name as last told to the menu
 
-	Left string // how it was left: "draft", "saved", "answered" (by the menu) or "" (nothing changed)
+	// Focus moves focus out of the form, as tab and shift-tab do everywhere:
+	// next, to the panel after it (the AI's, when it's open), saying whether
+	// there was one; else back to the menu. Nil outside clingon's window.
+	Focus func(next bool) bool
+
+	Left string // how it was left: "saved" (changes written as they were made), "draft" (unfinished, kept to carry on from) or "" (nothing changed)
+	// MenuHeight says how tall the menu beside it is, so its foot lines up
+	// with the menu's: the AI's strip under the shell makes the form shorter.
+	// Asked as its size changes. nil, or 0: as tall as the form.
+	MenuHeight func() int
+	menuH      int
+	// AIWorking says whether the AI is driving: the foot, what a row's for,
+	// is for people, so it goes, and the form has its rows. Asked as its size
+	// changes (the AI's panel opening resizes it).
+	AIWorking func() bool
+	aiWorking bool
 }
 
 // formRow is one row of the page; a header starts a card, titled with it.
@@ -70,6 +84,7 @@ type formRow struct {
 	key                      string // which row it is, to find it again once the page is rebuilt
 	label, value, hint, help string
 	note                     string // faint, after the value: what a folded part has in it
+	required                 bool   // empty, it shows its hint wherever the cursor is: what's still to fill in
 	header                   bool
 	sub                      int    // how many levels it's set in under its command: a blank 1, a blank's own rows 2
 	title                    bool   // a label with nothing of its own, over what's set in under it: the cursor passes it
@@ -121,162 +136,79 @@ func newPackForm(p *config.EditablePack, menu bool) *PackForm {
 	return f
 }
 
-// leave is done with the form. Nothing changed, nothing's kept; otherwise,
-// from the menu the changes are kept as a draft for it to ask about, and
-// without the menu they're saved.
+// leave is done with the form: every change is written as it's made, so
+// there's nothing to ask. A pack that can't be added yet (a new one without
+// a name and a command, say) is kept as a draft to carry on from.
 func (f *PackForm) leave() tea.Cmd {
 	switch {
-	case !f.pack.Changed():
-		if d, _ := config.ReadDraft(); f.pack.SameAs(d) {
-			_ = config.RemoveDraft()
-		}
-	case f.menu:
+	case f.unfinished != "" && f.pack.Changed():
 		if err := f.pack.WriteDraft(); err != nil {
 			f.issue = err.Error()
 			return nil
 		}
 		f.Left = "draft"
-	default:
-		if f.pack.IsNew() {
-			f.pack.Folder = f.pack.NewFolder()
-		}
-		if err := f.pack.Save(); err != nil {
-			f.issue = err.Error()
-			return nil
-		}
+	case f.Left == "saved":
 		_ = config.RemoveDraft()
-		f.Left = "saved"
+	default:
+		if d, _ := config.ReadDraft(); f.pack.SameAs(d) {
+			_ = config.RemoveDraft()
+		}
 	}
 	return tea.Quit
 }
 
-// done closes the form: with changes, after asking whether to save them,
-// at the foot of the form.
-func (f *PackForm) done() tea.Cmd {
-	if !f.pack.Changed() {
-		return f.leave()
+// persist writes the pack after a change, if it's complete: a new one is
+// added the first time it is, in a folder named after it. Until then it's
+// kept as a draft, and the form says what it still needs.
+func (f *PackForm) persist() {
+	if err := f.pack.CheckFilled(); err != nil {
+		f.unfinished = err.Error()
+		_ = f.pack.WriteDraft()
+		return
 	}
-	f.saving, f.saveOpt, f.discard, f.editing, f.input, f.choosing = true, 0, false, nil, nil, nil
-	return nil
-}
-
-// saveChoices are the answers to "save the changes?": saving first, the
-// usual answer; throwing them away last.
-var saveChoices = []string{"Save changes", "Keep editing", "Discard changes"}
-
-// saveKey answers "save the changes?": ↑↓ choose, → or enter take it, and ←
-// or esc go back to the form, as Keep editing does. Discard changes is a
-// warning, so it asks No/Yes first, as the menu's warned commands do.
-func (f *PackForm) saveKey(k string) tea.Cmd {
-	if f.discard {
-		return f.discardKey(k)
+	if f.pack.IsNew() {
+		f.pack.Folder = f.pack.NewFolder()
 	}
-	switch k {
-	case "up", "down":
-		f.saveOpt = round(f.saveOpt, k, len(saveChoices))
-	case "left", "esc":
-		f.saving = false
-	case "right", "enter":
-		f.saving = false
-		switch saveChoices[f.saveOpt] {
-		case "Save changes":
-			if f.pack.IsNew() {
-				f.pack.Folder = f.pack.NewFolder()
-			}
-			if err := f.pack.Save(); err != nil {
-				f.issue = "Not saved: " + err.Error()
-				return nil
-			}
-			_ = config.RemoveDraft()
-			f.Left = "saved"
-			return tea.Quit
-		case "Discard changes":
-			f.saving, f.discard, f.discardOpt = true, true, 0 // No first
-		}
+	if err := f.pack.Save(); err != nil {
+		f.issue = "Not written: " + err.Error()
+		return
 	}
-	return nil
-}
-
-// discardChoices answer "discard the changes?": No first, so a slip of
-// the finger keeps them.
-var discardChoices = []string{"No", "Yes"}
-
-// discardKey answers "discard the changes?": No, ← or esc go back to the
-// save choices, on Discard changes; Yes throws the changes away.
-func (f *PackForm) discardKey(k string) tea.Cmd {
-	switch k {
-	case "up", "down":
-		f.discardOpt = round(f.discardOpt, k, len(discardChoices))
-	case "left", "esc":
-		f.discard = false
-	case "right", "enter":
-		if discardChoices[f.discardOpt] == "No" {
-			f.discard = false
-			return nil
-		}
-		if d, _ := config.ReadDraft(); f.pack.SameAs(d) {
-			_ = config.RemoveDraft()
-		}
-		f.saving, f.discard = false, false
-		f.Left = "discarded"
-		return tea.Quit
-	}
-	return nil
+	f.unfinished, f.Left = "", "saved"
+	_ = config.RemoveDraft()
 }
 
 // rowHelp is what the row the cursor's on is for, or, once esc has asked,
 // what saving does.
 func (f *PackForm) rowHelp() string {
-	switch {
-	case f.saving && f.discard:
-		return "Throws away every change since the form opened."
-	case f.saving:
-		return "Save writes your changes to the pack's files. Keep editing goes back to the form."
-	}
-	if r := f.selectedRow(); r != nil {
-		return r.help
-	}
-	return ""
-}
-
-// saveLines is the question, under the form's foot rule, level with the
-// menu's EDITING: always there, greyed out until esc asks it, then its
-// answers with the form's cursor. Discard changes has the menu's ⚠ before
-// it, in a column every answer is set in by, as risky commands have.
-func (f *PackForm) saveLines(w int) []string {
-	mark := func(c string, st lipgloss.Style) string {
-		if c == "Discard changes" {
-			return st.Render(warnGlyph) + " "
-		}
-		return "  "
-	}
-	if !f.saving {
-		out := []string{faintStyle.Render("SAVE")}
-		for _, c := range saveChoices {
-			out = append(out, "  "+mark(c, faintStyle)+faintStyle.Render(c))
-		}
-		return out
-	}
-	if f.discard { // the same rows, so nothing under it moves
-		out := []string{labelStyle.Render("DISCARD CHANGES?")}
-		for i, c := range discardChoices {
-			if i == f.discardOpt {
-				out = append(out, onBg(cursorBar(cursorStyle)+" "+cursorStyle.Render(c), formCursorBg, w))
-			} else {
-				out = append(out, "  "+fieldStyle.Render(c))
+	if f.issue != "" { // in full, where there's room for it: the status bar cuts it short
+		say := "✗ " + capitalFirst(strings.TrimSuffix(f.issue, ".")) + "."
+		if f.editing != nil {
+			say += " Still editing: fix it and press enter"
+			if f.escOnce {
+				say += ", or esc again to undo it"
 			}
+			say += "."
 		}
-		return append(out, "")
+		return say
 	}
-	out := []string{labelStyle.Render("SAVE")}
-	for i, c := range saveChoices {
-		if i == f.saveOpt {
-			out = append(out, onBg(cursorBar(cursorStyle)+" "+mark(c, warnStyle)+cursorStyle.Render(c), formCursorBg, w))
-		} else {
-			out = append(out, "  "+mark(c, warnStyle)+fieldStyle.Render(c))
-		}
+	help := ""
+	if r := f.selectedRow(); r != nil {
+		help = r.help
 	}
-	return out
+	// Where your typing's going, when it isn't moving the cursor: said here,
+	// first, so it's never a guess. (The keys for it are on the status bar.)
+	switch {
+	case f.editing != nil:
+		help = strings.TrimSpace("Typing into " + rowName(f.editing) + ". " + help)
+	case f.choosing != nil:
+		help = strings.TrimSpace("Choosing from the list under " + rowName(f.choosing) + ". " + help)
+	case f.filtering:
+		help = "Typing in the filter: the rows narrow to what you type."
+	}
+	if f.unfinished != "" { // why it isn't in the menu yet
+		help = strings.TrimSpace(help + " Not added yet: " + strings.TrimSuffix(f.unfinished, ".") + ".")
+	}
+	return help
 }
 
 // jump moves to the first row of the part before (or after) the one the
@@ -324,6 +256,7 @@ func (f *PackForm) change(apply func() error) error {
 		f.pack = before
 		return err
 	}
+	f.persist() // written as it's made, once it's complete
 	return nil
 }
 
@@ -336,12 +269,21 @@ func (f *PackForm) refresh(focus string) {
 	}
 	f.reveal(focus)
 	f.rows = f.matching(f.pageRows())
-	if f.menu && f.toldKeys == "" { // the bar says the form's keys from the start
-		f.tellKeys()
+	defer func() {
+		if f.menu && f.toldKeys == "" { // the bar says the form's keys from the start: once the cursor's on its row, so they're that row's
+			f.tellKeys()
+		}
+	}()
+	// So the menu says what you're editing, by its name as it is, and where
+	// in the menu it'll be.
+	// And how many modules and commands it has, as they're added.
+	modules, commands := len(f.pack.Files), 0
+	for _, file := range f.pack.Files {
+		commands += len(file.Group.Commands)
 	}
-	if f.menu && f.pack.Title != f.named { // so the menu says what you're editing, by its name as it is
-		if config.WriteFormName(f.pack.Title) == nil {
-			f.named = f.pack.Title
+	if place := config.SectionName(f.pack.Section); f.menu {
+		if said := fmt.Sprintf("%s\n%s\n%d %d", f.pack.Title, place, modules, commands); said != f.named && config.WriteFormName(f.pack.Title, place, modules, commands) == nil {
+			f.named = said
 		}
 	}
 	f.sel = -1
@@ -464,11 +406,12 @@ func foldTo(rows []formRow, note string) []formRow {
 }
 
 // matching is the rows the filter leaves, each with the headings it's under:
-// a row stays if its label, its value or its part's heading has the filter's
-// text in it.
+// a row stays if each of the filter's words is in its label, its value or
+// its part's heading, so "module name" is the module's Name and not the
+// pack's.
 func (f *PackForm) matching(rows []formRow) []formRow {
-	q := strings.ToLower(strings.TrimSpace(f.filter.Value()))
-	if q == "" {
+	words := strings.Fields(strings.ToLower(f.filter.Value()))
+	if len(words) == 0 {
 		return rows
 	}
 	var out []formRow
@@ -483,9 +426,10 @@ func (f *PackForm) matching(rows []formRow) []formRow {
 			}
 			continue
 		}
-		in := strings.Contains(strings.ToLower(r.label+" "+r.value), q)
-		for d := 0; d <= r.depth && d < 3 && !r.branch; d++ {
-			in = in || d == r.depth && strings.Contains(titles[d], q)
+		own := strings.ToLower(r.label + " " + r.value)
+		in := true
+		for _, w := range words {
+			in = in && (strings.Contains(own, w) || !r.branch && r.depth < 3 && strings.Contains(titles[r.depth], w))
 		}
 		if !in {
 			continue
@@ -501,6 +445,64 @@ func (f *PackForm) matching(rows []formRow) []formRow {
 	return out
 }
 
+// toLabel puts the cursor on the row the filter names: its label is the
+// filter's text, else starts with it, else has it in it; words its part's
+// heading has ("module" in "module name") are left out first, unless that
+// leaves none ("command" is a heading and a field). Rows a heading keeps
+// (every row under COMMAND, for "command") don't count, nor values. Of rows
+// as good, the nearest to where the cursor was. With none, it stays.
+func (f *PackForm) toLabel() {
+	words := strings.Fields(strings.ToLower(f.filter.Value()))
+	if len(words) == 0 {
+		return
+	}
+	var titles [3]string
+	best, bestRank, bestGap := -1, 0, 0
+	for i, r := range f.rows {
+		if r.header {
+			if r.depth < 3 {
+				titles[r.depth] = strings.ToLower(r.label)
+			}
+			continue
+		}
+		if r.still() {
+			continue
+		}
+		var rest []string
+		for _, w := range words {
+			if r.branch || r.depth >= 3 || !strings.Contains(titles[r.depth], w) {
+				rest = append(rest, w)
+			}
+		}
+		if len(rest) == 0 {
+			rest = words
+		}
+		q := strings.Join(rest, " ")
+		label := strings.ToLower(strings.TrimSpace(r.label))
+		rank := 0
+		switch {
+		case label == q:
+			rank = 3
+		case strings.HasPrefix(label, q):
+			rank = 2
+		case strings.Contains(label, q):
+			rank = 1
+		default:
+			continue
+		}
+		gap := i - f.sel
+		if gap < 0 {
+			gap = -gap
+		}
+		if rank > bestRank || rank == bestRank && gap < bestGap {
+			best, bestRank, bestGap = i, rank, gap
+		}
+	}
+	if best >= 0 {
+		f.sel = best
+	}
+}
+
 // move puts the cursor on the next row (or, with -1, the one before) that
 // isn't a card's title.
 // still says whether the cursor passes a row by: a heading, or a title.
@@ -511,6 +513,76 @@ func (r formRow) still() bool { return r.header && r.key == "" || r.title }
 func (f *PackForm) step(d int) bool {
 	for i := f.sel + d; i >= 0 && i < len(f.rows); i += d {
 		if !f.rows[i].still() {
+			f.sel = i
+			return true
+		}
+	}
+	return false
+}
+
+// editable says whether a row is typed into: a field, not a list, a heading
+// or a blank's own row.
+func editable(r *formRow) bool {
+	return r.text != nil && r.pick == nil && r.fold == "" && !r.header && r.do == nil && r.confirm == ""
+}
+
+// focusOut moves focus to the next panel, or back to the menu. With no
+// panel after the form, tab says so.
+func (f *PackForm) focusOut(next bool) {
+	if f.Focus == nil {
+		return
+	}
+	if !f.Focus(next) && next {
+		f.issue = "There's no panel after the form: shift-tab goes back to the menu"
+	}
+}
+
+// field takes the cursor to the next (d 1) or previous (d -1) field: a row
+// you type in or pick from, an add, or a part folded up (to open), past
+// headings, an open blank's or option's own row, and removes. It stops at
+// the form's ends. It says whether it moved.
+// taken is row r once it's been picked to act on (edited, opened, chosen
+// from): a filter that found it has done its job, and goes, the cursor still
+// on the row among all the rows again.
+func (f *PackForm) taken(r *formRow) *formRow {
+	if f.filter.Value() == "" && !f.filtering {
+		return r
+	}
+	key := r.key
+	f.filtering = false
+	f.filter.Blur()
+	f.filter.SetValue("")
+	f.refresh(key)
+	if now := f.selectedRow(); now != nil && now.key == key {
+		return now
+	}
+	return r
+}
+
+// toNeeded moves the cursor to the next field the pack can't be added
+// without and hasn't got: the pack's name, a module's, a command's, what it
+// runs. After the row it's on first, then from the top. It says whether
+// there was one: with none, the pack has all it needs.
+func (f *PackForm) toNeeded() bool {
+	n := len(f.rows)
+	for step := 1; step <= n; step++ {
+		i := (f.sel + step) % n
+		if r := f.rows[i]; r.required && r.text != nil && strings.TrimSpace(r.value) == "" {
+			f.sel = i
+			return true
+		}
+	}
+	return false
+}
+
+func (f *PackForm) field(d int) bool {
+	for i := f.sel + d; i >= 0 && i < len(f.rows); i += d {
+		r := f.rows[i]
+		folded := r.header && r.value != "" || r.fold == "closed" // a part folded to its heading, its name beside it
+		if r.still() || r.confirm != "" || r.fold == "open" || r.header && !folded {
+			continue
+		}
+		if folded || r.text != nil || r.pick != nil || r.do != nil {
 			f.sel = i
 			return true
 		}
@@ -559,14 +631,6 @@ func splitComma(s string) []string {
 	return out
 }
 
-func uniqueName(base string, taken func(string) bool) string {
-	name := base
-	for n := 2; taken(name); n++ {
-		name = fmt.Sprintf("%s %d", base, n)
-	}
-	return name
-}
-
 // The pack's parts, looked up when a change is made: a change that fails puts
 // back a copy of the pack, so rows hold where things are, not the things.
 func (f *PackForm) group(i int) *config.Group        { return &f.pack.Files[i].Group }
@@ -580,12 +644,9 @@ func (f *PackForm) pageRows() []formRow {
 		rows = append(rows, f.moduleRows(i)...)
 	}
 	return append(rows,
-		formRow{key: "add-module", depth: 1, branch: true, label: "Add a module", help: "A new module, with a command to start from.", do: func() error {
+		formRow{key: "add-module", depth: 1, branch: true, label: "Add module", help: "A new module, with a command to start from.", do: func() error {
 			p := f.pack
-			name := uniqueName("New module", func(n string) bool {
-				return slices.ContainsFunc(p.Files, func(e config.EditableFile) bool { return e.Group.Name == n })
-			})
-			p.Files = append(p.Files, config.EditableFile{Slug: p.NewSlug(name), Group: config.Group{Name: name, Commands: []config.Command{{Name: "New command", Cmd: "echo hello"}}}})
+			p.Files = append(p.Files, config.EditableFile{Slug: p.NewSlug(""), Group: config.Group{Commands: []config.Command{{}}}}) // empty: its rows show what to fill in
 			return nil
 		}, then: fmt.Sprintf("%d/name", len(f.pack.Files))},
 	)
@@ -666,7 +727,7 @@ func (f *PackForm) packRows() []formRow {
 	}
 	rows := []formRow{
 		{label: "Pack", header: true},
-		{key: "name", label: "Name", value: p.Title, look: mdLook("# ", ""), help: "What the menu calls the pack.", text: func(v string) error { f.pack.Title = v; return nil }},
+		{key: "name", label: "Pack name", value: p.Title, look: mdLook("# ", ""), hint: "like My tools", required: true, help: "What the menu calls the pack.", text: func(v string) error { f.pack.Title = v; return nil }},
 		{key: "desc", label: "Description", value: p.Description, hint: "one line on what's in it", help: "One line on what's in it, shown by clingon pack.", text: func(v string) error { f.pack.Description = v; return nil }},
 		{key: "menu", label: "Menu", value: config.SectionName(p.Section), look: frontLook("menu"), help: "Where the menu shows it: one of these, or + New menu for one of your own.", options: sections, pick: func(v string) error { f.pack.Section = v; return nil },
 			text: func(v string) error {
@@ -691,7 +752,7 @@ func (f *PackForm) moduleRows(i int) []formRow {
 	k := func(s string) string { return fmt.Sprintf("%d/%s", i, s) }
 	rows := []formRow{
 		{key: k("head"), label: "Module", header: true},
-		{key: k("name"), label: "Name", value: g.Name, look: mdLook("# ", ""), help: "What the menu calls the module.", text: func(v string) error { f.group(i).Name = v; return nil }},
+		{key: k("name"), label: "Module name", value: g.Name, look: mdLook("# ", ""), hint: "like Everyday", required: true, help: "What the menu calls the module.", text: func(v string) error { f.group(i).Name = v; return nil }},
 		{key: k("desc"), label: "Description", value: g.Description, hint: "what's in it", help: "What's in the module.", text: func(v string) error { f.group(i).Description = v; return nil }},
 		{key: k("needs"), label: "Needs", value: joined(g.Requires), look: frontLook("needs"), hint: "programs, separated by commas", help: "Programs every command here needs, separated by commas.", text: func(v string) error { f.group(i).Requires = splitComma(v); return nil }},
 		{key: k("when"), label: "When", value: joined(g.When), look: frontLook("when"), hint: "files, like .git", help: "Files that must be here or in a folder above for these commands, like .git; ./Dockerfile means this folder only.", text: func(v string) error { f.group(i).When = splitComma(v); return nil }},
@@ -710,12 +771,9 @@ func (f *PackForm) moduleRows(i int) []formRow {
 		rows = append(rows, f.commandRows(i, j)...)
 	}
 	return append(rows,
-		formRow{key: k("add"), depth: 2, branch: true, label: "Add a command", help: "A new command in " + g.Name + ", to fill in.", do: func() error {
+		formRow{key: k("add"), depth: 2, branch: true, label: "Add command", help: "A new command in " + g.Name + ", to fill in.", do: func() error {
 			g := f.group(i)
-			name := uniqueName("New command", func(n string) bool {
-				return slices.ContainsFunc(g.Commands, func(c config.Command) bool { return c.Name == n })
-			})
-			g.Commands = append(g.Commands, config.Command{Name: name, Cmd: "echo hello"})
+			g.Commands = append(g.Commands, config.Command{}) // empty: its rows show what to fill in
 			return nil
 		}, then: fmt.Sprintf("%d/%d/name", i, len(g.Commands))},
 	)
@@ -724,11 +782,12 @@ func (f *PackForm) moduleRows(i int) []formRow {
 func (f *PackForm) commandRows(i, j int) []formRow {
 	c := f.command(i, j)
 	k := func(s string) string { return fmt.Sprintf("%d/%d/%s", i, j, s) }
-	// Each with the glyph the menu marks it with; none with a grey dot.
+	// Each with the glyph the menu marks it with; none with none, as in the
+	// menu (a blank cell in the list, so the names line up).
 	risks := []config.Option{
-		{Value: "", Label: "None", Icon: "●", Color: greyHex}, // one cell, as ⚠ and ☠ are: not the logos' centred twin
-		{Value: config.RiskWarn, Label: "Warning", Icon: warnGlyph, Color: orangeHex},
-		{Value: config.RiskDanger, Label: "Dangerous", Icon: dangerGlyph, Color: redHex},
+		{Value: "", Label: "None", Icon: " "},
+		{Value: config.RiskWarn, Label: "Warning", Icon: warnGlyph, Color: palette.Orange.Hex},
+		{Value: config.RiskDanger, Label: "Dangerous", Icon: dangerGlyph, Color: palette.Red.Hex},
 	}
 	risk := map[string]string{"": "None", config.RiskWarn: "Warning", config.RiskDanger: "Dangerous"}[c.Risk]
 	var descLook func(string) string // in a callout's > lines when it has a risk
@@ -736,14 +795,17 @@ func (f *PackForm) commandRows(i, j int) []formRow {
 		descLook = mdLook("> ", "")
 	}
 	riskIcon := risks[max(slices.IndexFunc(risks, func(o config.Option) bool { return o.Value == c.Risk }), 0)]
+	if c.Risk == "" { // the row itself, no mark: None lines up with the values above and below
+		riskIcon.Icon = ""
+	}
 	rows := []formRow{
 		{key: k("head"), label: "Command", header: true},
-		{key: k("name"), label: "Name", value: c.Name, look: mdLook("## ", ""), help: "What the menu calls it: letters, digits, spaces and ( ).", text: func(v string) error { f.command(i, j).Name = v; return nil }},
+		{key: k("name"), label: "Command name", value: c.Name, icon: strings.TrimSpace(riskIcon.Icon), color: riskIcon.Color, look: mdLook("## ", ""), hint: "like Say hello", required: true, help: "What the menu calls it: letters, digits, spaces and ( ).", text: func(v string) error { f.command(i, j).Name = v; return nil }},
 		{key: k("risk"), label: "Risk", value: risk, icon: riskIcon.Icon, color: riskIcon.Color, help: "Whether clingon asks before it runs: warning asks first; dangerous has you type a short code, then asks.", options: risks, pick: func(v string) error { f.command(i, j).Risk = v; return nil }},
 		{key: k("desc"), label: "Description", value: c.Desc, look: descLook, hint: "what it does", help: "What it does, shown when it's highlighted.", text: func(v string) error { f.command(i, j).Desc = v; return nil }},
 		{key: k("needs"), label: "Needs", value: joined(c.Requires), hint: "programs, separated by commas", help: "Programs this command needs, separated by commas.", text: func(v string) error { f.command(i, j).Requires = splitComma(v); return nil }},
 		{key: k("when"), label: "When", value: joined(c.When), hint: "files, like .git", help: "Files that must be here or in a folder above, like .git.", text: func(v string) error { f.command(i, j).When = splitComma(v); return nil }},
-		{key: k("cmd"), label: "Command", value: c.Cmd, look: mdLook("```sh\n", "\n```"), help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
+		{key: k("cmd"), label: "Runs", value: c.Cmd, look: mdLook("```sh\n", "\n```"), hint: `like echo "Hello, <who>."`, required: true, help: "What's typed into your shell. A <name> in it is a blank, asked for each time.", text: func(v string) error {
 			c := f.command(i, j)
 			c.Cmd = v
 			config.SyncBlanks(c)
@@ -779,7 +841,7 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 		{key: k("name"), fold: "open", label: "Argument", value: name, look: mdLook("- `", "`"), help: "The blank: where it is in the command. Renaming it renames it there too.", text: func(v string) error {
 			return config.RenameBlank(f.command(i, j), f.blank(i, j, b).Name, v)
 		}},
-		{key: k("q"), label: "Description", value: a.Prompt, hint: "the question asked", help: "What's asked for " + name + " when the command runs.", text: func(v string) error { f.blank(i, j, b).Prompt = v; return nil }},
+		{key: k("q"), label: "Question", value: a.Prompt, hint: "like Who to greet", help: "What's asked for " + name + " when the command runs. Left empty, it's asked by its name.", text: func(v string) error { f.blank(i, j, b).Prompt = v; return nil }},
 	}
 	if a.Kind() == "secret" {
 		rows = append(rows, formRow{key: k("kind"), label: "Type", value: kind, help: "Its name says it's a secret, token or password: typed hidden, and kept out of your history."})
@@ -792,7 +854,8 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 			default:
 				a.Type, a.Default = v, ""
 				if len(a.Options) == 0 {
-					a.Options = []config.Option{{Value: "one"}, {Value: "two"}}
+					a.Options = []config.Option{{}} // one to fill in, open
+					f.setOpen(true, i, j, b, 0)
 				}
 			}
 			return nil
@@ -804,16 +867,16 @@ func (f *PackForm) blankRows(i, j, b int) []formRow {
 		for o := range a.Options {
 			rows = append(rows, f.choiceRows(i, j, b, o)...)
 		}
-		rows = append(rows, formRow{key: k("add"), label: "Add a choice", help: "Another answer to offer for " + name + ".", do: func() error {
+		rows = append(rows, formRow{key: k("add"), label: "Add option", help: "Another answer to offer for " + name + ".", do: func() error {
 			a := f.blank(i, j, b)
-			a.Options = append(a.Options, config.Option{Value: uniqueName("choice", func(n string) bool { return a.HasOption(n) })})
+			a.Options = append(a.Options, config.Option{}) // empty: its Value row says what to fill in
 			return nil
 		}, then: fmt.Sprintf("%d/%d/%d/%d/types", i, j, b, len(a.Options))}) // on to what it types, opened
 	}
 	if f.filter.Value() == "" && !f.noFold && !f.isOpen(i, j, b) { // collapsed to its What row, and what it is
 		note := kind
 		if len(a.Options) > 0 {
-			note += ", " + plural(len(a.Options), "opt")
+			note += ", " + plural(len(a.Options), "option")
 		}
 		rows[0].fold, rows[0].note = "closed", note
 		return rows[:1]
@@ -840,29 +903,29 @@ func (f *PackForm) choiceRows(i, j, b, o int) []formRow {
 	if pickedFirst(a, opt.Value) {
 		picked = "Yes"
 	}
-	head := formRow{key: key, fold: "open", label: "Opts", value: opt.Value, look: types, help: "One of the answers offered for <" + a.Name + ">: → opens it, ← collapses it."}
+	head := formRow{key: key, fold: "open", label: "Option", value: opt.Value, look: types, help: "One of the answers offered for <" + a.Name + ">: → opens it, ← collapses it."}
 	if !f.optOpen(i, j, b, o) && f.filter.Value() == "" && !f.noFold {
 		var note []string
 		if opt.Label != "" {
 			note = append(note, opt.Label)
 		}
 		if picked == "Yes" {
-			note = append(note, "Picked")
+			note = append(note, "Default")
 		}
 		head.fold, head.note = "closed", strings.Join(note, " · ")
 		return []formRow{head}
 	}
-	pickHelp := "Whether it's picked to begin with: one choice can be."
+	pickHelp := "Whether it's picked to begin with: one option can be."
 	if a.Kind() == "flags" {
-		pickHelp = "Whether it's picked to begin with: any number can be."
+		pickHelp = "Whether it's ticked to begin with: any number can be."
 	}
 	return []formRow{head,
-		{key: k("types"), label: "Value", value: opt.Value, look: types, help: "What it types into the command, picked.", text: func(v string) error {
+		{key: k("types"), label: "Value", value: opt.Value, look: types, hint: "what it types, like %H:%M", required: true, help: "What it types into the command, picked.", text: func(v string) error {
 			a := f.blank(i, j, b)
 			op := &a.Options[o]
 			switch {
 			case v == "":
-				return fmt.Errorf("a choice types something")
+				return fmt.Errorf("an option types something")
 			case a.Kind() == "flags":
 				on := a.Ticked(a.Default)
 				if n := slices.Index(on, op.Value); n >= 0 {
@@ -875,11 +938,11 @@ func (f *PackForm) choiceRows(i, j, b, o int) []formRow {
 			op.Value = v
 			return nil
 		}},
-		{key: k("label"), label: "Description", value: opt.Label, hint: "what it means, if it needs saying", help: "Its label, shown beside it in the list.", text: func(v string) error {
+		{key: k("label"), label: "Label", value: opt.Label, hint: "what it means, if it needs saying", help: "Said under the list when the cursor's on it.", text: func(v string) error {
 			f.blank(i, j, b).Options[o].Label = v
 			return nil
 		}},
-		{key: k("pick"), label: "Pick", value: picked, help: pickHelp, options: []config.Option{{Value: "yes", Label: "Yes"}, {Value: "no", Label: "No"}}, pick: func(v string) error {
+		{key: k("pick"), label: "Default", value: picked, help: pickHelp, options: []config.Option{{Value: "yes", Label: "Yes"}, {Value: "no", Label: "No"}}, pick: func(v string) error {
 			a := f.blank(i, j, b)
 			opt := a.Options[o]
 			if (v == "yes") == pickedFirst(a, opt.Value) {
@@ -900,7 +963,7 @@ func (f *PackForm) choiceRows(i, j, b, o int) []formRow {
 			a.Default = strings.Join(on, a.Separator())
 			return nil
 		}},
-		{key: k("remove"), label: "Remove", value: "No", risk: config.RiskWarn, help: "Yes removes the choice.", confirm: "Yes", do: func() error {
+		{key: k("remove"), label: "Remove", value: "No", risk: config.RiskWarn, help: "Yes removes the option.", confirm: "Yes", do: func() error {
 			a := f.blank(i, j, b)
 			opt := a.Options[o]
 			if a.Kind() == "flags" {
@@ -929,6 +992,11 @@ func (f *PackForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		f.w, f.h = msg.Width, msg.Height
+		f.menuH = 0
+		if f.MenuHeight != nil {
+			f.menuH = f.MenuHeight()
+		}
+		f.aiWorking = f.AIWorking != nil && f.AIWorking()
 		f.pageSize = max(f.h-10, 1)
 		return f, nil
 	case tea.KeyPressMsg:
@@ -947,7 +1015,7 @@ func (f *PackForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (f *PackForm) paste(msg tea.PasteMsg) tea.Cmd {
 	var cmd tea.Cmd
 	switch {
-	case f.saving || f.help:
+	case f.help:
 	case f.editing != nil:
 		*f.input, cmd = f.input.Update(msg)
 	case f.filtering:
@@ -963,16 +1031,17 @@ func (f *PackForm) barKeys() []string {
 	switch {
 	case f.help:
 		return []string{"any key back"}
-	case f.saving:
-		return []string{"↑↓ move", "→ go", "← back"}
 	case f.editing != nil:
-		return []string{"→ go", "← back", "enter done", "esc cancel"} // through the text, then out of it, as in the menu
+		return []string{"→ go", "← back", "enter next", "esc keep"} // through the text, then out of it, as in the menu; enter keeps it and moves on, esc keeps it and stays
 	case f.choosing != nil:
 		return []string{"↑↓ move", "→ go", "← back"}
 	case f.filtering:
 		return []string{"↑↓ move", "→ go", "/ stop filtering", "esc clear"}
 	}
 	keys := []string{"↑↓ move"}
+	if r := f.selectedRow(); r != nil && editable(r) {
+		keys = append(keys, "type to edit")
+	}
 	if r := f.selectedRow(); r != nil {
 		if r.header || r.fold == "closed" || r.pick != nil || r.confirm != "" || r.do != nil || r.text != nil {
 			keys = append(keys, "→ go")
@@ -982,11 +1051,46 @@ func (f *PackForm) barKeys() []string {
 		}
 	}
 	if f.filter.Value() != "" { // closed, and still applied: esc clears it first
-		keys = append(keys, "/ edit filter", "[ ] jump", "esc clear", greyed+"shift-tab menu")
+		keys = append(keys, "/ edit filter", "[ ] jump", "esc clear", "shift-tab menu")
 	} else {
-		keys = append(keys, "/ filter", "[ ] jump", "esc done", greyed+"shift-tab menu") // not from the form: greyed out, where it always is
+		keys = append(keys, "/ filter", "[ ] jump", "esc done", "shift-tab menu")
 	}
 	return keys
+}
+
+// state says what your keys are doing in the form now, in words, for
+// clingon's AI: it sees the form as text, where the text cursor and the
+// filter's pink ❯ (what says you're typing, to a person) don't show.
+func (f *PackForm) state() string {
+	switch {
+	case f.editing != nil:
+		return "typing into " + rowName(f.editing) + ": every key is typed into it, / included. Enter keeps it and moves to the next field the pack still needs (the next field, once it needs none); esc keeps it and stays."
+	case f.choosing != nil:
+		return "choosing from a list: ↑↓ move, enter takes the choice, ← closes it."
+	case f.filtering:
+		return "typing in the filter: every key is typed into it. Enter starts editing the field it's on (type the new value next); / closes the box, leaving the filter on; esc clears it."
+	case f.filter.Value() != "":
+		return fmt.Sprintf("the filter %q is on, its box closed: keys move through the rows it leaves, and typing on a field edits it. / opens the box again, adding to what's there; esc clears it.", strings.TrimSpace(f.filter.Value()))
+	}
+	return "on the rows: ↑↓ move, typing on a field edits it, / filters."
+}
+
+// rowName is a row as the AI's told of it: its label, and whose it is.
+func rowName(r *formRow) string {
+	whose := [...]string{"the pack's", "the module's", "the command's"}
+	switch r.label { // the ones whose labels say whose they are
+	case "Pack name", "Module name", "Command name":
+		return "the " + strings.ToLower(r.label)
+	case "Runs":
+		return "what the command runs"
+	}
+	switch {
+	case r.sub > 0:
+		return "a blank's " + r.label
+	case r.depth >= 0 && r.depth < len(whose):
+		return whose[r.depth] + " " + r.label
+	}
+	return r.label
 }
 
 // tellKeys has the menu's status bar say the form's keys, when they change,
@@ -999,6 +1103,9 @@ func (f *PackForm) tellKeys() {
 	if f.issue != "" {
 		lines = append([]string{config.FormIssuePrefix + f.issue}, lines...)
 	}
+	if state := f.state(); state != "" {
+		lines = append(lines, config.FormStatePrefix+state)
+	}
 	if keys := strings.Join(lines, "\n"); keys != f.toldKeys && config.WriteFormKeys(lines) == nil {
 		f.toldKeys = keys
 	}
@@ -1007,6 +1114,12 @@ func (f *PackForm) tellKeys() {
 // edit starts typing into a row's field, in place.
 func (f *PackForm) edit(r *formRow, value string) tea.Cmd {
 	in := newEditor()
+	if f.aiWorking { // the AI typing: its words in its gold, as they grow
+		st := in.Styles()
+		st.Focused.Text = st.Focused.Text.Foreground(gold)
+		st.Focused.CursorLine = st.Focused.CursorLine.Foreground(gold)
+		in.SetStyles(st)
+	}
 	in.SetWidth(max(f.w/2, 20))
 	in.SetValue(value)
 	in.MoveToEnd()
@@ -1078,9 +1191,6 @@ func typedIn(v string) string { return strings.Join(strings.Fields(v), " ") }
 
 func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 	k := keyName(msg)
-	if f.saving {
-		return f.saveKey(keyName(msg))
-	}
 	if f.help { // any key closes it, and does nothing else
 		f.help = false
 		return nil
@@ -1101,20 +1211,27 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 	switch {
 	case f.editing != nil:
 		switch {
-		case k == "esc": // cancel: what's typed is thrown away
-			f.editing, f.input, f.issue = nil, nil, ""
+		case k == "esc" && f.escOnce: // refused, and esc again: undone, back as it was
+			f.editing, f.input, f.issue, f.escOnce = nil, nil, "", false
 			return nil
-		case k == "left" && f.inputAt(false), k == "right" && f.inputAt(true): // past its ends: out of it, kept
-			fallthrough
-		case k == "enter": // done: what's typed is kept
+		case k == "left" && f.inputAt(false), k == "right" && f.inputAt(true), // past its ends: out of it, kept
+			k == "enter", k == "tab", k == "shift+tab", k == "esc": // done: kept (never lost); enter moves on to the next field, tab and shift-tab to the next panel
 			v := typedIn(f.input.Value())
 			r := f.editing
 			if err := f.change(func() error { return r.text(v) }); err != nil {
-				f.issue = err.Error()
+				f.issue, f.escOnce = err.Error(), k == "esc"
 				return nil
 			}
-			f.editing, f.input, f.issue = nil, nil, ""
+			f.editing, f.input, f.issue, f.escOnce = nil, nil, "", false
 			f.refresh(r.key)
+			switch k {
+			case "enter":
+				if !f.toNeeded() { // on to what the pack still needs; with nothing needed, the next field
+					f.field(1)
+				}
+			case "tab", "shift+tab":
+				f.focusOut(k == "tab")
+			}
 			return nil
 		}
 		var cmd tea.Cmd
@@ -1156,8 +1273,18 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 		default:
 			cmd := typeInto(&f.filter, msg)
 			f.refresh("")
+			f.toLabel()
 			return cmd
 		}
+	}
+	// Typing on a field starts editing it, what's typed in place of what was
+	// there (enter edits it as it is). /, ?, [ and ] keep their jobs.
+	if r := f.selectedRow(); r != nil && editable(r) && msg.Text != "" && !strings.ContainsAny(msg.Text[:1], "/?[] ") && (k == "" || len([]rune(k)) == 1) {
+		f.issue = ""
+		r = f.taken(r)
+		cmd := f.edit(r, "")
+		f.input.InsertString(msg.Text)
+		return cmd
 	}
 	switch k {
 	case "up":
@@ -1176,6 +1303,8 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 		f.jump(-1)
 	case "]":
 		f.jump(1)
+	case "tab", "shift+tab": // to the next panel (the AI's), or back to the menu
+		f.focusOut(k == "tab")
 	case "?":
 		f.help = true
 	case "/":
@@ -1187,7 +1316,7 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			f.refresh("")
 			return nil
 		}
-		return f.done()
+		return f.leave()
 	case "left": // back, as at the menu's top: nothing above this but a filter left on
 		if r := f.selectedRow(); r != nil && (r.header || r.fold == "open") { // on a heading, or an open blank: collapse it
 			f.fold(r, false)
@@ -1204,6 +1333,7 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		f.issue = ""
+		r = f.taken(r)
 		if r.header { // a module's or command's heading: opens it
 			f.fold(r, true)
 			return nil
@@ -1270,31 +1400,46 @@ func (f *PackForm) view() string {
 	}
 	// The form fills the pane, on the window's own background as the menu
 	// is; with the room, its preview is beside it, edge to edge, a step
-	// lighter, a page laid on top. Inside each, the same padding all round.
+	// lighter, a page laid on top, with padding inside it; the form itself
+	// runs edge to edge, as the menu's lists do.
 	formW, previewW := f.w, 0
 	if f.w >= minPreviewWidth {
 		formW = f.w / 2 // the menu's a third of the window: the form and its preview a third each
 		previewW = f.w - formW
 	}
-	inner := formW - 2*panelPad
+	inner := formW // edge to edge, as the menu's lists are: no padding of its own
 	foot := f.footer(inner)
 	// Rows level with the menu's: blank by its logo, where you are by its
-	// path (row 2), the filter by its filter (row 4), the form from row 6 by
+	// path (row 3), the filter by its filter (row 5), the form from row 7 by
 	// its list; the help and keys at the bottom, a row from the edge.
-	top := []string{"", "", f.crumb(inner), "", f.filterLine(inner), ""}
+	top := []string{"", "", "", f.crumb(inner), "", f.filterLine(inner), ""} // level with the menu's: the logo, a gap, the path
 	// Its foot, under a rule level with the menu's info pane's, stays put:
 	// what the row the cursor's on is for, then under a rule of its own the
 	// save question, its rows and no more. With no room for both, the
 	// question.
-	rule := faintStyle.Render(strings.Repeat("─", inner))
-	save := f.saveLines(inner)
-	panel := []string{rule}
-	if k := infoTop(f.h) - 2 - len(save); k > 0 {
-		panel = append(panel, strings.Split(styledBlock(dimStyle, f.rowHelp(), inner, k), "\n")...)
-		panel = append(panel, rule)
+	// Level with the menu's: as far from the menu's foot as its info pane's
+	// rule is, so less the rows under the form (the AI's strip).
+	menuH := f.h
+	if f.menuH > 0 {
+		menuH = f.menuH
 	}
-	panel = append(panel, save...)
-	room := max(f.h-len(top)-len(foot)-infoTop(f.h), 1)
+	footRows := max(infoTop(menuH)-(menuH-f.h), 0)
+	if f.aiWorking { // what a row's for is for people: the AI reads the rows themselves
+		footRows = 0
+	}
+	rule := faintStyle.Render(strings.Repeat("─", inner))
+	var panel []string
+	if footRows > 0 {
+		panel = []string{rule}
+	}
+	if k := footRows - 1; k > 0 { // what the row's for, or what went wrong, whole
+		st := dimStyle
+		if f.issue != "" { // in the status bar's amber
+			st = warnStyle
+		}
+		panel = append(panel, strings.Split(styledBlock(st, f.rowHelp(), inner, k), "\n")...)
+	}
+	room := max(f.h-len(top)-len(foot)-footRows, 1)
 	body, at, row, heads := f.cards(inner)
 	if f.help {
 		body, at, row, heads = f.keys(inner), 0, 0, nil
@@ -1308,10 +1453,9 @@ func (f *PackForm) view() string {
 	}
 	form = append(append(form, foot...), panel...)
 	var prev []string
-	if previewW > 0 { // its title level with where you are
-		prev = append([]string{"", ""}, f.preview(previewW-2*panelPad, f.h-3)...) // each with its own left padding, the gutter for a mark
+	if previewW > 0 { // its title level with where you are (the form's path, row 3)
+		prev = append([]string{"", "", ""}, f.preview(previewW-2*panelPad, f.h-4)...) // each with its own left padding, the gutter for a mark
 	}
-	pad := strings.Repeat(" ", panelPad)
 	lines := make([]string, 0, f.h)
 	for k := range f.h {
 		l, p := "", ""
@@ -1321,7 +1465,7 @@ func (f *PackForm) view() string {
 		if k < len(prev) {
 			p = prev[k]
 		}
-		line := pad + l
+		line := l
 		if previewW > 0 {
 			line += strings.Repeat(" ", max(formW-ansi.StringWidth(line), 0)) + onBg(p, previewBg, previewW)
 		}
@@ -1343,13 +1487,19 @@ const panelPad = 2 // columns inside each panel's sides
 // in it: the way there dim, where you are bright.
 func (f *PackForm) crumb(w int) string {
 	icon := slotIcon(config.Logos[f.pack.Logo])
-	parts := []string{"My packs", f.pack.Title}
+	or := func(name, unnamed string) string { // not named yet: what it is
+		if strings.TrimSpace(name) == "" {
+			return unnamed
+		}
+		return name
+	}
+	parts := []string{"My packs", or(f.pack.Title, "New pack")}
 	if r := f.selectedRow(); r != nil {
 		var i, j int
 		if n, _ := fmt.Sscanf(r.key, "%d/%d/", &i, &j); n >= 1 && i < len(f.pack.Files) {
-			parts = append(parts, f.group(i).Name)
+			parts = append(parts, or(f.group(i).Name, "New module"))
 			if n == 2 && j < len(f.group(i).Commands) {
-				parts = append(parts, f.command(i, j).Name)
+				parts = append(parts, or(f.command(i, j).Name, "New command"))
 			}
 		}
 	}
@@ -1373,9 +1523,9 @@ func (f *PackForm) filterLine(w int) string {
 	case f.filtering:
 		return inputView(&f.filter, w)
 	case f.filter.Value() != "":
-		return ansi.Truncate(accentStyle.Render("❯ ")+strings.TrimSpace(f.filter.Value()), w, "…") // the status bar says how to edit or clear it
+		return ansi.Truncate(faintStyle.Render("❯ ")+strings.TrimSpace(f.filter.Value()), w, "…") // the status bar says how to edit or clear it; pink only while it's typed in
 	}
-	return accentStyle.Render("❯ /") + faintStyle.Render(" to filter")
+	return faintStyle.Render("❯ ") + renderKey("/") + faintStyle.Render(" to filter")
 }
 
 // logoColour is the colour the pack's logo is drawn in.
@@ -1424,20 +1574,20 @@ func guide(r *formRow) string {
 func (f *PackForm) keys(w int) []string {
 	keys := [][2]string{
 		{"↑ ↓", "move"},
-		{"→ or enter", "go: edit, open, or take the choice; typing, done"},
+		{"→ or enter", "go: edit, open, or take the choice; typing, done and on"},
 		{"←", "back: close what's open"},
 		{"[ ]", "jump to the previous or next heading"},
 		{"/", "filter; again stops"},
 		{"esc", "cancel typing, clear the filter, go back, or close the form"},
-		{"tab/shift-tab", "switch panes"},
+		{"tab/shift-tab", "the next or previous field"},
 		{"?", "this screen"},
 	}
 	lines := []string{headerStyle.Render("KEYS"), ""}
 	for _, k := range keys {
-		lines = append(lines, ansi.Truncate(cursorStyle.Render(fmt.Sprintf("%-13s", k[0]))+" "+k[1], w, "…"))
+		lines = append(lines, ansi.Truncate(renderKey(fmt.Sprintf("%-13s", k[0]))+" "+k[1], w, "…"))
 	}
 	lines = append(lines, "")
-	lines = append(lines, wrapSpaces(dimStyle.Render("Leaving with changes, the form asks whether to save them, keep editing, or throw them away."), w)...)
+	lines = append(lines, wrapSpaces(dimStyle.Render("Changes are kept as you make them: a new pack is added once it has a name and a command. Esc leaves the form."), w)...)
 	return lines
 }
 
@@ -1516,12 +1666,28 @@ func scroll(lines []string, at, row, room int, sticky bool, heads []formHead) []
 	pinned = pins(start)
 	rest := max(room-len(pinned), 1)
 	start = min(max(start, 0), len(lines)-rest)
+	// Rows scrolled away between the pinned headings and what's shown: a
+	// line says so, or they'd look gone (a command showing its Name, then
+	// its Default, with nothing between).
+	gap := len(pinned) > 0 && start > pinned[len(pinned)-1]+1 && rest > 1
+	if gap {
+		rest--
+		if at >= start+rest { // what's kept in view stays in view
+			start = min(at-rest+1, len(lines)-rest)
+		}
+	}
 	out := make([]string, 0, room)
 	for _, l := range pinned {
 		out = append(out, lines[l])
 	}
+	if gap {
+		out = append(out, faintStyle.Render(moreAbove))
+	}
 	return append(out, lines[start:min(start+rest, len(lines))]...)
 }
+
+// moreAbove marks rows scrolled out of view above, under the pinned headings.
+const moreAbove = "      … more above"
 
 // cards draws the form as the menu draws its lists: uppercase headings, a
 // row per field with grey labels and bright values, tree guides on the left
@@ -1570,7 +1736,7 @@ func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
 		if on {
 			at, row = len(out), len(out)
 		}
-		if n := len(heads) - 1; n >= 0 && i > 0 && f.rows[i-1].header && r.label == "Name" {
+		if n := len(heads) - 1; n >= 0 && i > 0 && f.rows[i-1].header && strings.HasSuffix(r.key, "name") && r.required {
 			heads[n].name = len(out) // pinned with its heading
 		}
 		open := on && f.choosing != nil
@@ -1606,10 +1772,13 @@ func (f *PackForm) cards(w int) ([]string, int, int, []formHead) {
 // headLine is a heading in the flat form: the cursor's bar, then for a
 // module or command an arrow saying whether it's open (▾) or collapsed (▸),
 // then the heading; collapsed, its name beside it in the values' column.
+// cur is the style of the form's own cursor.
+func (f *PackForm) cur() lipgloss.Style { return cursorStyle }
+
 func (f *PackForm) headLine(r *formRow, on bool, col, w int) string {
 	slot := " "
 	if on {
-		slot = cursorBar(cursorStyle)
+		slot = cursorBar(f.cur())
 	}
 	arrow := " "
 	if r.key != "" {
@@ -1649,9 +1818,10 @@ func (f *PackForm) labelAt(r *formRow) int {
 
 // rowLine is a row as the menu draws one, the cursor's row a bar across the
 // form: its label, and its value (or the field being typed), with a periwinkle ▾
-// after a value that's picked from a list. A blank's label is pink, as blanks
-// are in commands; an add is pink; a remove is faint until the cursor's on it.
-// A row with its list open keeps its label pink, the cursor in the list.
+// after a value that's picked from a list. A blank's label is sky, as blanks
+// are in commands; an add is a ghost of the headings' purple; a remove is a
+// muted red until the cursor's on it. A row with its list open keeps its label
+// pink, the cursor in the list.
 func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 	var more []string // a value's lines past its first, wrapped or typed
 	at := 0           // the column they're in: the value's
@@ -1659,7 +1829,7 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 	slot := " "
 	switch {
 	case on:
-		slot = cursorBar(cursorStyle)
+		slot = cursorBar(f.cur())
 	case r.branch && !flatForm:
 		slot = "─"
 	}
@@ -1684,23 +1854,23 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 			word = "ADD MODULE"
 		case strings.Count(r.key, "/") == 1:
 			word = "ADD COMMAND"
-		default: // a choice: in the Opts rows' place
-			word, st = "Opts", dimStyle
+		default: // an option: in the Option rows' place
+			word, st = "Option", dimStyle
 		}
 		if on {
-			st = cursorStyle
+			st = f.cur()
 		}
 		rest = " " + st.Render("+") + " " + st.Render(word)
 	case r.confirm != "" && flatForm: // a remove: a muted red − and REMOVE, as an add's + and ADD; enter asks No or Yes under it
 		st := lipgloss.NewStyle().Foreground(ghostRed)
 		if on || open {
-			st = cursorStyle
+			st = f.cur()
 		}
 		rest = " " + st.Render("−") + " " + st.Render("REMOVE")
-	case r.do != nil && r.confirm == "": // an add
-		st := accentStyle
+	case r.do != nil && r.confirm == "": // an add: a ghost of the headings, as the flat form's are
+		st := lipgloss.NewStyle().Foreground(ghostPurple)
 		if on {
-			st = cursorStyle
+			st = f.cur()
 		}
 		rest += st.Render(ansi.Truncate("+ "+r.label, room, "…"))
 	default:
@@ -1708,9 +1878,9 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 		pad := strings.Repeat(" ", max(col-f.labelAt(r)-ansi.StringWidth(label), 1))
 		switch {
 		case on || open:
-			label = cursorStyle.Render(label)
-		case strings.HasPrefix(r.label, "<"):
-			label = accentStyle.Render(label)
+			label = f.cur().Render(label)
+		case strings.HasPrefix(r.label, "<"): // a blank: sky, as blanks are
+			label = lipgloss.NewStyle().Foreground(sky).Render(label)
 		default:
 			label = dimStyle.Render(label)
 		}
@@ -1745,8 +1915,8 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 			}
 			lines := wrapAsTyped(r.value, v, room) // typed: wrapped, as it's typed in
 			rest, more = rest+lines[0], lines[1:]
-		case r.hint != "" && on: // only where you are: elsewhere they'd fill the form with what isn't yours
-			rest += dimStyle.Italic(true).Render(ansi.Truncate(capitalFirst(r.hint), room, "…"))
+		case r.hint != "" && (on || r.required): // only where you are, or what has to be filled in: elsewhere they'd fill the form with what isn't yours
+			rest += faintStyle.Italic(true).Render(ansi.Truncate(capitalFirst(r.hint), room, "…")) // faint, as placeholders are: in the values' column, it mustn't pass for one
 		case r.text != nil:
 			rest += faintStyle.Render("—")
 		}
@@ -1764,7 +1934,7 @@ func (f *PackForm) rowLine(r *formRow, on, open bool, col, w int) string {
 	for i, l := range lines {
 		s := slot
 		if i > 0 && on {
-			s = cursorBar(cursorStyle)
+			s = cursorBar(f.cur())
 		} else if i > 0 {
 			s = " "
 		}
@@ -1824,6 +1994,16 @@ func (f *PackForm) optionLine(r *formRow, o config.Option, on bool, col, w int) 
 // for its rows and its commands'.
 func (f *PackForm) preview(w, h int) []string {
 	md := f.pack.Markdown()
+	// While a field's being typed in, the preview shows it as typed: the
+	// change is made to a copy of the pack, which is then thrown away.
+	if r := f.editing; r != nil && f.input != nil && r.text != nil {
+		real := f.pack
+		f.pack = clonePack(real)
+		if r.text(typedIn(f.input.Value())) == nil {
+			md = f.pack.Markdown()
+		}
+		f.pack = real
+	}
 	key, sub := "", -2
 	if r := f.selectedRow(); r != nil {
 		key = r.key
@@ -1866,7 +2046,7 @@ func fit2(lines []string, h int) []string {
 func filePreview(name, text string, on map[int]bool, near, w, h int) []string {
 	pad := strings.Repeat(" ", panelPad)
 	rule := pad + faintStyle.Render(strings.Repeat("─", w))
-	head := []string{pad + accentStyle.Render(ansi.Truncate(name, w, "…")), rule} // as it is: a file's name is case-sensitive
+	head := []string{pad + headerStyle.Render(ansi.Truncate(name, w, "…")), rule} // as it is: a file's name is case-sensitive
 	var body []string
 	first, last := -1, -1 // the marked rows, first and last
 	plain := strings.Split(text, "\n")

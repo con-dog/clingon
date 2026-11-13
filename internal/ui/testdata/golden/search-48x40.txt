@@ -1,0 +1,40 @@
+█▀▀ █   █ █▄ █ █▀▀ █▀█ █▄ █
+█▄▄ █▄▄ █ █ ▀█ █▄█ █▄█ █ ▀█
+
+  Home
+
+❯ co                             2 of 6 commands
+
+    Count lines of code · Files
+  ☠ Discard all changes · Git › Undo
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────
+git ls-files | xargs wc -l
+
+
+
+Counts the lines in every tracked file.
+
+
+────────────────────────────────────────────────
+No inputs
+────────────────────────────────────────────────
+ ? help  ↑↓ move · → go · ← back · / edit filt…
