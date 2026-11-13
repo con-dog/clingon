@@ -21,15 +21,16 @@ Needs macOS, with zsh or bash. Opens in its own window in Terminal or iTerm2 (Gh
 
 ## Why clingon?
 
-| | clingon | navi | tldr | fzf |
-|---|:-:|:-:|:-:|:-:|
-| Finds commands you've never run | ✓ | ✓ | ✓ | – |
-| Fills in the blanks for you | ✓ | ✓ | – | – |
-| Runs it in your shell | ✓ | ✓ | – | ✓ |
-| Runs plain Markdown | ✓ | – | – | – |
-| Asks before risky commands | ✓ | – | – | – |
-| Chains commands into recipes | ✓ | – | – | – |
-| Has an AI that does it for you | ✓ | – | – | – |
+<table>
+<tr><th></th><th width="100%" align="center">clingon</th><th align="center">navi</th><th align="center">tldr</th><th align="center">fzf</th></tr>
+<tr><td nowrap>Finds commands you've never run</td><td align="center">✓</td><td align="center">✓</td><td align="center">✓</td><td align="center">–</td></tr>
+<tr><td nowrap>Fills in the blanks for you</td><td align="center">✓</td><td align="center">✓</td><td align="center">–</td><td align="center">–</td></tr>
+<tr><td nowrap>Runs it in your shell</td><td align="center">✓</td><td align="center">✓</td><td align="center">–</td><td align="center">✓</td></tr>
+<tr><td nowrap>Runs plain Markdown</td><td align="center">✓</td><td align="center">–</td><td align="center">–</td><td align="center">–</td></tr>
+<tr><td nowrap>Asks before risky commands</td><td align="center">✓</td><td align="center">–</td><td align="center">–</td><td align="center">–</td></tr>
+<tr><td nowrap>Chains commands into recipes</td><td align="center">✓</td><td align="center">–</td><td align="center">–</td><td align="center">–</td></tr>
+<tr><td nowrap>Has an AI that does it for you</td><td align="center">✓</td><td align="center">–</td><td align="center">–</td><td align="center">–</td></tr>
+</table>
 
 ## Good to know
 
