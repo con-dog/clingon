@@ -21,3 +21,10 @@ node_modules/
 
 # History from trying clingon's shell files out: never embed or ship it
 internal/shell/files/**/.*_history
+
+# The LLM harness's saved runs and its build (the menu's own AI runs are in
+# ~/.clingon/config/ai-runs, outside the repo)
+tools/llm-harness/runs/
+tools/llm-harness/llm-harness
+
+CLAUDE.md
