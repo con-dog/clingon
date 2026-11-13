@@ -1,6 +1,6 @@
 # clingon
 
-**Stop googling commands. Pick them from a menu, fill in the blanks, and run them in a real dedicated shell. Or - get an AI to do it.**
+**Stop googling commands. Pick one, fill in the blanks, run it. Or let an AI do it.**
 
 ```sh
 brew install con-dog/tap/clingon
@@ -9,17 +9,15 @@ clingon
 
 ![clingon's AI given a task: it makes a pack, builds a recipe and runs it from the menu, in a real shell beside it](media/ai-driver.gif.png)
 
-Needs macOS, with zsh or bash. Opens in its own window, with its own custom font and colours: in Terminal or iTerm2, and maybe Ghostty, kitty or Alacritty (not tested).
+Needs macOS, with zsh or bash. Opens in its own window in Terminal or iTerm2 (Ghostty, kitty and Alacritty untested).
 
-- **An AI that drives it for you.** Give it a task and watch it use the menu as you would: it finds commands, fills in the blanks, runs them, and makes packs and recipes.
-- **It's your real shell.** Your config, your aliases, your environment. clingon types the command in for you, then gets out of the way.
-- **It checks before risky commands.** ⚠ commands ask No/Yes first. ☠ commands can't be undone, so you type a short code before they run.
-- **Commands are just Markdown.** A pack is a folder of `.md` files that reads as docs on GitHub and runs in clingon. Make your own with - [How packs work →](docs/packs.md)
-- **Chain commands into recipes.** Press `1`–`9` on commands to line them up, then run them in order. It stops if one fails. [How recipes work →](docs/recipes.md)
+- **An AI drives it for you.** Give it a task and watch it use the menu as you would.
+- **It's your real shell.** Your config, aliases and environment. clingon only types the command in.
+- **It checks before risky commands.** ⚠ commands ask No/Yes. ☠ commands can't be undone, so you type a short code first.
+- **Commands are just Markdown.** A pack is a folder of `.md` files that reads as docs on GitHub and runs in clingon. [How packs work →](docs/packs.md)
+- **Chain commands into recipes.** Press `1`–`9` to line commands up, then run them in order. It stops if one fails. [How recipes work →](docs/recipes.md)
 
-**Packs:** `files`, `network`, `package-managers`, `ssh` and `system` to begin with. Add `aws`, `claude-code`, `codex`, `docker`, `dotnet`, `git`, `github`, `go`, `macos`, `node`, `playwright`, `postgres`, `python`, `redis` and `security` with `clingon pack add <name>`. More to come!
-
-Press `?` in clingon for every key.
+**20 packs built in**, from `git` and `docker` to `aws` and `postgres`.
 
 ## Why clingon?
 
@@ -34,12 +32,13 @@ Press `?` in clingon for every key.
 
 ## Good to know
 
-- **It never changes your setup.** clingon reads your shell config as usual and never writes to it. Its prompt and colours apply only inside its own window.
-- **What it adds:** its own font, and a "clingon" profile in Terminal or iTerm2. macOS may ask once whether clingon may control those apps, only to open and style the window.
+- **It never changes your setup.** clingon reads your shell config and never writes to it.
+- **What it adds:** a font, and a "clingon" profile in Terminal or iTerm2. macOS may ask once to let clingon control those apps, only to open and style the window.
 - **Separate history.** Unless your config sets `HISTFILE`, zsh inside clingon keeps its own history.
-- **Its files** are in `~/.clingon`: your packs and recipes, plus its own files in `~/.clingon/config`. Set `$CLINGON_CONFIG` to move it.
-- **Something wrong?** Run `clingon doctor`, or `clingon crash` to see why it last crashed. Update with `clingon update`.
-- **Zero Telemetry.** Clingon collects nothing about you or your commands. It only goes online to check for a new release once a day. The AI needs an OpenRouter key (`clingon ai key` or `$OPENROUTER_API_KEY`) and only runs when you give it a task; the task then goes to OpenRouter and the model's maker, with the menu and the shell's screen as text.
+- **Its files** are in `~/.clingon`: your packs and recipes, and its own files in `config`. Set `$CLINGON_CONFIG` to move it.
+- **Something wrong?** **Clingon › General** in the menu checks your setup, shows the last crash and updates clingon.
+- **Zero telemetry.** clingon collects nothing. It goes online only to check for a new release, once a day.
+- **The AI** needs an OpenRouter key (add it under **Clingon › AI**, or set `$OPENROUTER_API_KEY`) and runs only when you give it a task. The task, the menu and the shell's screen then go to OpenRouter and the model's maker.
 
 ## Removing clingon
 
