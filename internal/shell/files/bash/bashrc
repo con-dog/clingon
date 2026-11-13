@@ -20,15 +20,20 @@ _clingon_prompt() {
   # 3.2 garbles them, typed as they are, after coloured parts of a prompt in a
   # UTF-8 locale.
   # The path: folders above periwinkle, slashes grey, and the folder you're in
-  # bold purple. A
+  # bold purple, the colour of the frame round the pane you're in. A
   # name is text, never run, so \ $ and ` are escaped as in a branch name.
   local p=${PWD/#$HOME/\~} up='' here
   p=${p//\\/\\\\}; p=${p//\$/\\\$}; p=${p//\`/\\\`}
   here=${p##*/}
   [[ $p == */* ]] && up=${p%/*}/
   [[ $p == / ]] && here=/ up=''
-  up=${up//\//\\[\\e[38;5;243m\\]/\\[\\e[0;38;5;147m\\]}
+  up=${up//\//\\[\\e[38;5;60m\\]/\\[\\e[0;38;5;147m\\]}
   PS1="\[\e[38;5;147m\]$up\[\e[1;38;5;99m\]$here\[\e[0m\]${b:+\[\e[38;5;203m\] \356\200\204\[\e[38;5;103m\] $b\[\e[0m\]}${a:+\[\e[38;5;208m\] aws:$a\[\e[0m\]}\n$mark\342\235\257\[\e[0m\] "
+  # Back at the prompt: tell the menu, which listens for it, rather than
+  # having it look again and again. A builtin: no process, no wait.
+  [ -z "$CLINGON_CHANGED" ] || printf . 2>/dev/null >> "$CLINGON_CHANGED"
+  # And that the prompt's coming up: how it knows a command it sent has finished.
+  [ -z "$CLINGON_READY" ] || printf . 2>/dev/null >> "$CLINGON_READY"
 }
 # Other prompts' hooks (starship's) would only redraw theirs: clingon's
 # notes the exit status first and draws last.

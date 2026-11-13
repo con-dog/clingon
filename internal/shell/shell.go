@@ -53,6 +53,11 @@ func Check(shell string) error {
 	return fmt.Errorf("clingon needs zsh or bash as your login shell, and $SHELL is %q: `clingon print` works in any shell", shell)
 }
 
+// CardColsEnv tells clingon's shell how wide its welcome card was drawn, in
+// cells: its rc file draws the card again if the pane's width changes before
+// anything's been run there.
+const CardColsEnv = "CLINGON_CARD_COLS"
+
 // Command is how to start shell (a path, like $SHELL) with clingon's look:
 // the program, its arguments (argv[0] included) and its environment.
 func Command(base, shell string, env []string) (string, []string, []string, error) {

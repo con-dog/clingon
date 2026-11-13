@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func run(t *testing.T, shell, rcName, rc string, lines ...string) string {
 		t.Fatal(err)
 	}
 	path, _ := exec.LookPath(shell)
-	env := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "TERM=xterm-256color", "LANG=en_US.UTF-8"}
+	env := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "TERM=xterm-256color", "LANG=en_US.UTF-8", "CLINGON_READY=" + filepath.Join(home, "ready")}
 	prog, argv, env, err := Command(filepath.Join(home, "cfg"), path, env)
 	if err != nil {
 		t.Fatal(err)
@@ -176,4 +177,123 @@ func TestOnlyShellFilesAreEmbedded(t *testing.T) {
 		}
 		return err
 	})
+}
+
+// Each prompt tells the menu it's back, by appending to $CLINGON_CHANGED
+// (which the menu watches), with a builtin: no process, nothing to wait on.
+func TestPromptSaysItsBack(t *testing.T) {
+	for shell, rc := range map[string]string{"zsh": ".zshrc", "bash": ".bash_profile"} {
+		screen := run(t, shell, rc, "export CLINGON_CHANGED=$HOME/changed\n", "true", "true", `echo "dots=$(wc -c < "$CLINGON_CHANGED" | tr -d ' ')"`, "echo done-"+shell)
+		dots := 0
+		if m := regexp.MustCompile(`dots=(\d+)`).FindStringSubmatch(screen); m != nil { // the output can share a line with what's typed next
+			dots, _ = strconv.Atoi(m[1])
+		}
+		if dots < 3 { // the first prompt, and one after each true
+			t.Errorf("%s: %d prompts said so, want 3 or more:\n%s", shell, dots, screen)
+		}
+	}
+}
+
+// The welcome card over the first prompt is drawn again when the pane's
+// width changes before anything's been run there (a window still growing to
+// its full size left it cut short), and left alone once something has.
+func TestWelcomeCardIsDrawnAgainUntilSomethingRuns(t *testing.T) {
+	for _, bin := range []string{"tmux", "zsh"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skip(bin + " isn't installed")
+		}
+	}
+	home, err := os.MkdirTemp("", "clsh") // short: tmux socket paths are limited
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	if err := os.WriteFile(filepath.Join(home, ".zshrc"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A stand-in for clingon: its card says how wide it was drawn.
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fake := "#!/bin/sh\n[ \"$1 $2\" = \"welcome --again\" ] && echo \"card $(stty size </dev/tty | cut -d' ' -f2) wide\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "clingon"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	zsh, _ := exec.LookPath("zsh")
+	// CLINGON_BIN keeps it first on the path, as a local build is: a login
+	// shell's own setup puts the system's folders ahead of anything in PATH.
+	env := []string{"HOME=" + home, "PATH=" + bin + ":" + os.Getenv("PATH"), "CLINGON_BIN=" + bin, "TERM=xterm-256color", "LANG=en_US.UTF-8", CardColsEnv + "=100"}
+	prog, argv, env, err := Command(filepath.Join(home, "cfg"), zsh, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kv := range env { // never the real user's dotfiles
+		if k, v, _ := strings.Cut(kv, "="); (k == "HOME" || strings.HasSuffix(k, "ZDOTDIR")) && !strings.HasPrefix(v, home) {
+			t.Fatalf("%s=%s is outside the test's home %s: refusing to start the shell", k, v, home)
+		}
+	}
+	sock := filepath.Join(home, "s")
+	tmux := func(args ...string) string {
+		out, _ := exec.Command("tmux", append([]string{"-S", sock}, args...)...).CombinedOutput()
+		return string(out)
+	}
+	args := []string{"-f", "/dev/null", "new-session", "-d", "-x", "100", "-y", "20", "-c", home}
+	for _, kv := range env {
+		args = append(args, "-e", kv)
+	}
+	args = append(args, "--", "/bin/sh", "-c", `exec -a "$0" "$@"`, argv[0], prog)
+	if out := tmux(append(args, argv[1:]...)...); strings.TrimSpace(out) != "" {
+		t.Fatalf("tmux: %s", out)
+	}
+	t.Cleanup(func() { tmux("kill-server") })
+	wait := func(what string, ok func(string) bool) string {
+		for end := time.Now().Add(30 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+			if s := tmux("capture-pane", "-p"); ok(s) {
+				return s
+			}
+		}
+		t.Fatalf("timed out waiting for %s; screen:\n%s", what, tmux("capture-pane", "-p"))
+		return ""
+	}
+	if s := wait("the prompt", func(s string) bool { return strings.Contains(s, "❯") }); strings.Contains(s, "card ") {
+		t.Fatalf("the card is as wide as the pane: nothing to draw again yet:\n%s", s)
+	}
+
+	tmux("resize-window", "-x", "120") // the window grows: the card again, at its new width, then the prompt
+	s := wait("the card again", func(s string) bool { return strings.Contains(s, "card 120 wide") })
+	s = wait("the prompt under it", func(s string) bool {
+		return strings.Index(s, "❯") > strings.Index(s, "card 120 wide") && strings.Contains(s, "card 120 wide")
+	})
+	if strings.Count(s, "❯") != 1 || strings.Count(s, "card ") != 1 {
+		t.Errorf("one card and one prompt on a cleared screen, got:\n%s", s)
+	}
+
+	tmux("send-keys", "-l", "echo ran-it")
+	tmux("send-keys", "Enter")
+	wait("the command", func(s string) bool { return strings.Contains(s, "\nran-it") })
+	tmux("resize-window", "-x", "90") // something's been run: the screen's yours now
+	time.Sleep(600 * time.Millisecond)
+	if s := tmux("capture-pane", "-p"); strings.Contains(s, "card 90 wide") || !strings.Contains(s, "ran-it") {
+		t.Errorf("after a command the card isn't drawn again, and nothing's cleared:\n%s", s)
+	}
+}
+
+// Each shell marks every prompt it puts up in $CLINGON_READY: how the menu
+// hears that a command it sent has finished, without looking again and again.
+func TestShellsMarkEachPrompt(t *testing.T) {
+	for shell, rc := range map[string]string{"zsh": ".zshrc", "bash": ".bashrc"} {
+		screen := run(t, shell, rc, "",
+			`a=$(wc -c < "$CLINGON_READY")`, "true", "true",
+			`b=$(wc -c < "$CLINGON_READY")`, `echo "marks: first $((a)), then $((b - a)) more; done"-`+shell) // "done-zsh" only once it's run, not as it's typed
+		m := regexp.MustCompile(`marks: first (\d+), then (\d+) more`).FindStringSubmatch(strings.ReplaceAll(screen, "\n", ""))
+		if m == nil {
+			t.Fatalf("%s: no count on the screen:\n%s", shell, screen)
+		}
+		first, _ := strconv.Atoi(m[1])
+		more, _ := strconv.Atoi(m[2])
+		if first < 1 || more != 3 { // the assignment's own prompt, then one for each of the three lines after it
+			t.Errorf("%s: %d marks by the first prompt, %d for the next three: want at least 1, then 3\n%s", shell, first, more, screen)
+		}
+	}
 }
