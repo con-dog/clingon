@@ -247,17 +247,14 @@ func crashCard(c lastCrash, w int) string {
 	}
 	rows = append(rows, row{mark: info, label: "Log", detail: crashPath()})
 	lines := strings.Split(card(failStyle.Render("Crash"), rows, w), "\n")
-	bottom := lines[len(lines)-1]
-	lines = lines[:len(lines)-1]
 
 	inner := max(w-4, 1)
 	add := func(line string, st lipgloss.Style) {
 		for _, l := range strings.Split(ansi.Hardwrap(line, inner, true), "\n") {
-			pad := strings.Repeat(" ", max(inner-ansi.StringWidth(l), 0))
-			lines = append(lines, faintStyle.Render("│ ")+st.Render(l)+pad+faintStyle.Render(" │"))
+			lines = append(lines, cardIndent+st.Render(l))
 		}
 	}
-	lines = append(lines, faintStyle.Render("├"+strings.Repeat("─", max(w-2, 0))+"┤"))
+	lines = append(lines, faintStyle.Render(strings.Repeat("─", max(w, 0))))
 	for _, l := range strings.Split(c.reason, "\n") {
 		add(l, failStyle)
 	}
@@ -280,5 +277,5 @@ func crashCard(c lastCrash, w int) string {
 	if n := len(fs) - crashFrames; n > 0 {
 		add("… and "+plural(n, "more line")+" in the log", faintStyle)
 	}
-	return strings.Join(append(lines, bottom), "\n")
+	return strings.Join(lines, "\n")
 }

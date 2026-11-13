@@ -53,7 +53,7 @@ func packCmd(args []string) error {
 			remoteOnly = true
 		case "--mine":
 			localOnly = true
-		case "--menu": // the form was opened from the menu, which asks whether to save
+		case "--menu": // the form was opened from the menu, which says where the pack is
 			menu = true
 		default:
 			rest = append(rest, a)

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/con-dog/clingon/internal/config"
+	"github.com/con-dog/clingon/internal/palette"
 	"github.com/con-dog/clingon/internal/shell"
 	"github.com/con-dog/clingon/internal/ui"
 )
@@ -33,10 +34,15 @@ func rank(name string) int {
 }
 
 // welcome prints clingon's status card: what's worth doing, or that all's
-// well. With execShell it then becomes the user's login shell, which is how
-// clingon's shell pane starts.
-func welcome(execShell bool) {
+// well. inPane is the card as clingon's shell pane has it over its first
+// prompt. With execShell it then becomes the user's login shell, which is how
+// that pane starts: the shell's told how wide the card was drawn
+// ($CLINGON_CARD_COLS), to draw it again if the pane's width changes before
+// anything's been run there (a window still growing to its full size).
+func welcome(inPane, execShell bool) {
+	w := cardWidth()
 	if execShell {
+		_ = os.Setenv(shell.CardColsEnv, strconv.Itoa(w))
 		defer becomeShell()
 	}
 	rows := recommendations()
@@ -44,11 +50,11 @@ func welcome(execShell bool) {
 	if len(rows) == 0 {
 		rows, title = []row{allSet()}, "Clingon"
 	}
-	if !execShell { // in clingon's shell pane, the status bar already says it
+	if !inPane { // in clingon's shell pane, the status bar already says it
 		outln() // a gap below the command that ran it
 		title += " · " + getVersion()
 	}
-	outln(card(title, rows, cardWidth()))
+	outln(card(title, rows, w))
 	outln()
 }
 
@@ -83,13 +89,13 @@ func news() []row {
 	}
 	suggest, broken := packAdvice()
 	if len(suggest) > 0 {
-		acts = append(acts, row{mark: todo, glyph: packGlyph(), colour: packsYellow, label: "Add " + plural(len(suggest), "pack"), detail: "you have the tools for " + someNames(suggest), note: "Clingon › Packs › Add packs"})
+		acts = append(acts, row{mark: todo, glyph: packGlyph(), colour: packsYellow, label: "Add packs", detail: fmt.Sprintf("%d match tools you have: %s", len(suggest), someNames(suggest)), note: "Clingon › Packs › Add packs"})
 	}
 	if len(broken) > 0 { // nothing in the menu installs tools: no note; its rows say what's missing
 		acts = append(acts, row{mark: todo, glyph: "↓", label: "Install tools", detail: someNames(broken), nudge: true})
 	}
 	if len(config.LocalPacks()) == 0 {
-		acts = append(acts, row{mark: todo, glyph: createGlyph(), colour: ui.GreenHex, label: "Create a pack", detail: "the commands you keep looking up, in one place", note: "Clingon › Packs › Create a pack", nudge: true})
+		acts = append(acts, row{mark: todo, glyph: createGlyph(), colour: palette.Green.Hex, label: "Create a pack", detail: "the commands you keep looking up, in one place", note: "Clingon › Packs › Create a pack", nudge: true})
 	}
 	return acts
 }

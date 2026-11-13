@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -33,6 +34,7 @@ Usage:
   clingon command  add and list commands in your own packs
   clingon recipe   add, remove and list recipes (sequences of commands)
   clingon check    check your packs for mistakes
+  clingon ai       set up the AI: ai key (your OpenRouter key), ai model <model>, ai log (its last run)
   clingon doctor   check tmux, your packs and each pack's tools
   clingon crash    show why clingon last crashed, if it has
   clingon update   upgrade clingon the way it was installed
@@ -89,14 +91,25 @@ func main() {
 		}
 	case "check":
 		err = check()
+	case "heard": // tmux's, not yours: marks each piece of the shell's output (see shellStill)
+		if len(os.Args) > 2 {
+			heard(os.Args[2])
+		}
+		return
 	case "welcome":
-		welcome(len(os.Args) > 2 && os.Args[2] == "--then-shell")
+		// --then-shell is how clingon's shell pane starts; --again is that
+		// pane's shell asking for its card once more, the pane's width having
+		// changed before anything was run in it (internal/shell's rc files).
+		then := len(os.Args) > 2 && os.Args[2] == "--then-shell"
+		welcome(then || len(os.Args) > 2 && os.Args[2] == "--again", then)
 	case "_check-release":
 		checkRelease()
 	case "_shell": // the shell inside clingon, started again (System › Reload shell)
 		becomeShell()
 	case "doctor":
 		err = doctor(os.Args[2:])
+	case "ai":
+		err = aiCmd(os.Args[2:])
 	case "crash":
 		err = crashCmd()
 	case "update", "upgrade":
@@ -150,8 +163,9 @@ func getVersion() string {
 }
 
 // pseudoVersion is what Go stamps on a build of an untagged commit, e.g.
-// v0.0.0-20261030044109-241d3f66c82c+dirty: shown as "dev · 241d3f6".
-var pseudoVersion = regexp.MustCompile(`^v0\.0\.0-\d{14}-[0-9a-f]{12}(\+dirty)?$`)
+// v0.0.0-20261030044109-241d3f66c82c+dirty, or once the repo has a tag,
+// v0.5.4-0.20261110055126-60cea1199d5e+dirty: shown as "dev · 241d3f6".
+var pseudoVersion = regexp.MustCompile(`^v\d+\.\d+\.\d+-(?:[0-9A-Za-z.-]*\.)?\d{14}-[0-9a-f]{12}(\+dirty)?$`)
 
 // errInside stops a second menu opening inside clingon's own shell.
 var errInside = errors.New("already inside clingon (shift-tab switches to the menu)")
@@ -201,7 +215,11 @@ func launch() error {
 	if !isSelf("clingon") {
 		env = append(env, "PATH="+filepath.Dir(self)+string(os.PathListSeparator)+os.Getenv("PATH"), "CLINGON_BIN="+filepath.Dir(self))
 	}
-	flushSaid() // tmux takes over the terminal
+	env = append(env, "CLINGON_CHANGED="+config.ChangedFile()) // where tmux and the shell say what's changed, for the menu
+	_ = os.MkdirAll(config.Dir(), 0o755)
+	_ = os.WriteFile(config.ReadyFile(), nil, 0o600)       // no prompts yet, this session
+	env = append(env, "CLINGON_READY="+config.ReadyFile()) // where the shell says its prompt is up
+	flushSaid()                                            // tmux takes over the terminal
 	err = tmux.Launch(self, env, filepath.Join(config.StateDir(), "run"), ready)
 	if err != nil {
 		// Only now, so starting up never waits on it: an old tmux explains
@@ -216,6 +234,100 @@ func launch() error {
 	return err
 }
 
+// stillFor is how long the shell's screen has to go without changing to be
+// taken as still: the one thing here that's a length of time, because nothing
+// in a terminal says "I'm waiting for you". A screen that's stopped changing
+// is what a person goes by too. It's counted from the shell's last output,
+// heard as it's written: a program still printing is never cut in on.
+const stillFor = time.Second
+
+// shellStill is ui.Options.ShellStill for the shell in pane: it sleeps until
+// that shell's screen has stopped changing. tmux pipes the pane's output to
+// `clingon heard`, which marks each piece in a file; the menu watches the
+// file (a kqueue event per mark, no polling). Nothing of the output is kept.
+// It starts listening the first time it's asked.
+func shellStill(c *tmux.Client, pane string) func(afterNext bool, over <-chan struct{}) bool {
+	var (
+		once   sync.Once
+		output chan struct{} // a piece of output, since last looked
+	)
+	listen := func() {
+		self, err := os.Executable()
+		if err != nil {
+			return
+		}
+		file := filepath.Join(config.Dir(), "heard")
+		if err := os.MkdirAll(config.Dir(), 0o755); err != nil {
+			return
+		}
+		if err := os.WriteFile(file, nil, 0o600); err != nil {
+			return
+		}
+		w, err := config.WatchPath(file)
+		if err != nil {
+			return
+		}
+		if err := c.Hear(pane, self, file); err != nil {
+			w.Close()
+			return
+		}
+		ch := make(chan struct{}, 1)
+		go func() {
+			for w.Wait() {
+				select {
+				case ch <- struct{}{}:
+				default:
+				}
+			}
+		}()
+		output = ch
+	}
+	return func(afterNext bool, over <-chan struct{}) bool {
+		once.Do(listen)
+		if afterNext {
+			select { // what's already been heard isn't what's waited for
+			case <-output:
+			default:
+			}
+			select {
+			case <-output:
+			case <-over:
+				return false
+			}
+		}
+		for {
+			select {
+			case <-output: // still changing: start counting again
+			case <-over:
+				return false
+			case <-time.After(stillFor):
+				return true
+			}
+		}
+	}
+}
+
+// heard reads the shell's output from tmux and adds a mark to file for each
+// piece, so the menu, watching the file, knows the screen's changing. It
+// keeps none of what it reads.
+func heard(file string) {
+	f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	buf := make([]byte, 64<<10)
+	for {
+		if _, err := os.Stdin.Read(buf); err != nil {
+			return
+		}
+		if st, err := f.Stat(); err == nil && st.Size() > 1<<16 {
+			_ = f.Truncate(0)
+		}
+		_, _ = f.Write([]byte{'.'})
+	}
+}
+
 func menu(args []string) error {
 	fs := flag.NewFlagSet("menu", flag.ContinueOnError)
 	socket := fs.String("socket", "", "tmux socket name")
@@ -228,10 +340,18 @@ func menu(args []string) error {
 		return err
 	}
 	defer c.Kill()
+	c.ReadyFile = config.ReadyFile()
 	go c.WaitForPrompt(*pane, 15*time.Second)
 	cfg, _, err := config.Load()
 	if err != nil {
 		return err
+	}
+	// The menu hears tmux and the shell say what's changed (focus, scrolling,
+	// the prompt drawn again) as they say it: no looking on a timer.
+	var changed func() bool
+	if w, err := config.WatchChanged(); err == nil {
+		defer w.Close()
+		changed = w.Wait
 	}
 	m := ui.New(ui.Options{
 		Config:  cfg,
@@ -253,15 +373,35 @@ func menu(args []string) error {
 			st := c.State(*pane)
 			return ui.ShellState{Busy: st.Busy, Scrolling: st.Scrolling, Typed: st.Typed, Starting: st.Starting}
 		},
-		ClearShell: func() error { return c.Clear(*pane) },
-		FocusShell: func() { c.Focus(*pane) },
-		Jobs:       func() []string { return c.Jobs(*pane) },
-		Bar:        c.Bar,
-		BarWidth:   c.BarWidth,
-		Headline:   headline,
-		Project:    config.FindProject,
-		SecretDir:  secretDir(),
-		Version:    getVersion(),
+		ClearShell:  func() error { return c.Clear(*pane) },
+		FocusShell:  func() { c.Focus(*pane) },
+		Jobs:        func() []string { return c.Jobs(*pane) },
+		Panel:       c.NewPanel(*pane, os.Getenv("TMUX_PANE")),
+		ShellKey:    func(key string, text bool) error { return c.SendKey(*pane, key, text) },
+		ShellScreen: func() string { return c.Screen(*pane) },
+		FocusSelf:   func() { c.Focus(os.Getenv("TMUX_PANE")) },
+		Focused:     func() string { return c.Where(os.Getenv("TMUX_PANE"), *pane) },
+		Changed:     changed,
+		ShellTail:   func() string { return c.Tail(*pane, 500) }, // all of its screen: what you see, the AI sees
+		ShellStill:  shellStill(c, *pane),
+		Bar:         c.Bar,
+		BarWidth:    c.BarWidth,
+		TopBar:      c.TopBar,
+		AIDriving: func(where string) { // focus and the gold frame go to the pane it's working in
+			menu := os.Getenv("TMUX_PANE")
+			switch where {
+			case "menu":
+				c.AIDriving(menu, menu)
+			case "shell":
+				c.AIDriving(*pane, menu)
+			default:
+				c.AIDriving("", menu)
+			}
+		},
+		Headline:  headline,
+		Project:   config.FindProject,
+		SecretDir: secretDir(),
+		Version:   getVersion(),
 	})
 	stop := catchCrashes()
 	_, err = tea.NewProgram(m).Run()
@@ -378,23 +518,42 @@ func newPackForm(menu bool) error {
 	return runForm(form, "created")
 }
 
-// runForm runs the pack form, then says what came of it: saved, it says
-// where, and whether it loads.
+// runForm runs the pack form, then says what came of it: written (as it was
+// changed), where it is and whether it loads; or not added yet, and why.
 func runForm(form *ui.PackForm, done string) error {
-	flushSaid() // the form takes over the terminal
+	flushSaid()   // the form takes over the terminal
+	if inside() { // tab and shift-tab move on from it, as from any panel
+		form.MenuHeight = tmux.MenuHeight // its foot lines up with the menu's
+		form.AIWorking = tmux.AIWorking   // and goes while the AI drives it: it's for people
+		form.Focus = func(next bool) bool {
+			if next {
+				return tmux.FocusPanel()
+			}
+			tmux.FocusMenu()
+			return true
+		}
+	}
 	_, err := tea.NewProgram(form).Run()
 	config.RemoveFormName() // closed: the menu stops saying it's open
 	if err != nil {
 		return err
 	}
-	if form.Left != "saved" {
+	p := form.Pack()
+	switch form.Left {
+	case "draft": // kept as it was left, to carry on from
+		if why := p.CheckFilled(); why != nil {
+			say(info, "not added yet: %s · open the form again to carry on", why)
+		}
+		return nil
+	case "saved": // written as it was changed
+	default:
 		return nil
 	}
-	path := config.PackPath(form.Pack().Folder)
+	path := config.PackPath(p.Folder)
 	if _, _, err := config.Load(); err != nil {
 		return fmt.Errorf("%s %s, but it has problems:\n%w", done, path, err)
 	}
-	say(ok, "%s %s", done, path)
+	say(ok, "%s %s · in the menu under %s › %s", done, path, config.SectionName(p.Section), p.Title)
 	return nil
 }
 

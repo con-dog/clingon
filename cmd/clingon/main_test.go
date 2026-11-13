@@ -2,9 +2,12 @@ package main
 
 import (
 	"os"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/con-dog/clingon/internal/config"
+	"github.com/con-dog/clingon/internal/ui"
 )
 
 func TestNewer(t *testing.T) {
@@ -132,5 +135,39 @@ func TestReleaseCacheRoundTrip(t *testing.T) {
 	}
 	if c := readReleaseCache(); c.Checked.IsZero() || c.Latest != "" {
 		t.Fatalf("got %+v", c)
+	}
+}
+
+// Every way through the menu the AI's prompt names (Clingon › Packs › Add
+// packs) is still there: the AI follows it as written, so a renamed section
+// or command would quietly send it the wrong way.
+func TestAIPromptPathsExist(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	paths := regexp.MustCompile(`[A-Z][A-Za-z']*(?: [A-Za-z][A-Za-z']*)*(?: › [A-Za-z][A-Za-z']*(?: [A-Za-z][A-Za-z']*)*)+`).FindAllString(ui.AISystem, -1)
+	if len(paths) < 3 {
+		t.Fatalf("found only %q in the prompt", paths)
+	}
+	sections := builtinSections()
+	for _, p := range paths {
+		parts := strings.Split(p, " › ")
+		last, ways := parts[len(parts)-1], parts[:len(parts)-1]
+		found := false
+		for _, s := range sections {
+			for _, g := range s.Groups {
+				for _, c := range g.Commands {
+					if c.Name != last {
+						continue
+					}
+					ok := true
+					for _, w := range ways { // each step on the way: its category, section or group
+						ok = ok && (w == s.Category || w == s.Name || w == g.Name)
+					}
+					found = found || ok
+				}
+			}
+		}
+		if !found {
+			t.Errorf("the AI's prompt says %q, which isn't in the menu", p)
+		}
 	}
 }

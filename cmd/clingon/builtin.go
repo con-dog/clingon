@@ -13,16 +13,18 @@ import (
 	"strings"
 
 	"github.com/con-dog/clingon/internal/config"
+	"github.com/con-dog/clingon/internal/llm"
 	"github.com/con-dog/clingon/internal/shell"
 	"github.com/con-dog/clingon/internal/ui"
 )
 
-// clingon's own sections' icon colours, from the pack colours
+// clingon's own sections' icon colours: tints a pack can have
 // (config.PackColors), one each so they tell apart at a glance.
-const (
-	generalGrey = "#8787af"
-	packsYellow = "#ffd75f"
-	recipesCyan = "#5fd7d7"
+var (
+	generalGrey = config.ColorHex("grey")
+	packsYellow = config.ColorHex("yellow")
+	recipesCyan = config.ColorHex("cyan")
+	aiGreen     = config.ColorHex("green")
 )
 
 // packOptions offers packs to pick from.
@@ -93,20 +95,17 @@ func builtinSections() []*config.Section {
 	sections := []*config.Section{
 		{Name: "Packs", Icon: config.Logos["puzzle"], Color: packsYellow, Category: "Clingon", Desc: "Add ready-made commands, or make packs of your own.", Groups: []config.Group{
 			{Name: "My packs", Commands: []config.Command{
-				{Editor: true, Name: "Create a pack", Desc: "Opens a new pack of your own as a form, starting from a working example: fill it in, then esc when you're done, and it asks whether to save it.", Cmd: self + " pack create --menu"},
+				{Editor: true, Name: "Create a pack", Desc: "Opens a new pack of your own as a form, its greyed hints showing what goes where: fill it in, and it's added once it has a name and a command; esc when you're done.", Cmd: self + " pack create --menu"},
 				{Name: "Describe your pack", Disabled: noLocal, Desc: "Prints every command in <pack> and exactly what each one runs.", Cmd: self + " pack describe <pack>", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(local)},
 				}},
-				{Editor: true, Name: "Edit a pack", Disabled: noLocal, Desc: "Opens <pack> as a form, every part of it on one page: change it, then esc when you're done, and it asks whether to save the changes.", Cmd: self + " pack edit <pack> --menu", Args: []config.Arg{
+				{Editor: true, Name: "Edit a pack", Disabled: noLocal, Desc: "Opens <pack> as a form, every part of it on one page: change it, and each change is kept as you make it; esc when you're done.", Cmd: self + " pack edit <pack> --menu", Args: []config.Arg{
 					{Name: "pack", Options: moduleOptions(local)},
 				}},
 				{Name: "List your packs", Disabled: noLocal, Desc: "Lists your own packs.", Cmd: self + " pack list --mine"},
 				{Name: "Remove your packs", Disabled: noLocal, Desc: "Deletes <pack> and every command in it, for good.", Risk: config.RiskDanger, Cmd: self + " pack remove <pack>", Args: []config.Arg{
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(local)},
 				}},
-			}},
-			{Name: "Understand packs", Commands: []config.Command{
-				{Name: "How packs work", Desc: "Prints how to write a pack of your own: the folders, the file format and an example to copy.", Cmd: self + " pack guide"},
 			}},
 			{Name: "Curated packs", Commands: []config.Command{
 				{Name: "Add packs", Disabled: unless(len(available) > 0, "Every pack is added already."), Desc: "Adds ready-made commands for <pack>.", Cmd: self + " pack add <pack>", Args: []config.Arg{
@@ -121,6 +120,26 @@ func builtinSections() []*config.Section {
 					{Name: "pack", Type: "flags", AtLeastOne: true, CountAs: "pack", Options: moduleOptions(installed)},
 				}},
 				{Name: "Update packs", Disabled: unless(len(ups) > 0, "Every added pack is up to date."), Desc: "Brings your added packs up to date, replacing their files in packs/remote, and removes any clingon no longer ships: changes you made to those files are lost.", Risk: config.RiskWarn, Cmd: self + " pack update"},
+			}},
+		}},
+		{Name: "AI", Icon: config.Logos["cpu"], Color: aiGreen, Category: "Clingon", Desc: "Give clingon's AI a task, and watch it use the menu to do it.", Groups: []config.Group{
+			{Name: "Ask", Commands: []config.Command{
+				{ID: ui.AITaskID, Name: "Give a task", Disabled: unless(llm.HasKey(config.StateDir()), "Add your OpenRouter key first: AI › OpenRouter key."),
+					Desc: "Tells the AI what to do: it uses the menu to do it as you watch, in a panel under the shell. Risky commands still ask you; esc stops it.",
+					Cmd:  "<task>", Args: []config.Arg{{Name: "task", Prompt: "What should it do?"}}},
+			}},
+			{Name: "Setup", Commands: []config.Command{
+				{Name: "Choose a model", Desc: "Picks the model the AI uses on OpenRouter: <model>.", Cmd: self + " ai model <model>", Args: []config.Arg{
+					{Name: "model", Type: "choose", Prompt: "Which model", Options: []config.Option{
+						{Value: "anthropic/claude-sonnet-5.5", Label: "Claude Sonnet 5.5: quick and capable"},
+						{Value: "anthropic/claude-opus-5.5", Label: "Claude Opus 5.5: most careful"},
+						{Value: "anthropic/claude-fable-5.2", Label: "Claude Fable 5.2: Anthropic's most capable"},
+						{Value: "deepseek/deepseek-v4.1-flash", Label: "DeepSeek v4.1 Flash: cheapest"},
+						{Value: "deepseek/deepseek-v4-pro", Label: "DeepSeek v4 Pro"},
+					}}}},
+				{Editor: true, Name: "OpenRouter key", Desc: "Asks for your OpenRouter key (from openrouter.ai/keys) in the shell, its typing hidden, and keeps it in your Keychain. With a key, each task you give the AI goes to OpenRouter and the model's maker, with the menu as text and the shell's last lines.", Cmd: self + " ai key"},
+				{Name: "Show the AI's setup", Desc: "Shows which model the AI uses, and whether it has a key.", Cmd: self + " ai"},
+				{Name: "Show the last run's log", Desc: "Prints the AI's last run as it happened: what it was shown, what it thought and each move it made.", Cmd: self + " ai log"},
 			}},
 		}},
 		{Name: "General", Icon: config.Logos["gear"], Color: generalGrey, Category: "Clingon", Desc: "Check, update and look after clingon itself.", Groups: []config.Group{

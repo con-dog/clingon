@@ -308,10 +308,17 @@ func TestCrashIsKeptSaidAndShown(t *testing.T) {
 			t.Errorf("card lacks %q:\n%s", want, got)
 		}
 	}
-	for _, l := range strings.Split(got, "\n") {
-		if w := ansi.StringWidth(l); w != 60 {
-			t.Errorf("line %d cells wide, want 60: %q", w, l)
+	for i, l := range strings.Split(got, "\n") {
+		w := ansi.StringWidth(l)
+		switch {
+		case i == 0 && w != 60: // its title's rule: the card's whole width
+			t.Errorf("the title's rule is %d cells wide, want 60: %q", w, l)
+		case w > 60:
+			t.Errorf("line %d cells wide, over the card's 60: %q", w, l)
 		}
+	}
+	if strings.ContainsAny(got, "╭╮╰╯│├┤") {
+		t.Errorf("a card has no box round it:\n%s", got)
 	}
 
 	out, err := output(t, crashCmd) // not a terminal: the log as it is
@@ -507,17 +514,24 @@ func TestRecipeCommands(t *testing.T) {
 	}
 }
 
-// In a box, everything keeps inside the edges, however long; none of it's cut.
+// In a card, everything keeps inside its width, however long; none of it's cut.
+// A card is its title's rule and its lines: no sides and no foot to box it.
 func TestBoxedWrapsWithinItsEdges(t *testing.T) {
 	long := "✓ " + strings.Repeat("remote/aws also has compute-logs ", 8)
 	out := ansi.Strip(boxed("Title", []string{long, "short"}, 50))
 	lines := strings.Split(out, "\n")
-	if len(lines) < 5 || !strings.HasPrefix(lines[0], "╭─ Title") || !strings.HasPrefix(lines[len(lines)-1], "╰") {
-		t.Fatalf("box:\n%s", out)
+	if len(lines) < 4 || !strings.HasPrefix(lines[0], "── Title ─") || ansi.StringWidth(lines[0]) != 50 {
+		t.Fatalf("card:\n%s", out)
+	}
+	if strings.ContainsAny(out, "╭╮╰╯│") {
+		t.Errorf("a card has no box round it:\n%s", out)
 	}
 	for _, l := range lines {
-		if w := ansi.StringWidth(l); w != 50 {
+		if w := ansi.StringWidth(l); w > 50-2 && l != lines[0] { // two cells clear of each side
 			t.Errorf("%d wide: %q", w, l)
+		}
+		if l != lines[0] && !strings.HasPrefix(l, "  ") {
+			t.Errorf("not set in under the title: %q", l)
 		}
 	}
 	if strings.Count(strings.ReplaceAll(out, "\n", " "), "compute-logs") != 8 {

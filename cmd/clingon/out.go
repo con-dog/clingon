@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/con-dog/clingon/internal/config"
-	"github.com/con-dog/clingon/internal/ui"
+	"github.com/con-dog/clingon/internal/palette"
 	"golang.org/x/term"
 )
 
@@ -19,18 +19,18 @@ import (
 // a terminal (lipgloss sees to that for colour): scripts get plain lines.
 
 var (
-	nameStyle  = lipgloss.NewStyle().Foreground(ui.Pink).Bold(true)
-	headStyle  = lipgloss.NewStyle().Foreground(ui.Soft).Bold(true)
-	markStyle  = lipgloss.NewStyle().Foreground(ui.Pink)
-	greyStyle  = lipgloss.NewStyle().Foreground(ui.Grey)
-	faintStyle = lipgloss.NewStyle().Foreground(ui.Faint)
-	okStyle    = lipgloss.NewStyle().Foreground(ui.Green)
-	failStyle  = lipgloss.NewStyle().Foreground(ui.Red)
-	warnStyle  = lipgloss.NewStyle().Foreground(ui.Orange)
+	nameStyle  = lipgloss.NewStyle().Foreground(palette.Green.Color()).Bold(true) // clingon, as a program is in a command
+	headStyle  = lipgloss.NewStyle().Foreground(palette.Soft.Color()).Bold(true)
+	markStyle  = lipgloss.NewStyle().Foreground(palette.Green.Color()) // worth doing, what runs: as the menu's
+	greyStyle  = lipgloss.NewStyle().Foreground(palette.Grey.Color())
+	faintStyle = lipgloss.NewStyle().Foreground(palette.Faint.Color())
+	okStyle    = lipgloss.NewStyle().Foreground(palette.Green.Color())
+	failStyle  = lipgloss.NewStyle().Foreground(palette.Red.Color())
+	warnStyle  = lipgloss.NewStyle().Foreground(palette.Orange.Color())
 )
 
 // A mark says what a row or line is: done or fine, failed, worth a look,
-// worth doing (its own glyph, in pink), or just so.
+// worth doing (its own glyph, in green), or just so.
 type mark int
 
 const (
@@ -116,6 +116,8 @@ func commandTitle(args []string) string {
 	}
 	title := args[0]
 	switch args[0] {
+	case "ai": // an initialism: AI, not Ai
+		return "AI"
 	case "pack", "packs", "command", "commands", "cmd", "recipe", "recipes":
 		if len(args) > 1 {
 			title = args[0] + " " + args[1]
@@ -124,8 +126,8 @@ func commandTitle(args []string) string {
 	return strings.ToUpper(title[:1]) + title[1:]
 }
 
-// boxed draws lines in a titled box, wrapping any too long for it: unlike a card's
-// details, none of this may be cut short.
+// boxed draws lines as a titled card, wrapping any too long for it: unlike a
+// card's details, none of this may be cut short.
 func boxed(title string, lines []string, w int) string {
 	var out []string
 	for _, l := range lines {
@@ -134,7 +136,7 @@ func boxed(title string, lines []string, w int) string {
 	return titled(title, out, w)
 }
 
-// sayBoxed prints text in a box in a terminal, and as it is anywhere else.
+// sayBoxed prints text as a titled card in a terminal, and as it is anywhere else.
 func sayBoxed(title, text string) {
 	text = strings.TrimRight(text, "\n")
 	if !isTerm() {
@@ -155,7 +157,7 @@ func step(text string) {
 	flushSaid() // what it's about to run may want the terminal
 }
 
-// sayErr prints an error, to stderr: in a box, if that's a terminal.
+// sayErr prints an error, to stderr: as a card, if that's a terminal.
 func sayErr(err error) {
 	flushSaid()
 	if term.IsTerminal(int(os.Stderr.Fd())) {
@@ -166,7 +168,7 @@ func sayErr(err error) {
 	_, _ = fmt.Fprintln(stderr(), failStyle.Render("✗")+" "+err.Error())
 }
 
-// errUsage prints usage to stderr: in a box, if that's a terminal.
+// errUsage prints usage to stderr: as a card, if that's a terminal.
 func errUsage(text string) {
 	text = strings.TrimRight(text, "\n")
 	if term.IsTerminal(int(os.Stderr.Fd())) {
@@ -180,7 +182,7 @@ func errUsage(text string) {
 type row struct {
 	mark   mark
 	glyph  string // todo's mark
-	colour string // the glyph's, where it's a section's logo (#rrggbb): as the menu draws it; else pink
+	colour string // the glyph's, where it's a section's logo (#rrggbb): as the menu draws it; else green
 	label  string
 	detail string // cut short to fit
 	note   string // at the right, faint
@@ -209,15 +211,15 @@ func slot(glyph string) string {
 	return glyph
 }
 
-// card draws rows in a rounded box w cells wide, titled: a row each, its
-// mark, label, detail (cut short) and note.
+// card draws rows as a titled card w cells wide: a row each, its mark,
+// label, detail (cut short) and note.
 func card(title string, rows []row, w int) string {
 	labelW, noteW := 0, 0
 	for _, r := range rows {
 		labelW = max(labelW, ansi.StringWidth(r.label))
 		noteW = max(noteW, ansi.StringWidth(r.note))
 	}
-	inner := w - 4 // "│ " and " │"
+	inner := w - 4 // two cells in from each side
 	detailW := inner - 3 - labelW - 2 - noteW - 2
 	if detailW < 12 { // too narrow for notes: the details matter more
 		noteW, detailW = 0, inner-3-labelW-2
@@ -238,16 +240,21 @@ func card(title string, rows []row, w int) string {
 	return titled(headStyle.Render(title), lines, w)
 }
 
-// titled draws lines, at most w-4 cells each, in a box with a title in its top edge.
+// titled draws lines, at most w-4 cells each, as a card: a rule w cells wide
+// with the title in it, and the lines under it, set in two cells. No sides
+// and no foot: clingon's window frames the shell already, and a box in a
+// frame is lines for their own sake. The next card's rule, or the prompt,
+// ends it.
 func titled(title string, lines []string, w int) string {
-	out := []string{faintStyle.Render("╭─ ") + title + faintStyle.Render(" "+strings.Repeat("─", max(w-5-ansi.StringWidth(title), 0))+"╮")}
+	out := []string{faintStyle.Render("── ") + title + faintStyle.Render(" "+strings.Repeat("─", max(w-4-ansi.StringWidth(title), 0)))}
 	for _, l := range lines {
-		pad := max(w-4-ansi.StringWidth(l), 0)
-		out = append(out, faintStyle.Render("│ ")+l+strings.Repeat(" ", pad)+faintStyle.Render(" │"))
+		out = append(out, cardIndent+l)
 	}
-	out = append(out, faintStyle.Render("╰"+strings.Repeat("─", max(w-2, 0))+"╯"))
 	return strings.Join(out, "\n")
 }
+
+// cardIndent sets a card's lines in under its title's rule.
+const cardIndent = "  "
 
 // fit pads or cuts s to exactly w cells.
 func fit(s string, w int) string {
@@ -256,7 +263,7 @@ func fit(s string, w int) string {
 }
 
 // styleUsage colours a usage text: its first line's name, each `clingon …`
-// line's command in pink and what it does in grey.
+// line's command in green, as a program is, and what it does in grey.
 func styleUsage(s string) string {
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
