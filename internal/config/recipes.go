@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -146,6 +147,7 @@ func parseRecipe(path string, data []byte) (*Recipe, error) {
 
 // stepRef is the CommandID a recipe's link points at.
 func stepRef(target string) string {
+	target = linkUnescape(target)
 	if id, ok := strings.CutPrefix(target, "clingon:"); ok {
 		return id
 	}
@@ -161,11 +163,47 @@ func stepLink(ref string) string {
 	file, anchor, ok := strings.Cut(ref, "#")
 	switch {
 	case !ok:
-		return "clingon:" + ref
+		return linkEscape("clingon:" + ref)
 	case filepath.IsAbs(file):
-		return ref
+		return linkEscape(ref)
 	}
-	return "../packs/" + file + "#" + anchor
+	return linkEscape("../packs/" + file + "#" + anchor)
+}
+
+// linkEscape writes a link's target so Markdown takes it as one, and
+// parseRecipe reads it back: a space or a bracket in it (a folder called
+// "My Project (v2)") would end the link early, so each is written as its
+// code, %20 for a space, as a web address would have it.
+func linkEscape(target string) string {
+	var b strings.Builder
+	for i := 0; i < len(target); i++ {
+		if c := target[i]; c <= ' ' || c == '%' || c == '(' || c == ')' || c == 0x7f {
+			fmt.Fprintf(&b, "%%%02X", c)
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// linkUnescape is the target linkEscape wrote: each %20 the character it
+// stands for. Anything that isn't such a code stays as it is.
+func linkUnescape(target string) string {
+	if !strings.Contains(target, "%") {
+		return target
+	}
+	var b strings.Builder
+	for i := 0; i < len(target); i++ {
+		if target[i] == '%' && i+2 < len(target) {
+			if c, err := strconv.ParseUint(target[i+1:i+3], 16, 8); err == nil {
+				b.WriteByte(byte(c))
+				i += 2
+				continue
+			}
+		}
+		b.WriteByte(target[i])
+	}
+	return b.String()
 }
 
 // HasRecipe says whether rs has one by that name, whatever its capitals.
@@ -201,16 +239,13 @@ func saveRecipe(name string, steps, labels []string, replace bool) error {
 		return err
 	}
 	path := recipeFile(name)
-	desc := ""
+	desc, replaced := "", ""
 	if replace {
 		i := slices.IndexFunc(rs, func(r Recipe) bool { return strings.EqualFold(r.Name, name) })
 		if i < 0 {
 			return fmt.Errorf("you don't have a recipe called %q to replace", name)
 		}
-		desc = rs[i].Description
-		if err := RemoveRecipe(rs[i].Name); err != nil {
-			return err
-		}
+		desc, replaced = rs[i].Description, rs[i].Name
 	} else if _, err := os.Stat(path); HasRecipe(rs, name) || err == nil {
 		return fmt.Errorf("you already have a recipe called %q", name)
 	}
@@ -232,6 +267,16 @@ func saveRecipe(name string, steps, labels []string, replace bool) error {
 			}
 		}
 		fmt.Fprintf(&b, "%d. [%s](%s)\n", i+1, strings.NewReplacer("[", "(", "]", ")").Replace(label), stepLink(st))
+	}
+	// Only what reads back is written: one recipe that can't be read hides
+	// them all. The one it replaces goes once that's known, not before.
+	if _, err := parseRecipe(path, []byte(b.String())); err != nil {
+		return err
+	}
+	if replaced != "" {
+		if err := RemoveRecipe(replaced); err != nil {
+			return err
+		}
 	}
 	if err := os.MkdirAll(RecipesDir(), 0o755); err != nil {
 		return err

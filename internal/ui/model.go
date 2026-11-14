@@ -1724,7 +1724,7 @@ func (m *Model) clearRecipe() {
 // describeCurrentCommand describes the current recipe, saved or not, by its
 // commands' IDs.
 func (m *Model) describeCurrentCommand() string {
-	return m.opt.Self + " recipe describe --steps " + strings.Join(m.recipeIDs(), " ")
+	return m.opt.Self + " recipe describe --steps " + strings.Join(idWords(m.recipeIDs()), " ")
 }
 
 // openRecipeRef is an added recipe's row in My recipes: it opens the list of
@@ -1901,7 +1901,22 @@ func (m *Model) saveCommand(name string, replace bool) string {
 	if replace {
 		add += "--replace "
 	}
-	return m.opt.Self + add + name + " " + strings.Join(m.recipeIDs(), " ")
+	return m.opt.Self + add + name + " " + strings.Join(idWords(m.recipeIDs()), " ")
+}
+
+// idWords are commands' IDs as shell words, one each: as they are (the # in
+// one is mid-word, so no comment), or in quotes when a project's folder has
+// a space or the like in its name, which would otherwise split the ID in two
+// or be read as shell.
+func idWords(ids []string) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id
+		if strings.HasPrefix(id, "#") || !shellSafe.MatchString(strings.ReplaceAll(id, "#", "")) {
+			out[i] = shellQuote(id)
+		}
+	}
+	return out
 }
 
 // startCommand asks for what a command needs, if anything, and runs it.

@@ -5045,6 +5045,17 @@ func TestTakingARowClearsTheFilterEverywhere(t *testing.T) {
 	}
 }
 
+// A recipe's steps go to `clingon recipe add` a word each: an ID whose
+// folder has a space (or anything the shell would read) is quoted, the rest
+// are left as they are.
+func TestRecipeIDsAreShellWords(t *testing.T) {
+	got := idWords([]string{"remote/code/git/everyday.md#status", "aws-1a2b3c4d", "/Users/me/My Project/.clingon/packs/x/y.md#run", "/tmp/a;b/$(id)/it's.md#go", ""})
+	want := []string{"remote/code/git/everyday.md#status", "aws-1a2b3c4d", `'/Users/me/My Project/.clingon/packs/x/y.md#run'`, `'/tmp/a;b/$(id)/it'\''s.md#go'`, "''"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
 // A pack's missing program is looked for again when a command finishes (it may
 // have installed it) and when you come back to the menu: the status bar stops
 // saying it's needed without your having to leave the pack and come back.

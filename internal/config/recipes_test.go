@@ -186,3 +186,33 @@ func TestRecipeFiles(t *testing.T) {
 	}
 	_ = dir
 }
+
+// A recipe's step can be a command in a folder whose name has spaces or
+// brackets (a project's own pack, in "My Project (v2)"): its link is written
+// so it reads back as the same step, and never so the recipes can't be read.
+func TestRecipeStepsInFoldersWithSpaces(t *testing.T) {
+	userDir(t)
+	steps := []string{
+		"/Users/me/My Project (v2)/.clingon/packs/deploy/build.md#run",
+		"mine/my tools/100% done.md#do-it",
+		"remote/code/git/everyday.md#status",
+		"clingon-12345678",
+	}
+	if err := SaveRecipe("Ship it", steps, nil); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := Recipes()
+	if err != nil {
+		t.Fatalf("the recipes can't be read back: %v", err)
+	}
+	if len(rs) != 1 || !slices.Equal(rs[0].Steps, steps) {
+		t.Fatalf("read back %+v, want steps %q", rs, steps)
+	}
+	// And once more over itself: still readable, the same steps.
+	if err := ReplaceRecipe("Ship it", steps[:2], nil); err != nil {
+		t.Fatal(err)
+	}
+	if rs, err = Recipes(); err != nil || len(rs) != 1 || !slices.Equal(rs[0].Steps, steps[:2]) {
+		t.Fatalf("replaced: %+v, %v", rs, err)
+	}
+}
