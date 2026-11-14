@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -1161,6 +1162,35 @@ func newEditor() textarea.Model {
 // doesn't move when it's opened or left: each of plain's lines through an
 // editor that w wide, and styled (plain, coloured) cut where it breaks it.
 func wrapAsTyped(plain, styled string, w int) []string {
+	// Kept: the form asks for every value's wrapping each time it draws (on
+	// each key), the answer only changes with the value or the width, and
+	// working it out makes an editor, megabytes of one for a page of values.
+	key := wrapKey{plain, styled, w}
+	wrappedMu.Lock()
+	defer wrappedMu.Unlock()
+	if lines, ok := wrapped[key]; ok {
+		return slices.Clone(lines)
+	}
+	lines := wrapWithEditor(plain, styled, w)
+	if len(wrapped) >= 2048 { // values typed and gone: start again rather than grow for good
+		clear(wrapped)
+	}
+	wrapped[key] = lines
+	return slices.Clone(lines)
+}
+
+// wrapped is what wrapAsTyped has worked out, by what it worked it out from.
+var (
+	wrapped   = map[wrapKey][]string{}
+	wrappedMu sync.Mutex
+)
+
+type wrapKey struct {
+	plain, styled string
+	w             int
+}
+
+func wrapWithEditor(plain, styled string, w int) []string {
 	ed := newEditor()
 	ed.SetWidth(w)
 	sls := strings.Split(styled, "\n")

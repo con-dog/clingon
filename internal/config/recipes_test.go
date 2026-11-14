@@ -216,3 +216,62 @@ func TestRecipeStepsInFoldersWithSpaces(t *testing.T) {
 		t.Fatalf("replaced: %+v, %v", rs, err)
 	}
 }
+
+// Recipes are read once and given again while nothing's changed, and read
+// afresh the moment anything has: one added, removed, or edited in place (by
+// hand, where its folder's own time doesn't move). What's handed out is the
+// caller's own: changing it changes nothing kept.
+func TestRecipesAreReadAgainOnlyWhenChanged(t *testing.T) {
+	userDir(t)
+	names := func() string {
+		rs, err := Recipes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.Name+":"+strings.Join(r.Steps, "+"))
+		}
+		return strings.Join(out, " ")
+	}
+	if names() != "" || names() != "" {
+		t.Fatal("none yet")
+	}
+	if err := SaveRecipe("One", []string{"a-00000000"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(); got != "One:a-00000000" {
+		t.Fatalf("added: %q", got)
+	}
+	rs, _ := Recipes()
+	rs[0].Name, rs[0].Steps[0] = "Changed", "changed"
+	if got := names(); got != "One:a-00000000" {
+		t.Fatalf("what's handed out isn't what's kept: %q", got)
+	}
+	// Edited in place, as an editor writing over the file does: same folder
+	// entry, a new size.
+	file := recipeFile("One")
+	if err := os.WriteFile(file, []byte("# One\n\n1. [A](clingon:a-00000000)\n2. [B](clingon:b-11111111)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(); got != "One:a-00000000+b-11111111" {
+		t.Fatalf("edited in place: %q", got)
+	}
+	if err := SaveRecipe("Two", []string{"b-11111111"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(); got != "One:a-00000000+b-11111111 Two:b-11111111" {
+		t.Fatalf("a second added: %q", got)
+	}
+	if err := RemoveRecipe("One"); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(); got != "Two:b-11111111" {
+		t.Fatalf("one removed: %q", got)
+	}
+	// Another config folder is another set of recipes.
+	userDir(t)
+	if got := names(); got != "" {
+		t.Fatalf("a different folder's: %q", got)
+	}
+}

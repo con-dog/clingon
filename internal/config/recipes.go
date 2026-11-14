@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // MaxRecipeSteps is as many steps as there are number keys.
@@ -72,12 +74,25 @@ func Anchor(heading string) string {
 // sourceRef is a command's ID from its file: the file within packs/ (or, for a
 // project's pack, its whole path) and its heading's anchor.
 func sourceRef(path, name string) string {
+	// What says where packs are (Dir), rather than the folder itself: this
+	// is asked of every command at once, and joining a path each time adds up.
+	key := [4]string{os.Getenv("CLINGON_CONFIG"), os.Getenv("HOME"), path, name}
+	if ref, ok := sourceRefs.Load(key); ok {
+		return ref.(string)
+	}
 	ref := path
 	if rel, err := filepath.Rel(packsDir(), path); err == nil && !strings.HasPrefix(rel, "..") {
 		ref = filepath.ToSlash(rel)
 	}
-	return ref + "#" + Anchor(name)
+	ref += "#" + Anchor(name)
+	sourceRefs.Store(key, ref)
+	return ref
 }
+
+// sourceRefs keeps what sourceRef worked out, by what it worked it out from
+// (where packs are, the file, the name): the menu asks for every command's
+// ID at once, as often as each time it draws a recipe.
+var sourceRefs sync.Map
 
 // newCommandID makes the ID for a command with no file or ID of its own. The
 // group counts: two modules can each have a "Run tests".
@@ -106,10 +121,26 @@ func recipeFiles() []string {
 	return slices.DeleteFunc(mdFiles(RecipesDir()), func(f string) bool { return skippedName(filepath.Base(f)) })
 }
 
-// Recipes lists your saved recipes by name.
+// Recipes lists your saved recipes by name. The menu asks each time it draws
+// them, so what was read last is kept and given again for as long as the
+// folder and each file in it are as they were then (their sizes and times:
+// a look, not a read).
 func Recipes() ([]Recipe, error) {
+	dir := RecipesDir()
+	recipesRead.Lock()
+	defer recipesRead.Unlock()
+	if recipesRead.dir == dir && recipesRead.unchanged() {
+		return cloneRecipes(recipesRead.rs), nil
+	}
+	recipesRead.dir, recipesRead.files = "", nil
+	folder, statErr := os.Stat(dir) // before it's listed: changed since, and the next look says so
 	var rs []Recipe
+	var files []fileSeen
 	for _, f := range recipeFiles() {
+		st, err := os.Stat(f)
+		if err != nil {
+			return nil, err
+		}
 		data, err := os.ReadFile(f)
 		if err != nil {
 			return nil, err
@@ -119,11 +150,56 @@ func Recipes() ([]Recipe, error) {
 			return nil, err
 		}
 		rs = append(rs, *r)
+		files = append(files, fileSeen{f, st.Size(), st.ModTime()})
 	}
 	slices.SortStableFunc(rs, func(a, b Recipe) int {
 		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 	})
+	if statErr == nil {
+		recipesRead.dir, recipesRead.at, recipesRead.files, recipesRead.rs = dir, folder.ModTime(), files, cloneRecipes(rs)
+	}
 	return rs, nil
+}
+
+// fileSeen is a file as it was when read: where, how big, and when written.
+type fileSeen struct {
+	path string
+	size int64
+	at   time.Time
+}
+
+// recipesRead is what Recipes last read, and what it read it from.
+var recipesRead recipesSeen
+
+type recipesSeen struct {
+	sync.Mutex
+	dir   string
+	at    time.Time // the folder's own time: a file added, removed or replaced changes it
+	files []fileSeen
+	rs    []Recipe
+}
+
+// unchanged says whether the folder and its files are as they were read.
+// Called with the lock held.
+func (c *recipesSeen) unchanged() bool {
+	if st, err := os.Stat(c.dir); err != nil || !st.ModTime().Equal(c.at) {
+		return false
+	}
+	for _, f := range c.files {
+		if st, err := os.Stat(f.path); err != nil || st.Size() != f.size || !st.ModTime().Equal(f.at) {
+			return false
+		}
+	}
+	return true
+}
+
+// cloneRecipes copies rs through, so what's kept is never what's handed out.
+func cloneRecipes(rs []Recipe) []Recipe {
+	out := slices.Clone(rs)
+	for i := range out {
+		out[i].Steps, out[i].Labels = slices.Clone(out[i].Steps), slices.Clone(out[i].Labels)
+	}
+	return out
 }
 
 var recipeStepRe = regexp.MustCompile(`^\d+[.)] \[([^\]]*)\]\(([^)\s]+)\)\s*$`)

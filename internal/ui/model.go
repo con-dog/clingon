@@ -3672,7 +3672,7 @@ func renderKey(key string) string {
 // barKeys is what the status bar shows when it has nothing else to say: the
 // keys that work right now. Prompts keep theirs in the menu, by the question.
 func (m *Model) barKeys() []string {
-	if m.ai == nil && m.blurred && m.panelOpen && m.opt.Panel.Focused() { // the AI's panel, at rest
+	if m.ai == nil && m.blurred && m.panelOpen && m.inPanel() { // the AI's panel, at rest
 		return []string{"→ give a task", "tab menu"}
 	}
 	if a := m.ai; a != nil && !a.looking && !a.yourTurn {
@@ -3922,6 +3922,16 @@ func (m *Model) editingBar(w int) string {
 	}
 	line := strings.Join(keyHints(keys), faintStyle.Render(" · "))
 	return onBg(" "+ansi.Truncate(line, max(w-2, 0), "…"), raised, w)
+}
+
+// inPanel says whether focus is in the AI's panel, for what the bar shows: as
+// tmux last said (it says each time focus moves), and only if it hasn't yet,
+// by asking it, which takes a process.
+func (m *Model) inPanel() bool {
+	if m.focus != "" {
+		return m.focus == "panel"
+	}
+	return m.opt.Panel.Focused()
 }
 
 // where is the chip beside ? help: where you are, the menu, the shell, or

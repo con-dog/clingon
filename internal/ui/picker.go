@@ -135,29 +135,35 @@ func (p *picker) refilter() {
 		type hit struct {
 			it    item
 			score int
+			whole bool // every word typed is in its name, what it does or what it runs
+			named bool // the letters typed are in its name, in order
 		}
+		// Each row's text is put in lower case once a key, not once a
+		// question asked of it: this runs over every command there is.
 		var hits []hit
+		words, anyWhole := strings.Fields(q), false
 		for _, it := range src {
 			if it.header {
 				continue
 			}
-			s := 2 * score(q, strings.ToLower(it.title))
-			if k := score(q, strings.ToLower(it.title+" "+it.desc+" "+it.keywords)); k > s {
+			text := strings.ToLower(it.title + " " + it.desc + " " + it.keywords)
+			named := score(q, strings.ToLower(it.title))
+			s := 2 * named
+			if k := score(q, text); k > s {
 				s = k
 			}
-			if s > 0 {
-				hits = append(hits, hit{it, s})
+			if s <= 0 {
+				continue
 			}
+			whole := !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(text, w) })
+			anyWhole = anyWhole || whole
+			hits = append(hits, hit{it, s, whole, named > 0})
 		}
-		// What's typed has to be there: rows with every word of it, in their
-		// name, what they do or what they run. Only if none has it do letters
-		// in the right order count, and then only in a row's name (awsec for
-		// aws/ecs): in a command's whole text, almost any word's letters are.
-		exact := slices.DeleteFunc(slices.Clone(hits), func(h hit) bool { return !containsWords(h.it, q) })
-		if len(exact) == 0 {
-			exact = slices.DeleteFunc(slices.Clone(hits), func(h hit) bool { return score(q, strings.ToLower(h.it.title)) <= 0 })
-		}
-		hits = exact
+		// What's typed has to be there: rows with every word of it. Only if
+		// none has it do letters in the right order count, and then only in a
+		// row's name (awsec for aws/ecs): in a command's whole text, almost
+		// any word's letters are.
+		hits = slices.DeleteFunc(hits, func(h hit) bool { return anyWhole && !h.whole || !anyWhole && !h.named })
 		// Best first, and what can be used here before what's greyed out.
 		sort.SliceStable(hits, func(i, j int) bool {
 			if hits[i].it.disabled != hits[j].it.disabled {
@@ -193,17 +199,6 @@ func (p *picker) refilter() {
 			break
 		}
 	}
-}
-
-// containsWords says whether every word of a lowercase query is in the row.
-func containsWords(it item, q string) bool {
-	text := strings.ToLower(it.title + " " + it.desc + " " + it.keywords)
-	for _, w := range strings.Fields(q) {
-		if !strings.Contains(text, w) {
-			return false
-		}
-	}
-	return true
 }
 
 // isTree says whether a list's indented rows belong to the row above them, rather
