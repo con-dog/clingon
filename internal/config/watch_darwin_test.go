@@ -2,7 +2,9 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -99,4 +101,46 @@ func TestWatchClosedHoldsNothing(t *testing.T) {
 	if after := open(); after > before+2 {
 		t.Errorf("%d descriptors open before, %d after: closed watches still hold some", before, after)
 	}
+}
+
+// Each window's ready and changed files are its own, named for its
+// launcher: two windows never share one. Those of a window that's gone are
+// swept; a running one's are left.
+func TestSessionFilesAreEachWindowsOwn(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	if SessionFile("ready", 1) == SessionFile("ready", 2) || SessionFile("ready", 1) == SessionFile("changed", 1) {
+		t.Fatal("two windows, or a window's two files, share a name")
+	}
+	gone := exec.Command("/usr/bin/true")
+	if err := gone.Run(); err != nil {
+		t.Skip(err)
+	}
+	dead, live := gone.Process.Pid, os.Getpid()
+	var files []string
+	for _, pid := range []int{dead, live} {
+		files = append(files, SessionFile("ready", pid), SessionFile("ready", pid)+"-heard", SessionFile("changed", pid))
+	}
+	other := filepath.Join(filepath.Dir(files[0]), "clingon-"+strconv.Itoa(dead)) // a socket: not this sweep's
+	for _, f := range append(files, other) {
+		if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	SweepSessionFiles()
+	for i, f := range files {
+		if _, err := os.Stat(f); (err == nil) != (i >= 3) {
+			t.Errorf("%s: there=%v, want the gone window's swept and the running one's kept", filepath.Base(f), err == nil)
+		}
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Error("only ready and changed files are swept")
+	}
+	w, err := WatchChanged(SessionFile("changed", live))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
 }

@@ -209,11 +209,21 @@ func launch() error {
 	if !isSelf("clingon") {
 		env = append(env, "PATH="+filepath.Dir(self)+string(os.PathListSeparator)+os.Getenv("PATH"), "CLINGON_BIN="+filepath.Dir(self))
 	}
-	env = append(env, "CLINGON_CHANGED="+config.ChangedFile()) // where tmux and the shell say what's changed, for the menu
-	_ = os.MkdirAll(config.Dir(), 0o755)
-	_ = os.WriteFile(config.ReadyFile(), nil, 0o600)       // no prompts yet, this session
-	env = append(env, "CLINGON_READY="+config.ReadyFile()) // where the shell says its prompt is up
-	flushSaid()                                            // tmux takes over the terminal
+	// This window's own two files, named for this process as its tmux socket
+	// is: another clingon window open at the same time has its own, so a
+	// prompt coming up there is never taken for a command finishing here.
+	changedFile, readyFile := config.SessionFile("changed", os.Getpid()), config.SessionFile("ready", os.Getpid())
+	_ = os.MkdirAll(filepath.Dir(readyFile), 0o700)
+	config.SweepSessionFiles()                        // of windows that are gone
+	_ = os.WriteFile(readyFile, nil, 0o600)           // no prompts yet, this session
+	env = append(env, "CLINGON_CHANGED="+changedFile) // where tmux and the shell say what's changed, for the menu
+	env = append(env, "CLINGON_READY="+readyFile)     // where the shell says its prompt is up
+	defer func() {
+		for _, f := range []string{changedFile, readyFile, readyFile + heardSuffix} {
+			_ = os.Remove(f)
+		}
+	}()
+	flushSaid() // tmux takes over the terminal
 	err = tmux.Launch(self, env, filepath.Join(config.StateDir(), "run"), ready)
 	if err != nil {
 		// Only now, so starting up never waits on it: an old tmux explains
@@ -226,6 +236,20 @@ func launch() error {
 		closeWindow()
 	}
 	return err
+}
+
+// heardSuffix, after a window's ready file's name, names the file `clingon
+// heard` marks the shell's output in (see shellStill).
+const heardSuffix = "-heard"
+
+// sessionFile is one of this window's own files, as the launcher named it in
+// the environment of both panes (config.SessionFile); or, with none named
+// (the menu started by hand, outside a window), the one everything shares.
+func sessionFile(env, shared string) string {
+	if f := os.Getenv(env); f != "" {
+		return f
+	}
+	return shared
 }
 
 // stillFor is how long the shell's screen has to go without changing to be
@@ -250,8 +274,8 @@ func shellStill(c *tmux.Client, pane string) func(afterNext bool, over <-chan st
 		if err != nil {
 			return
 		}
-		file := filepath.Join(config.Dir(), "heard")
-		if err := os.MkdirAll(config.Dir(), 0o755); err != nil {
+		file := sessionFile("CLINGON_READY", config.ReadyFile()) + heardSuffix // this window's own, beside its ready file
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 			return
 		}
 		if err := os.WriteFile(file, nil, 0o600); err != nil {
@@ -334,7 +358,7 @@ func menu(args []string) error {
 		return err
 	}
 	defer c.Kill()
-	c.ReadyFile = config.ReadyFile()
+	c.ReadyFile = sessionFile("CLINGON_READY", config.ReadyFile())
 	go c.WaitForPrompt(*pane, 15*time.Second)
 	cfg, _, err := config.Load()
 	if err != nil {
@@ -343,7 +367,7 @@ func menu(args []string) error {
 	// The menu hears tmux and the shell say what's changed (focus, scrolling,
 	// the prompt drawn again) as they say it: no looking on a timer.
 	var changed func() bool
-	if w, err := config.WatchChanged(); err == nil {
+	if w, err := config.WatchChanged(sessionFile("CLINGON_CHANGED", config.ChangedFile())); err == nil {
 		defer w.Close()
 		changed = w.Wait
 	}

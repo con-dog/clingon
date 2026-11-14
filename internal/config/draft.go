@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 )
 
 // A draft is the pack form's work, kept when you leave the form until the
@@ -187,22 +189,51 @@ const FormIssuePrefix = "! "
 // ChangedFile is where tmux and clingon's shell say something the menu shows
 // has changed (focus moved, the shell scrolled or back at its prompt): each
 // appends a byte, and the menu, watching it, wakes. $CLINGON_CHANGED in
-// clingon's window.
+// clingon's window. This is the one used outside a window; each window has
+// its own (SessionFile).
 func ChangedFile() string { return filepath.Join(Dir(), "changed") }
 
 // ReadyFile is where clingon's shell says its prompt is up and waiting for a
 // line: it appends a byte each time ($CLINGON_READY, in its rc files). How
 // many bytes it holds is how many prompts there have been, so "the command
-// just sent has finished" is "it's grown since": heard, not looked for.
+// just sent has finished" is "it's grown since": heard, not looked for. Each
+// window has its own (SessionFile); this is the one used outside one.
 func ReadyFile() string { return filepath.Join(Dir(), "ready") }
 
-// WatchChanged starts watching ChangedFile, made first if it isn't there,
-// and empties it when it's grown: it's only ever written to wake the menu.
-func WatchChanged() (*Watch, error) {
-	if err := os.MkdirAll(Dir(), 0o755); err != nil {
+// SessionFile is one of a clingon window's own files: its ready, its
+// changed. Named for the launcher's pid, as its tmux socket is, beside where
+// that goes: two windows open at once must never share one, or a prompt
+// coming up in one would be taken, in the other, for its own command
+// finishing.
+func SessionFile(name string, pid int) string {
+	return filepath.Join(StateDir(), "run", name+"-"+strconv.Itoa(pid))
+}
+
+// SweepSessionFiles removes the files of windows that are gone: those whose
+// launcher's pid (in the name) is no longer running.
+func SweepSessionFiles() {
+	dir := filepath.Dir(SessionFile("", 0))
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		name, rest, ok := strings.Cut(e.Name(), "-")
+		if !ok || name != "ready" && name != "changed" {
+			continue
+		}
+		digits, _, _ := strings.Cut(rest, "-") // ready-123-heard is ready-123's
+		if pid, err := strconv.Atoi(digits); err == nil && pid > 0 && syscall.Kill(pid, 0) == syscall.ESRCH {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+}
+
+// WatchChanged starts watching a window's changed file (ChangedFile, or its
+// own), made first if it isn't there, and empties it when it's grown: it's
+// only ever written to wake the menu.
+func WatchChanged(file string) (*Watch, error) {
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(ChangedFile(), os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +241,7 @@ func WatchChanged() (*Watch, error) {
 		_ = f.Truncate(0)
 	}
 	_ = f.Close()
-	return WatchPath(ChangedFile())
+	return WatchPath(file)
 }
 
 // FormStatePrefix starts the line of the form's keys that says what your keys
