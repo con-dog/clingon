@@ -75,7 +75,8 @@ type aiRun struct {
 	turns    int           // replies so far
 	nudged   int           // times told to use its tools
 	waiting  bool          // for a reply
-	yourTurn bool          // stopped at a risky command's question, for you to answer
+	yourTurn bool          // stopped at a question that's yours to answer: a risky command's, or whether to trust a folder's commands
+	trust    bool          // the question's the folder's: whether to use its own commands
 
 	question string // a question for you, with its answers
 	answers  []string
@@ -360,7 +361,11 @@ func (m *Model) stopAI(why string) tea.Cmd {
 		return nil
 	}
 	a.cancel()
-	a.waiting, a.keys, a.calls, a.call, a.yourTurn, a.question, a.fill = false, nil, nil, nil, false, "", nil
+	a.waiting, a.keys, a.calls, a.call, a.yourTurn, a.trust, a.question, a.fill = false, nil, nil, nil, false, false, "", nil
+	if a.waitOver != nil { // whoever's listening for the shell to go still stops: left asleep, it would take what a later run was waiting to hear
+		close(a.waitOver)
+		a.waitOver = nil
+	}
 	if why != "" {
 		a.err = why
 	}
@@ -617,6 +622,9 @@ func (m *Model) aiNext() tea.Cmd {
 		if m.mode != modeBrowse {
 			return m.aiFail("search works from the menu's lists: finish or leave what's open first (Escape or Left)")
 		}
+		if why := m.aiKeysElsewhere(); why != "" {
+			return m.aiFail(why)
+		}
 		if m.section != nil {
 			m.showRoot(m.section.Name)
 		}
@@ -632,6 +640,9 @@ func (m *Model) aiNext() tea.Cmd {
 			return m.aiFail(why)
 		}
 	case "ask":
+		if strings.TrimSpace(in.Question) == "" { // nothing to show or answer: it would wait for good
+			return m.aiFail("ask needs a question: say what you're asking the user.")
+		}
 		if len(in.Answers) == 0 {
 			in.Answers = []string{"Yes", "No"}
 		}
@@ -699,6 +710,13 @@ func (m *Model) formGone() bool {
 func (m *Model) aiTick() tea.Cmd {
 	a := m.ai
 	if a.yourTurn {
+		return nil
+	}
+	// A question that's yours is up, and not from a key just pressed (a
+	// recipe has come to a risky step, say): it isn't the AI's to answer, or
+	// even to move the cursor in.
+	if m.aiYours() {
+		m.aiHandOver()
 		return nil
 	}
 	// A move whose keys were going to the pack form, and the form's closed
@@ -791,11 +809,36 @@ func (m *Model) aiTick() tea.Cmd {
 		return cmd
 	}
 	a.typing = false
-	if m.mode == modeConfirm { // a risky command: the user answers
-		a.keys, a.fill, a.yourTurn = nil, nil, true
+	if m.aiYours() { // a risky command, or a folder's own commands to trust: the user answers
+		m.aiHandOver()
 		return cmd
 	}
 	return tea.Batch(cmd, m.aiTickCmd())
+}
+
+// aiKeysElsewhere says why search and run, which work in the menu, can't be
+// used now: the AI's keys aren't going to the menu but to the pack form, or
+// to a program still running in the shell, and the keys these moves press
+// would land there (an Enter on whatever the form's cursor is on, say).
+func (m *Model) aiKeysElsewhere() string {
+	switch {
+	case m.formOpen():
+		return "The pack form is open and has your keys: leave it first (Escape), then use this."
+	case m.ai.inShell && m.busy != "":
+		return m.busy + " is still running in the shell and has your keys: end it first, then use this."
+	}
+	return ""
+}
+
+// aiYours says whether the menu's asking something only you answer: whether
+// a risky command runs, or whether this folder's own commands are trusted.
+func (m *Model) aiYours() bool { return m.mode == modeConfirm || m.mode == modeTrust }
+
+// aiHandOver stops the AI at a question that's yours: its keys are dropped,
+// and aiAfterKey carries on once you've answered.
+func (m *Model) aiHandOver() {
+	a := m.ai
+	a.keys, a.fill, a.yourTurn, a.trust = nil, nil, true, m.mode == modeTrust
 }
 
 // aiShellKeys are the keys the AI presses in a program running in the shell
@@ -917,8 +960,7 @@ func (m *Model) aiUserKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 					a.shellOK = true
 					return m.aiTickCmd(), true
 				}
-				a.keys = nil
-				return m.aiResult("The user said no: nothing was typed into the running program."), true
+				return m.aiFail("The user said no: nothing was typed into the running program."), true // nor is what it planned to do after
 			}
 			return m.aiResult("The user answered: " + choice), true
 		case "esc":
@@ -941,7 +983,7 @@ func (m *Model) aiPanelKey(msg tea.KeyPressMsg) tea.Cmd {
 	case a.done && keyName(msg) != "esc":
 		return nil
 	case a.yourTurn:
-		m.hintWhile("Answer the risky command's question in the menu: tab to it", func() bool { return m.ai != nil && m.ai.yourTurn })
+		m.hintWhile("Answer the question in the menu: tab to it", func() bool { return m.ai != nil && m.ai.yourTurn })
 		return nil
 	}
 	cmd, _ := m.aiUserKey(msg)
@@ -960,12 +1002,19 @@ func (m *Model) formOpen() bool {
 // aiAfterKey carries on once you've answered a risky command's question.
 func (m *Model) aiAfterKey() tea.Cmd {
 	a := m.ai
-	if a == nil || !a.yourTurn || m.mode == modeConfirm {
+	if a == nil || !a.yourTurn || m.aiYours() {
 		return nil
 	}
 	a.yourTurn = false
+	if a.trust { // the folder's own commands: in the menu now, or not
+		a.trust = false
+		if m.project != nil && m.project.Trusted {
+			return m.aiResult("The user said yes: this folder's own commands are in the menu now.")
+		}
+		return m.aiFail("The user said no: this folder's own commands stay out of the menu.")
+	}
 	if m.busy == "" {
-		return m.aiResult("The user went back without running it.")
+		return m.aiFail("The user went back without running it.") // what it planned to do after it goes too
 	}
 	a.note = "The user said Yes, and it ran: its output is in the shell's last lines." // once it's finished
 	return m.aiTickCmd()
@@ -1193,7 +1242,11 @@ func (m *Model) aiPanel(w, rows int) []string {
 			}
 		}
 	case a.yourTurn:
-		right = append([]string{heading(warnStyle, "Your turn")}, wrap(dimStyle, "A risky command is waiting for your answer, in the menu.")...)
+		waiting := "A risky command is waiting for your answer, in the menu."
+		if a.trust {
+			waiting = "Whether to use this folder's own commands is waiting for your answer, in the menu."
+		}
+		right = append([]string{heading(warnStyle, "Your turn")}, wrap(dimStyle, waiting)...)
 	default:
 		// Nothing needs you: what it's doing, as you asked for it, where a
 		// question would be. (An empty half with one faint line read as broken.)
@@ -1397,6 +1450,9 @@ func (m *Model) aiRunCommand(name string, blanks map[string]string) string {
 	a := m.ai
 	if m.mode != modeBrowse {
 		return "run works from the menu's lists: finish or leave what's open first (Escape or Left)"
+	}
+	if why := m.aiKeysElsewhere(); why != "" {
+		return why
 	}
 	name = strings.TrimSpace(name)
 	pack, cmdName, inPack := strings.Cut(name, "›")

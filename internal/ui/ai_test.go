@@ -870,6 +870,20 @@ func TestAILeavesThePacksDefaultAlone(t *testing.T) {
 	}
 }
 
+// An ask with no question has nothing to show or answer: it's told so and
+// carries on, rather than waiting for good.
+func TestAIAskNeedsAQuestion(t *testing.T) {
+	f := &fakeModel{moves: [][2]string{
+		{"ask", `{"why":"Asking","question":"  "}`},
+		{"done", `{"why":"Done","headline":"ok","summary":"ok"}`},
+	}}
+	m, _, _ := aiMenu(t, f, config.Command{Name: "A", Cmd: "a"})
+	run(t, m, m.startAI("t"), func() bool { return m.ai != nil && m.ai.done })
+	if m.ai.question != "" || len(f.got) < 2 || !strings.Contains(f.got[1], "ask needs a question") {
+		t.Errorf("question %q, told %q", m.ai.question, f.got)
+	}
+}
+
 // What the AI types into a blank never runs, wherever the blank sits: each
 // value here tries to make a file, in each kind of place a pack puts a blank
 // (bare, quoted, in a $(command), in arithmetic), and the command's then run
@@ -926,6 +940,82 @@ func TestAIBlanksNeverRunInARealShell(t *testing.T) {
 		raw := map[string]string{"minutes": v}
 		if why := aiQuote(c, raw, shellValues(c, raw), shellValues(c, raw)); (why == "") != ok {
 			t.Errorf("minutes %q: %q", v, why)
+		}
+	}
+}
+
+// Whether to trust a folder's own commands is yours to answer, as a risky
+// command's question is: the AI can open the question, but the keys it meant
+// to press after are dropped, and it carries on once you've answered.
+func TestAILeavesTheTrustQuestionToYou(t *testing.T) {
+	f := &fakeModel{moves: [][2]string{
+		{"press", `{"why":"Trusting it","keys":["Enter","Down","Down","Down","Enter"]}`},
+		{"done", `{"why":"Done","headline":"ok","summary":"ok"}`},
+	}}
+	m, _, _ := aiMenu(t, f, config.Command{Name: "A", Cmd: "a"})
+	repo := t.TempDir()
+	writeProject(t, repo, "# Prod\n\n## Ship it\n\n```sh\n./ship.sh\n```\n")
+	m.opt.Dir, m.opt.Project = func() string { return repo }, config.FindProject
+	m.showRoot("")
+	if it := m.list.selected(); it == nil || it.title != "Use this folder's commands?" {
+		t.Fatalf("an untrusted project asks first, got %+v", it)
+	}
+	run(t, m, m.startAI("t"), func() bool { return m.ai != nil && (m.ai.yourTurn || m.ai.done) })
+	a := m.ai
+	if m.mode != modeTrust || !a.yourTurn || !a.trust || len(a.keys) != 0 || m.yes || m.project.Trusted {
+		t.Fatalf("the question should be up and yours: mode %v, yourTurn %v, keys %d, yes %v, trusted %v", m.mode, a.yourTurn, len(a.keys), m.yes, m.project.Trusted)
+	}
+	if cmd := m.aiTick(); cmd != nil || m.mode != modeTrust || m.yes {
+		t.Error("nothing more of the AI's is pressed while it's your turn")
+	}
+	if panel := ansi.Strip(strings.Join(m.aiPanel(100, 12), "\n")); !strings.Contains(panel, "this folder's own commands") {
+		t.Errorf("the panel should say it's your turn:\n%s", panel)
+	}
+	// You say yes: it's told, and carries on.
+	var next tea.Cmd
+	for i := 0; i < 50 && m.mode == modeTrust; i++ {
+		_ = m.view() // Yes only opens once every command's been on screen
+		k := tea.KeyPressMsg{Code: tea.KeyDown}
+		if m.yes {
+			k = tea.KeyPressMsg{Code: tea.KeyEnter}
+		}
+		_, next = m.Update(k)
+	}
+	if m.mode == modeTrust || !m.project.Trusted || m.ai.yourTurn {
+		t.Fatalf("answered yes: mode %v, trusted %v, yourTurn %v", m.mode, m.project.Trusted, m.ai.yourTurn)
+	}
+	run(t, m, next, func() bool { return m.ai != nil && m.ai.done })
+	if last := f.got[len(f.got)-1]; !strings.Contains(last, "The user said yes") {
+		t.Errorf("it should be told you said yes: %q", last)
+	}
+}
+
+// search and run work in the menu. With the pack form open, or a program
+// still running in the shell, the AI's keys go there instead: the moves are
+// turned away, rather than changing the menu and pressing their keys into
+// whatever has them.
+func TestAISearchAndRunNeedTheMenu(t *testing.T) {
+	for name, there := range map[string]func(m *Model){
+		"the form":  func(m *Model) { m.busy, m.editing = "Edit a pack", "work · esc when done" },
+		"a program": func(m *Model) { m.busy, m.ai.inShell = "less", true },
+	} {
+		f := &fakeModel{moves: [][2]string{
+			{"search", `{"why":"Finding it","title":"A","text":"a"}`},
+			{"run", `{"why":"Running it","command":"A"}`},
+			{"done", `{"why":"Done","headline":"ok","summary":"ok"}`},
+		}}
+		m, _, sent := aiMenu(t, f, config.Command{Name: "A", Cmd: "a"})
+		var pressed []string
+		m.opt.ShellKey = func(name string, text bool) error { pressed = append(pressed, name); return nil }
+		m.opt.ShellScreen = func() string { return "" }
+		first := m.startAI("t")
+		there(m)
+		run(t, m, first, func() bool { return m.ai != nil && m.ai.done })
+		if len(pressed) != 0 || len(*sent) != 0 || m.list.filtering {
+			t.Errorf("%s has the keys: pressed %q, sent %q, filtering %v", name, pressed, *sent, m.list.filtering)
+		}
+		if told := strings.Join(f.got, "\n"); strings.Count(told, "has your keys") < 2 {
+			t.Errorf("%s: both moves should be turned away, saying why:\n%s", name, told)
 		}
 	}
 }

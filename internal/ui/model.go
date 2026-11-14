@@ -2123,6 +2123,10 @@ func (m *Model) accept(v string) tea.Cmd {
 			m.hint = "Say what it should do"
 			return nil
 		}
+		if m.ai != nil && !m.ai.done { // one at a time (the AI itself got here): a second would leave the first going, with nothing to stop it
+			m.hint = "The AI is already working on a task"
+			return nil
+		}
 		return m.startAI(task)
 	}
 	vals, shown := shellValues(c, j.vals), shellValues(c, j.vals)
