@@ -111,3 +111,48 @@ func TestHasKeyNeedsNoKeychain(t *testing.T) {
 		t.Error("the variable's a key")
 	}
 }
+
+// The key reaches curl in its config file, quoted so nothing in it can end
+// the line it's on; one that would is turned away before curl's run.
+func TestKeyStaysInsideItsHeader(t *testing.T) {
+	conf := curlConfig("https://example.com/a\"b", `sk"or\x`)
+	if !strings.Contains(conf, `header = "Authorization: Bearer sk\"or\\x"`+"\n") || !strings.Contains(conf, `url = "https://example.com/a\"b"`+"\n") {
+		t.Errorf("config:\n%s", conf)
+	}
+	if strings.Contains(conf, "noproxy") || !strings.Contains(curlConfig("http://127.0.0.1:9/x", "k"), "noproxy") {
+		t.Error("only a server on this machine skips the proxy")
+	}
+	c := &Client{Key: "sk-or\nheader = \"X-Evil: 1\"", Model: "x/y", Endpoint: "http://127.0.0.1:9"}
+	if _, err := c.Chat(context.Background(), nil, nil); err == nil || !strings.Contains(err.Error(), "doesn't look like") {
+		t.Errorf("a key with a line break: %v", err)
+	}
+}
+
+// A server that can't be reached is said plainly, and a cancelled chat stops
+// at once rather than trying again.
+func TestChatUnreachableAndCancelled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close() // nothing listens there now
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (&Client{Key: "k", Model: "x/y", Endpoint: url}).Chat(ctx, nil, nil); err != context.Canceled {
+		t.Errorf("cancelled: %v", err)
+	}
+	if code, _, err := post(context.Background(), url, "k", []byte("{}")); err == nil || !strings.HasPrefix(err.Error(), "OpenRouter: ") || strings.Contains(err.Error(), "curl: (") {
+		t.Errorf("unreachable: %d %v", code, err)
+	}
+}
+
+// A reply that isn't JSON is reported with its status, as it's said.
+func TestChatBadGateway(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(403)
+		_, _ = io.WriteString(w, "<html>blocked</html>\n")
+	}))
+	defer srv.Close()
+	_, err := (&Client{Key: "k", Model: "x/y", Endpoint: srv.URL}).Chat(context.Background(), nil, nil)
+	if err == nil || err.Error() != "OpenRouter: 403 Forbidden: <html>blocked</html>" {
+		t.Errorf("err %v", err)
+	}
+}

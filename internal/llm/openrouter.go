@@ -1,6 +1,7 @@
 // Package llm talks to language models through OpenRouter's chat API, which
 // serves every maker's models the same way: messages in, a reply (text and
-// tool calls) out. Plain HTTP, no SDK, to keep clingon small.
+// tool calls) out. No SDK, and the request itself goes through the curl macOS
+// ships (see post): Go's own HTTP and TLS would be a third of clingon's size.
 package llm
 
 import (
@@ -9,8 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
+	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,7 +28,6 @@ type Client struct {
 	Key, Model string
 	Effort     string // reasoning effort ("low", "medium", "high"); "" leaves it to the model
 	Endpoint   string // "" for OpenRouter's
-	HTTP       *http.Client
 }
 
 // Message is one turn of a chat.
@@ -90,6 +91,9 @@ func (c *Client) Chat(ctx context.Context, msgs []Message, tools []Tool) (Reply,
 	if c.Key == "" {
 		return Reply{}, errors.New("no OpenRouter key: add one with `clingon ai key`")
 	}
+	if strings.ContainsAny(c.Key, "\r\n") { // it's sent as a header, which a line break would end
+		return Reply{}, errors.New("that doesn't look like an OpenRouter key")
+	}
 	body := map[string]any{"model": c.Model, "messages": msgs, "max_tokens": 16000,
 		"usage": map[string]bool{"include": true}} // what it cost, cache reads and all
 	if len(tools) > 0 {
@@ -123,18 +127,14 @@ func (c *Client) Chat(ctx context.Context, msgs []Message, tools []Tool) (Reply,
 	}
 	var last error
 	for attempt := range 3 { // a busy or briefly failing provider gets another go
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
-		if err != nil {
-			return Reply{}, err
-		}
-		req.Header.Set("Authorization", "Bearer "+c.Key)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Title", "clingon")
-		reply, retry, err := c.send(req)
+		reply, retry, err := c.send(ctx, url, data)
 		if err == nil || !retry {
 			return reply, err
 		}
 		last = err
+		if attempt == 2 { // the last go: nothing to wait for
+			break
+		}
 		select {
 		case <-ctx.Done():
 			return Reply{}, ctx.Err()
@@ -144,19 +144,10 @@ func (c *Client) Chat(ctx context.Context, msgs []Message, tools []Tool) (Reply,
 	return Reply{}, last
 }
 
-func (c *Client) send(req *http.Request) (reply Reply, retry bool, err error) {
-	hc := c.HTTP
-	if hc == nil {
-		hc = &http.Client{Timeout: 5 * time.Minute}
-	}
-	resp, err := hc.Do(req)
+func (c *Client) send(ctx context.Context, url string, data []byte) (reply Reply, retry bool, err error) {
+	code, raw, err := post(ctx, url, c.Key, data)
 	if err != nil {
-		return Reply{}, req.Context().Err() == nil, err
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
-	if err != nil {
-		return Reply{}, true, err
+		return Reply{}, ctx.Err() == nil, err
 	}
 	var out struct {
 		Choices []struct {
@@ -170,14 +161,14 @@ func (c *Client) send(req *http.Request) (reply Reply, retry bool, err error) {
 		} `json:"error"`
 	}
 	if jerr := json.Unmarshal(raw, &out); jerr != nil {
-		return Reply{}, resp.StatusCode >= 500, fmt.Errorf("OpenRouter: %s: %s", resp.Status, strings.TrimSpace(string(raw[:min(len(raw), 300)])))
+		return Reply{}, code >= 500, fmt.Errorf("OpenRouter: %s: %s", status(code), strings.TrimSpace(string(raw[:min(len(raw), 300)])))
 	}
-	if out.Error != nil || resp.StatusCode >= 400 {
-		msg := resp.Status
+	if out.Error != nil || code >= 400 {
+		msg := status(code)
 		if out.Error != nil {
 			msg = out.Error.Message
 		}
-		retry := resp.StatusCode == 429 || resp.StatusCode >= 500
+		retry := code == 429 || code >= 500
 		return Reply{}, retry, fmt.Errorf("OpenRouter: %s", msg)
 	}
 	if len(out.Choices) == 0 {
@@ -185,6 +176,116 @@ func (c *Client) send(req *http.Request) (reply Reply, retry bool, err error) {
 	}
 	ch := out.Choices[0]
 	return Reply{Message: ch.Message, Finish: ch.FinishReason, Usage: out.Usage}, false, nil
+}
+
+// curl is the one macOS ships, by its full path: always there, and never
+// another that happens to be on PATH.
+const curl = "/usr/bin/curl"
+
+// maxReply is the most of a reply that's read.
+const maxReply = 32 << 20
+
+// post sends body to url as JSON with key as the bearer token, and returns
+// the HTTP status and the reply's body. curl does the sending. The key goes
+// to it in a config file down a pipe of its own, never on its command line,
+// so other programs listing what's running never see it; the body goes on
+// its input. Cancelling ctx stops it. The key must be one line (Chat sees
+// to that).
+func post(ctx context.Context, url, key string, body []byte) (code int, reply []byte, err error) {
+	conf, feed, err := os.Pipe()
+	if err != nil {
+		return 0, nil, err
+	}
+	// --disable (which must come first) leaves the user's own ~/.curlrc out
+	// of it; ExtraFiles' first file is the child's descriptor 3.
+	cmd := exec.CommandContext(ctx, curl, "--disable", "--config", "/dev/fd/3")
+	cmd.ExtraFiles = []*os.File{conf}
+	cmd.Stdin = bytes.NewReader(body)
+	out, errOut := &capped{}, &bytes.Buffer{}
+	cmd.Stdout, cmd.Stderr = out, errOut
+	err = cmd.Start()
+	conf.Close()
+	if err != nil {
+		feed.Close()
+		return 0, nil, err
+	}
+	_, _ = feed.WriteString(curlConfig(url, key))
+	feed.Close()
+	err = cmd.Wait()
+	switch {
+	case ctx.Err() != nil:
+		return 0, nil, ctx.Err()
+	case out.over:
+		return 0, nil, errors.New("OpenRouter: the reply was too big to read")
+	case err != nil:
+		// "curl: (6) Could not resolve host: openrouter.ai", without the start.
+		msg := strings.TrimSpace(errOut.String())
+		if _, after, ok := strings.Cut(msg, ") "); ok && strings.HasPrefix(msg, "curl: (") {
+			msg = after
+		}
+		if msg == "" {
+			msg = err.Error()
+		}
+		return 0, nil, errors.New("OpenRouter: " + msg)
+	}
+	// The status follows the body, on a line of its own (write-out, below).
+	raw := out.Bytes()
+	at := bytes.LastIndexByte(raw, '\n')
+	if at < 0 {
+		return 0, nil, errors.New("OpenRouter: no reply")
+	}
+	code, err = strconv.Atoi(string(raw[at+1:]))
+	if err != nil {
+		return 0, nil, errors.New("OpenRouter: no reply")
+	}
+	return code, raw[:at], nil
+}
+
+// curlConfig is the request as a curl config file: one option a line, as
+// its long name without the dashes.
+func curlConfig(url, key string) string {
+	quote := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace
+	var b strings.Builder
+	b.WriteString("silent\nshow-error\ngloboff\ncompressed\nmax-time = 300\n") // five minutes, the longest a reply's waited for
+	b.WriteString("url = \"" + quote(url) + "\"\n")
+	b.WriteString("header = \"Authorization: Bearer " + quote(key) + "\"\n")
+	b.WriteString("header = \"Content-Type: application/json\"\n")
+	b.WriteString("header = \"X-Title: clingon\"\n")
+	b.WriteString("header = \"Expect:\"\n") // send the body at once: don't ask first and wait a second for the go-ahead
+	b.WriteString("data-binary = \"@-\"\n")
+	b.WriteString("write-out = \"\\n%{http_code}\"\n")
+	// A server on this machine is never reached through a proxy, whatever
+	// the environment says.
+	for _, local := range []string{"http://127.0.0.1", "http://localhost", "http://[::1]"} {
+		if strings.HasPrefix(url, local) {
+			b.WriteString("noproxy = \"*\"\n")
+		}
+	}
+	return b.String()
+}
+
+// capped is a buffer that takes maxReply bytes and no more.
+type capped struct {
+	bytes.Buffer
+	over bool
+}
+
+func (c *capped) Write(p []byte) (int, error) {
+	if c.Len()+len(p) > maxReply {
+		c.over = true
+		return 0, errors.New("too big")
+	}
+	return c.Buffer.Write(p)
+}
+
+// status is an HTTP status as it's said: "429 Too Many Requests".
+func status(code int) string {
+	text := map[int]string{
+		400: "Bad Request", 401: "Unauthorized", 402: "Payment Required", 403: "Forbidden",
+		404: "Not Found", 408: "Request Timeout", 413: "Payload Too Large", 429: "Too Many Requests",
+		500: "Internal Server Error", 502: "Bad Gateway", 503: "Service Unavailable", 504: "Gateway Timeout",
+	}[code]
+	return strings.TrimSpace(strconv.Itoa(code) + " " + text)
 }
 
 // ShortName is a model's name for a chip: "anthropic/claude-sonnet-5.5"
