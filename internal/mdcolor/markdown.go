@@ -7,13 +7,11 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-
-	"go.yaml.in/yaml/v3"
 )
 
 // Markdown colours a pack file for the terminal: it applies the rules in
-// markdown.yaml in order, a later match winning, regions carrying over lines,
-// in colours.txt's colours. It only adds colour: the text comes through as
+// rules.go in order, a later match winning, regions carrying over lines, in
+// colours.txt's colours. It only adds colour: the text comes through as
 // it is.
 func Markdown(src string) string {
 	syn := loadSyntax()
@@ -40,9 +38,6 @@ func Markdown(src string) string {
 	}
 	return out.String()
 }
-
-//go:embed markdown.yaml
-var rulesFile string
 
 //go:embed colours.txt
 var coloursFile string
@@ -72,12 +67,16 @@ var (
 func loadSyntax() *syntax {
 	synOnce.Do(func() {
 		syn = &syntax{colours: map[string]string{}}
-		data := []byte(rulesFile)
-		var doc struct {
-			Rules []map[string]yaml.Node `yaml:"rules"`
+		compile := func(rules []rule) (out []synPattern) {
+			for _, r := range rules {
+				out = append(out, synPattern{r.group, regexp.MustCompile(r.pattern)})
+			}
+			return out
 		}
-		_ = yaml.Unmarshal(data, &doc)
-		syn.patterns, syn.regions = parseRules(doc.Rules)
+		syn.patterns = compile(packRules)
+		for _, r := range packRegions {
+			syn.regions = append(syn.regions, &synRegion{r.group, regexp.MustCompile(r.start), regexp.MustCompile(r.end), compile(r.rules)})
+		}
 		for _, m := range colorLinkRe.FindAllStringSubmatch(coloursFile, -1) {
 			syn.colours[m[1]] = sgrFor(m[2])
 		}
@@ -117,28 +116,6 @@ func (s *syntax) colour(group string) string {
 		g = g[:i]
 	}
 	return ""
-}
-
-func parseRules(rules []map[string]yaml.Node) (pats []synPattern, regs []*synRegion) {
-	for _, r := range rules {
-		for group, n := range r {
-			if n.Kind == yaml.ScalarNode {
-				pats = append(pats, synPattern{group, regexp.MustCompile(n.Value)})
-				continue
-			}
-			var reg struct {
-				Start string                 `yaml:"start"`
-				End   string                 `yaml:"end"`
-				Rules []map[string]yaml.Node `yaml:"rules"`
-			}
-			if err := n.Decode(&reg); err != nil {
-				continue
-			}
-			inner, _ := parseRules(reg.Rules)
-			regs = append(regs, &synRegion{group: group, start: regexp.MustCompile(reg.Start), end: regexp.MustCompile(reg.End), patterns: inner})
-		}
-	}
-	return pats, regs
 }
 
 // paintLine fills cells with each byte's group and says which region, if

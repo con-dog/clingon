@@ -16,7 +16,7 @@ color-link constant.string "180"
 color-link constant.number "180"
 color-link constant.bool "180"
 color-link error "204"
-# Packs (markdown.yaml): the menu's colours for what each line is.
+# Packs (rules.go): the menu's colours for what each line is.
 color-link special.heading "bold 99"
 color-link special.hash "60"
 color-link special.blank "117"

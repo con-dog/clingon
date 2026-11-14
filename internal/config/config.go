@@ -2,11 +2,9 @@
 package config
 
 import (
-	"bytes"
 	_ "embed"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -18,7 +16,6 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/con-dog/clingon/internal/tmpl"
-	"go.yaml.in/yaml/v3"
 )
 
 // Starter and StarterInfo are the example pack `clingon pack create` writes: a
@@ -32,7 +29,7 @@ var (
 
 // Config is packs put together: what the menu shows.
 type Config struct {
-	Sections []Section `yaml:"sections"`
+	Sections []Section
 }
 
 // PackInfoFile says what a pack is called, where the menu shows it and how it
@@ -41,15 +38,15 @@ const PackInfoFile = "_pack.md"
 
 // packInfo is what's in a _pack.md (and for built-in packs, what clingon says of them).
 type packInfo struct {
-	Name        string   `yaml:"name"`        // what the menu calls the pack; from its folder if unset
-	Description string   `yaml:"description"` // shown by `clingon pack`
-	Default     bool     `yaml:"default"`     // installed until the user says otherwise
-	Requires    []string `yaml:"requires"`    // tools `clingon doctor` looks for
-	Icon        string   `yaml:"icon"`
-	Logo        string   `yaml:"logo"`
-	Color       string   `yaml:"color"`
-	Category    string   `yaml:"category"`
-	Section     string   `yaml:"-"` // as menu: names it: work-tools, for Work tools
+	Name        string   // what the menu calls the pack; from its folder if unset
+	Description string   // shown by `clingon pack`
+	Default     bool     // installed until the user says otherwise
+	Requires    []string // tools `clingon doctor` looks for
+	Icon        string
+	Logo        string
+	Color       string
+	Category    string
+	Section     string // as menu: names it: work-tools, for Work tools
 }
 
 // Categories are the main menu's headings clingon suggests, in order
@@ -67,23 +64,23 @@ const DefaultIcon = "•"
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 type Section struct {
-	Name     string    `yaml:"name"`
-	Icon     string    `yaml:"icon"`  // one glyph shown before the name; DefaultIcon if unset
-	Logo     string    `yaml:"logo"`  // a brand logo in clingon's font, by name (see Logos); wins over Icon
-	Color    string    `yaml:"color"` // the icon's colour, #rrggbb; grey if unset
-	Category string    `yaml:"category"`
-	Desc     string    `yaml:"description"` // what the pack's for, under it in the menu's info pane
-	Groups   []Group   `yaml:"groups"`
-	Commands []Command `yaml:"commands"` // ungrouped commands, shown first
-	Needs    []string  `yaml:"-"`        // tools its pack requires, checked when the menu shows it
+	Name     string
+	Icon     string // one glyph shown before the name; DefaultIcon if unset
+	Logo     string // a brand logo in clingon's font, by name (see Logos); wins over Icon
+	Color    string // the icon's colour, #rrggbb; grey if unset
+	Category string
+	Desc     string // what the pack's for, under it in the menu's info pane
+	Groups   []Group
+	Commands []Command // ungrouped commands, shown first
+	Needs    []string  // tools its pack requires, checked when the menu shows it
 }
 
 type Group struct {
-	Name        string    `yaml:"name"`
-	Description string    `yaml:"description"` // what's in it, shown when you pick it as part of a pack
-	Requires    []string  `yaml:"requires"`    // hidden unless all of these are on PATH
-	When        []string  `yaml:"when"`        // its commands' when, unless they have their own
-	Commands    []Command `yaml:"commands"`
+	Name        string
+	Description string   // what's in it, shown when you pick it as part of a pack
+	Requires    []string // hidden unless all of these are on PATH
+	When        []string // its commands' when, unless they have their own
+	Commands    []Command
 }
 
 // Risk levels. Warn: asks No/Yes before it runs (it changes or stops
@@ -95,54 +92,44 @@ const (
 )
 
 type Command struct {
-	Name     string   `yaml:"name"`
-	ID       string   `yaml:"id"` // what recipes call it, for good: see CommandID
-	Cmd      string   `yaml:"cmd"`
-	Desc     string   `yaml:"desc"`
-	Risk     string   `yaml:"risk"`     // "", RiskWarn or RiskDanger: how hard it is to run by mistake
-	Requires []string `yaml:"requires"` // hidden unless all of these are on PATH
-	When     []string `yaml:"when"`     // greyed out unless one of these files is here or in a folder above (./x: here only)
-	Args     []Arg    `yaml:"args"`
-	Disabled string   `yaml:"-"` // why it can't be used right now: shown greyed out
-	Editor   bool     `yaml:"-"` // opens an editor in the shell: focus goes there while it's open
-	Source   string   `yaml:"-"` // the pack file it's from: with its heading, what a recipe links to
+	Name     string
+	ID       string // what recipes call it, for good: see CommandID
+	Cmd      string
+	Desc     string
+	Risk     string   // "", RiskWarn or RiskDanger: how hard it is to run by mistake
+	Requires []string // hidden unless all of these are on PATH
+	When     []string // greyed out unless one of these files is here or in a folder above (./x: here only)
+	Args     []Arg
+	Disabled string // why it can't be used right now: shown greyed out
+	Editor   bool   // opens an editor in the shell: focus goes there while it's open
+	Source   string // the pack file it's from: with its heading, what a recipe links to
 }
 
 // Arg fills one <name> placeholder in a command.
 type Arg struct {
-	AtLeastOne  bool     `yaml:"-"` // a checklist that needs something ticked before it can go on
-	CountAs     string   `yaml:"-"` // a checklist's description counts these once there are too many to name, like "pack"
-	Name        string   `yaml:"name"`
-	Type        string   `yaml:"type"` // text | choose | flags | secret; inferred when empty
-	Prompt      string   `yaml:"prompt"`
-	Desc        string   `yaml:"desc"` // a sentence added to the description once filled; <name> is the value
-	Default     string   `yaml:"default"`
-	Placeholder string   `yaml:"placeholder"`
-	Optional    bool     `yaml:"optional"`
-	Options     []Option `yaml:"options"`
-	Join        *string  `yaml:"join"`    // separator for flags, default " "
-	Quote       bool     `yaml:"quote"`   // shell-quote the value, for free text that may hold quotes or spaces
-	Pattern     string   `yaml:"pattern"` // a regexp typed values must match
-	IconFrom    string   `yaml:"-"`       // its choices show the logo named by this earlier blank's answer
+	AtLeastOne  bool   // a checklist that needs something ticked before it can go on
+	CountAs     string // a checklist's description counts these once there are too many to name, like "pack"
+	Name        string
+	Type        string // text | choose | flags | secret; inferred when empty
+	Prompt      string
+	Desc        string // a sentence added to the description once filled; <name> is the value
+	Default     string
+	Placeholder string
+	Optional    bool
+	Options     []Option
+	Join        *string // separator for flags, default " "
+	Quote       bool    // shell-quote the value, for free text that may hold quotes or spaces
+	Pattern     string  // a regexp typed values must match
+	IconFrom    string  // its choices show the logo named by this earlier blank's answer
 }
 
-// Option is a choice: in a pack, a ( ) or [ ] line; in a test's YAML, a plain
-// string or {value, label}.
+// Option is a choice: in a pack, a ( ) or [ ] line.
 type Option struct {
-	Value  string `yaml:"value"`
-	Label  string `yaml:"label"`
-	Indent bool   `yaml:"-"` // drawn under the option above it, as part of it
-	Icon   string `yaml:"-"` // a glyph shown before it, like a logo
-	Color  string `yaml:"-"` // its icon's colour, #rrggbb
-}
-
-func (o *Option) UnmarshalYAML(n *yaml.Node) error {
-	if n.Kind == yaml.ScalarNode {
-		o.Value = n.Value
-		return nil
-	}
-	type plain Option
-	return n.Decode((*plain)(o))
+	Value  string
+	Label  string
+	Indent bool   // drawn under the option above it, as part of it
+	Icon   string // a glyph shown before it, like a logo
+	Color  string // its icon's colour, #rrggbb
 }
 
 // Kind resolves the arg type, inferring it from options when unset.
@@ -297,17 +284,6 @@ func newPackInfo(title string) []byte {
 type parsedFile struct {
 	info  *packInfo
 	group *Group
-}
-
-// decodeStrict reads YAML into v, refusing fields it doesn't know. (Tests
-// write whole configs down this way.)
-func decodeStrict(name string, data []byte, v any) error {
-	dec := yaml.NewDecoder(bytes.NewReader(data))
-	dec.KnownFields(true)
-	if err := dec.Decode(v); err != nil && err != io.EOF {
-		return fmt.Errorf("%s: %w", name, err)
-	}
-	return nil
 }
 
 // assemble puts a pack's files together as the one menu item they make, called

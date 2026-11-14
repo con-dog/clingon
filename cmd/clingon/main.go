@@ -66,12 +66,6 @@ func main() {
 		}
 	}
 	switch cmd {
-	case "": // the launcher lives as long as the session, so this finishes
-		go func() { _ = config.WriteAvailable() }()
-	case "pack", "packs":
-		_ = config.WriteAvailable()
-	}
-	switch cmd {
 	case "":
 		err = launch()
 	case "menu":

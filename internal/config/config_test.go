@@ -111,25 +111,12 @@ func TestFirstRunInstallsDefaults(t *testing.T) {
 }
 
 func TestValidateCatchesMistakes(t *testing.T) {
-	src := `
-sections:
-  - name: S
-    commands:
-      - name: unused arg
-        cmd: echo hi
-        args: [{name: x}]
-      - name: choose without options
-        cmd: echo <x>
-        args: [{name: x, type: choose}]
-      - name: bad type
-        cmd: echo <x>
-        args: [{name: x, type: nope}]
-      - name: no cmd
-`
-	cfg, err := parse("t", []byte(src))
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := &Config{Sections: []Section{{Name: "S", Commands: []Command{
+		{Name: "unused arg", Cmd: "echo hi", Args: []Arg{{Name: "x"}}},
+		{Name: "choose without options", Cmd: "echo <x>", Args: []Arg{{Name: "x", Type: "choose"}}},
+		{Name: "bad type", Cmd: "echo <x>", Args: []Arg{{Name: "x", Type: "nope"}}},
+		{Name: "no cmd"},
+	}}}}
 	var msgs []string
 	for _, e := range cfg.Validate() {
 		msgs = append(msgs, e.Error())
@@ -241,27 +228,18 @@ func TestGroupsNeedTheirTools(t *testing.T) {
 }
 
 func TestCategories(t *testing.T) {
-	cfg, err := parse("t", []byte("sections:\n  - {name: A, category: system, commands: [{name: c, cmd: ls}]}\n  - {name: B, commands: [{name: c, cmd: ls}]}\n  - {name: C, category: Infra, commands: [{name: c, cmd: ls}]}\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	ls := []Command{{Name: "c", Cmd: "ls"}}
+	cfg := &Config{Sections: []Section{
+		{Name: "A", Category: "system", Commands: ls},
+		{Name: "B", Commands: ls},
+		{Name: "C", Category: "Infra", Commands: ls},
+	}}
 	errs := cfg.Validate()
 	if cfg.Sections[0].Category != "System" || cfg.Sections[1].Category != Other {
 		t.Fatalf("got %q, %q", cfg.Sections[0].Category, cfg.Sections[1].Category)
 	}
 	if len(errs) != 0 || cfg.Sections[2].Category != "Infra" {
 		t.Fatalf("a category of its own: %q %v", cfg.Sections[2].Category, errs)
-	}
-}
-
-func TestOptionForms(t *testing.T) {
-	cfg, err := parse("t", []byte("sections:\n  - name: S\n    commands:\n      - name: c\n        cmd: x <f>\n        args:\n          - name: f\n            type: flags\n            options: [-a, {value: -b, label: bee}]\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	opts := cfg.Sections[0].Commands[0].Args[0].Options
-	if opts[0].Value != "-a" || opts[1].Value != "-b" || opts[1].Label != "bee" {
-		t.Fatalf("got %+v", opts)
 	}
 }
 
@@ -294,21 +272,10 @@ func TestHistoryBang(t *testing.T) {
 }
 
 func TestLogoIsTheIcon(t *testing.T) {
-	src := `
-sections:
-  - name: Rust
-    logo: rust
-    icon: ⚙
-    commands: [{name: Build, cmd: cargo build}]
-  - name: Gone
-    logo: no-such-logo
-    icon: ▲
-    commands: [{name: Hi, cmd: echo hi}]
-`
-	cfg, err := parse("t", []byte(src))
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := &Config{Sections: []Section{
+		{Name: "Rust", Logo: "rust", Icon: "⚙", Commands: []Command{{Name: "Build", Cmd: "cargo build"}}},
+		{Name: "Gone", Logo: "no-such-logo", Icon: "▲", Commands: []Command{{Name: "Hi", Cmd: "echo hi"}}},
+	}}
 	if errs := cfg.Validate(); len(errs) > 0 {
 		t.Fatalf("an unknown logo shouldn't stop clingon starting: %v", errs)
 	}

@@ -101,16 +101,6 @@ func catalogSource(ps []Pack) []byte {
 	return src
 }
 
-// parse reads a whole Config from YAML with its sections spelled out, which is
-// the handiest way to write one down in a test.
-func parse(name string, data []byte) (*Config, error) {
-	var c Config
-	if err := decodeStrict(name, data, &c); err != nil {
-		return nil, err
-	}
-	return &c, nil
-}
-
 // Every module's name starts with a capital, as the menu's headings do:
 // Npm and Uv, not npm and uv beside Pip and venv.
 func TestModuleNamesStartWithACapital(t *testing.T) {

@@ -60,10 +60,6 @@ func skippedName(name string) bool {
 	return strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".")
 }
 
-func isYAML(name string) bool {
-	return strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")
-}
-
 func isMarkdown(name string) bool { return strings.HasSuffix(name, ".md") }
 
 // mdFiles lists dir's .md files, sorted: a pack's files.
@@ -72,20 +68,6 @@ func mdFiles(dir string) []string {
 	var out []string
 	for _, e := range entries {
 		if n := e.Name(); !e.IsDir() && isMarkdown(n) {
-			out = append(out, filepath.Join(dir, n))
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// yamlFiles lists dir's .yaml and .yml files, sorted. (Not a glob: a
-// folder with [ or * in its name would be read as part of the pattern.)
-func yamlFiles(dir string) []string {
-	entries, _ := os.ReadDir(dir)
-	var out []string
-	for _, e := range entries {
-		if n := e.Name(); !e.IsDir() && isYAML(n) {
 			out = append(out, filepath.Join(dir, n))
 		}
 	}

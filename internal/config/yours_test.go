@@ -66,24 +66,30 @@ func TestClingonFilesAreNotPacks(t *testing.T) {
 	if err := Install("git"); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteAvailable(); err != nil {
+	if err := NewPack("notes"); err != nil { // same word as the file of clingon's below
 		t.Fatal(err)
 	}
-	if err := NewPack("available"); err != nil { // same word as a reserved file
-		t.Fatal(err)
+	// Files and folders starting with _ are clingon's own, wherever they are.
+	for _, f := range []string{filepath.Join(packsDir(), "_notes.md"), filepath.Join(localDir(), "_notes.md"), filepath.Join(remoteDir(), "_notes.md")} {
+		if err := os.WriteFile(f, []byte("# Notes\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range []string{filepath.Join(localDir(), "_scratch"), filepath.Join(remoteDir(), "_scratch")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	files := LocalPacks()
-	if len(files) != 1 || filepath.Base(files[0]) != "available" {
+	if len(files) != 1 || filepath.Base(files[0]) != "notes" {
 		t.Fatalf("only the user's pack should load, got %v", files)
 	}
 	names, _ := Installed()
 	if strings.Join(names, ",") != "git" {
 		t.Fatalf("got %v", names)
 	}
-	b, _ := os.ReadFile(availableFile())
-	all, _ := Packs()
-	if strings.Count(string(b), "- name: ") != len(all) {
-		t.Fatalf("_available.yaml should list all %d packs:\n%s", len(all), b)
+	if _, _, err := Load(); err != nil {
+		t.Fatalf("clingon's own files shouldn't stop the packs loading: %v", err)
 	}
 }
 
@@ -113,7 +119,7 @@ func TestInstallUpdateUninstall(t *testing.T) {
 	if again, _ := PackUpdates(); len(again) != 0 {
 		t.Fatalf("still out of date after update: %v", again)
 	}
-	// So is _pack.yaml's going missing or changing.
+	// So is _pack.md's going missing or changing.
 	_ = os.Remove(info)
 	if ups, _ := PackUpdates(); len(ups) != 1 {
 		t.Fatalf("got %v", ups)
@@ -152,7 +158,7 @@ func TestInstallingPartOfAPack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// aws itself may not be on PATH here, but _pack.yaml's look comes with it.
+	// aws itself may not be on PATH here, but _pack.md's look comes with it.
 	if len(cfg.Sections) != 1 || cfg.Sections[0].Name != "AWS" || len(cfg.Sections[0].Groups) != 1 || cfg.Sections[0].Groups[0].Name != "ECS" || cfg.Sections[0].Category != "Infrastructure" {
 		t.Fatalf("got %+v", cfg.Sections)
 	}

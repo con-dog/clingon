@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/con-dog/clingon/packs"
-	"go.yaml.in/yaml/v3"
 )
 
 // packFS is the built-in packs (the repo's packs folder): a folder each, as
@@ -132,21 +131,17 @@ func loadPack(name string) (*Config, error) {
 
 // The clingon folder holds:
 //
-//	packs/_available.yaml  every pack you can install (written by clingon)
-//	packs/remote/          installed packs, a folder each, like remote/docker:
-//	                       adding copies one in, removing deletes it (rather
-//	                       like node_modules)
-//	packs/mine/            your own packs, a folder each; each pack's _pack.md
-//	                       says which section of the menu it's in
-//	recipes.yaml           your saved recipes
-//	config/                what clingon keeps for itself
+//	packs/remote/  added packs, a folder each, like remote/docker: adding
+//	               copies one in, removing deletes it (rather like
+//	               node_modules)
+//	packs/mine/    your own packs, a folder each; each pack's _pack.md says
+//	               which section of the menu it's in
+//	recipes/       your saved recipes, a Markdown file each
+//	config/        what clingon keeps for itself
 //
 // Files starting with "_" are clingon's own and never modules; pack names
 // can't start with "_".
-func packsDir() string { return filepath.Join(Dir(), "packs") }
-
-// PacksDir is the folder packs are in: remote/ and mine/.
-func PacksDir() string  { return packsDir() }
+func packsDir() string  { return filepath.Join(Dir(), "packs") }
 func remoteDir() string { return filepath.Join(packsDir(), "remote") }
 func localDir() string  { return filepath.Join(packsDir(), "mine") }
 
@@ -161,52 +156,6 @@ func refPath(root, name string) string {
 		return dir
 	}
 	return filepath.Join(dir, module+".md")
-}
-
-// availableFile lists the packs that can be installed.
-func availableFile() string { return filepath.Join(packsDir(), "_available.yaml") }
-
-type availableList struct {
-	Available []availablePack `yaml:"available"`
-}
-
-type availablePack struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Modules     []string `yaml:"modules,flow"`
-	Commands    int      `yaml:"commands"`
-}
-
-// WriteAvailable writes _available.yaml, the packs you can install, when
-// it has changed. For now they're the packs built into clingon; later they
-// can come from the published release.
-func WriteAvailable() error {
-	all, err := Packs()
-	if err != nil {
-		return err
-	}
-	var l availableList
-	for _, p := range all {
-		var modules []string
-		for _, m := range p.Modules {
-			modules = append(modules, m.Slug)
-		}
-		l.Available = append(l.Available, availablePack{p.Name, p.Description, modules, p.Commands})
-	}
-	var buf bytes.Buffer
-	buf.WriteString("# Packs you can add, written by clingon. Don't edit: it's rewritten.\n")
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(l); err != nil {
-		return err
-	}
-	if have, err := os.ReadFile(availableFile()); err == nil && bytes.Equal(have, buf.Bytes()) {
-		return nil
-	}
-	if err := os.MkdirAll(packsDir(), 0o755); err != nil {
-		return err
-	}
-	return writeWhole(availableFile(), buf.Bytes())
 }
 
 // writeWhole writes a file so it's never seen half-written: a temp file,
@@ -550,7 +499,7 @@ func UpdatePack(pack string) error {
 // compares it when it regains focus to decide whether to reload.
 func Fingerprint() string {
 	var b strings.Builder
-	m := yamlFiles(packsDir())
+	var m []string
 	for _, root := range []string{remoteDir(), localDir()} {
 		for _, dir := range packDirs(root) {
 			m = append(m, mdFiles(dir)...)
