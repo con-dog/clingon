@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/con-dog/clingon/internal/tmpl"
@@ -248,8 +249,27 @@ func StateDir() string { return filepath.Join(Dir(), "config") }
 func Load() (*Config, []string, error) {
 	local := packDirs(localDir())
 	cfg := &Config{}
-	for _, dir := range append(packDirs(remoteDir()), local...) {
-		parts, err := readPackDir(dir)
+	// Every pack's folder is read at once: nearly all the time this takes is
+	// opening files, one after another. They're then put together in order,
+	// as if read in order (and the first that's wrong, in that order, is the
+	// one said).
+	dirs := append(packDirs(remoteDir()), local...)
+	type read struct {
+		parts []parsedFile
+		err   error
+	}
+	reads := make([]read, len(dirs))
+	var wg sync.WaitGroup
+	for i, dir := range dirs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			reads[i].parts, reads[i].err = readPackDir(dir)
+		}()
+	}
+	wg.Wait()
+	for i, dir := range dirs {
+		parts, err := reads[i].parts, reads[i].err
 		if err != nil {
 			return nil, nil, err
 		}

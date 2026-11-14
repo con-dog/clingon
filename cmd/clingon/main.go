@@ -16,6 +16,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/con-dog/clingon/internal/config"
 	"github.com/con-dog/clingon/internal/shell"
 	"github.com/con-dog/clingon/internal/tmux"
@@ -54,11 +56,6 @@ func main() {
 	var err error
 	if len(os.Args) > 1 {
 		saidTitle = commandTitle(os.Args[1:])
-	}
-	if cmd == "" || cmd == "menu" || cmd == "print" || cmd == "welcome" {
-		// Reading the built-in packs takes a few ms: do it while the
-		// installed ones load.
-		go func() { _, _ = config.Packs() }()
 	}
 	if cmd != "version" && cmd != "help" && !strings.HasPrefix(cmd, "-") {
 		if err := config.EnsureDefaults(); err != nil {
@@ -237,6 +234,12 @@ func launch() error {
 	}
 	return err
 }
+
+// screenColors is how many colours the screen (stdout) takes, as Lip Gloss
+// worked it out when clingon started. Given to Bubble Tea, which would
+// otherwise work it out again for itself: inside tmux that's a `tmux info`
+// run a second time, before the first frame, for the same answer.
+func screenColors() colorprofile.Profile { return lipgloss.Writer.Profile }
 
 // heardSuffix, after a window's ready file's name, names the file `clingon
 // heard` marks the shell's output in (see shellStill).
@@ -422,7 +425,7 @@ func menu(args []string) error {
 		Version:   getVersion(),
 	})
 	stop := catchCrashes()
-	_, err = tea.NewProgram(m).Run()
+	_, err = tea.NewProgram(m, tea.WithColorProfile(screenColors())).Run()
 	stop(err)
 	for _, f := range m.Secrets {
 		_ = os.Remove(f) // normally gone already: the command deletes it as it reads it
@@ -551,7 +554,7 @@ func runForm(form *ui.PackForm, done string) error {
 			return true
 		}
 	}
-	_, err := tea.NewProgram(form).Run()
+	_, err := tea.NewProgram(form, tea.WithColorProfile(screenColors())).Run()
 	config.RemoveFormName() // closed: the menu stops saying it's open
 	if err != nil {
 		return err

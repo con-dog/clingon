@@ -45,7 +45,10 @@ func welcome(inPane, execShell bool) {
 		_ = os.Setenv(shell.CardColsEnv, strconv.Itoa(w))
 		defer becomeShell()
 	}
-	rows := recommendations()
+	// The shell pane's first card: the launcher has only just read every
+	// pack, and wouldn't have opened the window if they didn't load. Reading
+	// them all again here would only hold up the shell.
+	rows := recommendations(!execShell)
 	title := "Worth doing"
 	if len(rows) == 0 {
 		rows, title = []row{allSet()}, "Clingon"
@@ -59,9 +62,12 @@ func welcome(inPane, execShell bool) {
 }
 
 // recommendations are what's worth doing, most useful first: the news,
-// then whether the packs load at all.
-func recommendations() []row {
+// then, if checkPacks, whether the packs load at all.
+func recommendations(checkPacks bool) []row {
 	acts := news()
+	if !checkPacks {
+		return acts
+	}
 	if _, _, err := config.Load(); err != nil {
 		acts = append(acts, row{mark: fail, label: "Fix your packs", detail: "they have mistakes", note: "Clingon › General › Check all packs"})
 	}
