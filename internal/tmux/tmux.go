@@ -826,7 +826,11 @@ func (c *Client) Screen(pane string) string {
 }
 
 // cursorCell is a pink-backed blank near a row's start: the cursor's bar.
-var cursorCell = regexp.MustCompile(`^((?:\x1b\[[0-9;]*m|[ │])*)\x1b\[[0-9;]*48;(?:5;212|2;255;135;215)m `)
+// The palette's pink, as one of the 256 or in 24-bit colour.
+var cursorCell = func() *regexp.Regexp {
+	r, g, b := palette.Pink.RGB()
+	return regexp.MustCompile(fmt.Sprintf(`^((?:\x1b\[[0-9;]*m|[ │])*)\x1b\[[0-9;]*48;(?:5;%d|2;%d;%d;%d)m `, palette.Pink.Num, r, g, b))
+}()
 
 // Hear has tmux pass everything pane writes, as it writes it, to
 // `self heard file`, which marks each piece in file: how the menu hears the

@@ -22,6 +22,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/con-dog/clingon/internal/palette"
 )
 
 //go:embed font/ClingonMono-Regular.otf
@@ -36,12 +38,12 @@ var fontBoldFile []byte
 const (
 	fontSize = 13 // fontFamily, fontPS and fontFileName are in fontname.go
 
-	// The window's own colours, in clingon's palette (internal/palette):
-	// its ink, text, cursor and selection.
-	bg, fg, bold, cursor, selection = "#1a1724", "#e8e6f0", "#ffffff", "#ff87d7", "#3d3555"
-
 	cols, rows = 170, 48
 )
+
+// The window's own colours, each the palette's: its background, text, bold
+// text, cursor (pink, as the cursor is everywhere) and selection.
+var bg, fg, bold, cursor, selection = palette.Ground, palette.Plain, palette.White.Hex, palette.Pink.Hex, palette.Selection
 
 // ansi is the window's 16 standard colours, which most tools (ls, git,
 // grep, compilers, test runners) colour their output with: clingon's

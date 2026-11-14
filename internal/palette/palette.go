@@ -7,8 +7,9 @@
 // Every colour is one of the 256 standard terminal colours, so it looks the
 // same everywhere: Terminal.app has no 24-bit colour, and inside tmux any
 // other colour is rounded to the nearest of these, which is how near-misses of
-// one purple end up as two. The background and plain text are the terminal's
-// own, from clingon's window profile (internal/window).
+// one purple end up as two. The background and plain text are the window's
+// own (Ground and Plain, below), which clingon's window profile sets
+// (internal/window).
 //
 // What each colour means is the same on every screen:
 //
@@ -54,6 +55,13 @@ func (c Colour) SGR() string { return fmt.Sprintf("38;5;%d", c.Num) }
 // Tmux is its name in a tmux style: "colour212".
 func (c Colour) Tmux() string { return fmt.Sprintf("colour%d", c.Num) }
 
+// RGB is its red, green and blue, each 0–255: how a program that draws in
+// 24-bit colour writes it.
+func (c Colour) RGB() (r, g, b int) {
+	_, _ = fmt.Sscanf(c.Hex, "#%02x%02x%02x", &r, &g, &b)
+	return r, g, b
+}
+
 var (
 	Pink        = Colour{212, "#ff87d7"} // where you are: the cursor; the logo
 	Purple      = Colour{99, "#875fff"}  // headings; the frame of the pane you're in; the prompt's folder
@@ -71,7 +79,18 @@ var (
 	Shade       = Colour{238, "#444444"} // the quietest chrome: the frame of a pane without focus, so the focused one's stands out
 	Text        = Colour{254, "#e4e4e4"} // text on coloured bands; keys, over grey for what they do
 	Ink         = Colour{233, "#121212"} // dark text on bright bands
-	White       = Colour{231, "#ffffff"} // the tip of the logo's pen as it's drawn in
+	White       = Colour{231, "#ffffff"} // the tip of the logo's pen as it's drawn in; bold text nothing has coloured
+)
+
+// The window's own colours: what clingon's terminal profile (internal/window)
+// makes its background, its plain text and a selection. None is among the
+// 256, so each is a hex and no more, and nothing's drawn in them: they're
+// what's there before anything is. (The window's cursor is Pink, and its
+// bold text White.)
+const (
+	Ground    = "#1a1724" // the window's background: the dark violet all the rest is on
+	Plain     = "#e8e6f0" // text nothing has coloured
+	Selection = "#3d3555" // behind what's selected with the mouse
 )
 
 // Raised is ANSI black, the terminal's own colour 0, which clingon's window

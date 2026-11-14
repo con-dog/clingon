@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -65,9 +66,11 @@ func TestGoUsesThePalette(t *testing.T) {
 	allowed := map[string]bool{
 		"internal/palette/palette.go": true,
 		"internal/config/layout.go":   true, // pack tints and logo colours
-		"internal/window/window.go":   true, // the terminal's own 16, and its background
 	}
-	inline := regexp.MustCompile(`"#[0-9a-fA-F]{6}"|lipgloss\.Color\("|38;5;\d|48;5;\d|"colour\d`)
+	// The terminal's own 16 are the window's to write, and nothing else of
+	// its is: its background, text, cursor and selection are the palette's.
+	const window, sixteen = "internal/window/window.go", "var ansi = [16]string{"
+	inline := regexp.MustCompile(`"#[0-9a-fA-F]{6}"|lipgloss\.Color\("|[34]8;(\(\?:)?[25];\d|"colour\d`)
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -83,7 +86,17 @@ func TestGoUsesThePalette(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		for i, line := range strings.Split(string(b), "\n") {
+		lines := strings.Split(string(b), "\n")
+		if rel == window {
+			from := slices.Index(lines, sixteen)
+			if from < 0 {
+				t.Fatalf("%s: no %q: has it moved?", rel, sixteen)
+			}
+			for i := from + 1; i < len(lines) && lines[i] != "}"; i++ {
+				lines[i] = ""
+			}
+		}
+		for i, line := range lines {
 			if code, _, _ := strings.Cut(line, "//"); inline.MatchString(code) {
 				t.Errorf("%s:%d writes a colour of its own: use internal/palette\n\t%s", rel, i+1, strings.TrimSpace(line))
 			}
