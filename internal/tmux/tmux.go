@@ -171,7 +171,7 @@ func Launch(self string, env []string, runDir string, ready func() error) error 
 	}
 	args := []string{"-f", "/dev/null", "start-server", ";", "source-file", "-", ";",
 		"new-session", "-d", "-s", "clingon",
-		"-x", strconv.Itoa(w), "-y", strconv.Itoa(h), "-c", cwd, "-P", "-F", "#{pane_id}"}
+		"-x", strconv.Itoa(w), "-y", strconv.Itoa(h), "-c", literal(cwd), "-P", "-F", "#{pane_id}"}
 	args = append(args, "--", "cat") // holds the pane: layout starts the shell in it
 	cfg := conf
 	if ct := os.Getenv("COLORTERM"); ct == "truecolor" || ct == "24bit" {
@@ -230,7 +230,7 @@ func (c *Client) layout(self, shell, cwd string, paneEnv []string) error {
 	for _, dir := range [][]string{{"-h", "-b"}, {"-h"}, {"-v", "-b"}, {"-v"}} { // left, right, top, bottom
 		split(append(dir, "-l", "1", "")...)
 	}
-	split(append(append([]string{"-h", "-b", "-l", "33%", "-c", cwd}, paneEnv...), "--", self, "menu", "--socket", c.Socket, "--pane", shell)...)
+	split(append(append([]string{"-h", "-b", "-l", "33%", "-c", literal(cwd)}, paneEnv...), "--", self, "menu", "--socket", c.Socket, "--pane", shell)...)
 	out, err := c.run(splits[:len(splits)-1]...)
 	if err != nil {
 		return err
@@ -301,10 +301,16 @@ func (c *Client) layout(self, shell, cwd string, paneEnv []string) error {
 	)
 	// Only now that the pane is its final width: the welcome card measures
 	// it, and a zsh started wider leaves its end-of-line % on the screen.
-	args = append(append(append(args, "respawn-pane", "-k", "-t", shell, "-c", cwd), paneEnv...), "--", self, "welcome", "--then-shell")
+	args = append(append(append(args, "respawn-pane", "-k", "-t", shell, "-c", literal(cwd)), paneEnv...), "--", self, "welcome", "--then-shell")
 	_, err = c.run(args...)
 	return err
 }
+
+// literal is s for where tmux would read a # in it as the start of one of
+// its own values (a folder to start in, say): in ~/src/C#Demo, #D is a
+// pane's id to tmux, and the pane would start somewhere else. Doubled, a #
+// is a #.
+func literal(s string) string { return strings.ReplaceAll(s, "#", "##") }
 
 // privateTempDir is a folder in the temp dir for the socket when the usual
 // one's path is too long: only ours, so no one else can plant a socket.
@@ -837,7 +843,10 @@ var cursorCell = func() *regexp.Regexp {
 // shell's screen changing without looking at it over and over.
 func (c *Client) Hear(pane, self, file string) error {
 	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-	_, err := c.run("pipe-pane", "-O", "-t", pane, "exec "+q(self)+" heard "+q(file))
+	// tmux reads this command as it reads a status line: # for its own
+	// values and % for the time, so each in a path is doubled to be itself.
+	cmd := strings.ReplaceAll(literal("exec "+q(self)+" heard "+q(file)), "%", "%%")
+	_, err := c.run("pipe-pane", "-O", "-t", pane, cmd)
 	return err
 }
 

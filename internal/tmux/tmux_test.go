@@ -596,3 +596,33 @@ func TestCursorCellFindsThePinkBar(t *testing.T) {
 		t.Errorf("marked %q", got)
 	}
 }
+
+// A folder with a # in its name (C#Demo) is where the panes start, as it's
+// spelled: tmux would otherwise read #D as one of its own values and start
+// them somewhere else.
+func TestLayoutStartsInAFolderWithAHash(t *testing.T) {
+	c, shell := server(t)
+	cwd := filepath.Join(filepath.Dir(c.Socket), "C#Demo F#S #{pane_id}")
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A stand-in for clingon that says where it was started, then stays.
+	self := filepath.Join(filepath.Dir(c.Socket), "fake-clingon")
+	if err := os.WriteFile(self, []byte("#!/bin/sh\npwd > \"$0.cwd.$1\"\nexec sleep 60\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.layout(self, shell, cwd, []string{"-e", "CLINGON=1"}); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(cwd)
+	for _, pane := range []string{"menu", "welcome"} {
+		var got string
+		for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && got == ""; time.Sleep(20 * time.Millisecond) { // only until the stand-in has started
+			b, _ := os.ReadFile(self + ".cwd." + pane)
+			got = strings.TrimSpace(string(b))
+		}
+		if at, _ := filepath.EvalSymlinks(got); at != want {
+			t.Errorf("the %s pane started in %q, want %q", pane, got, cwd)
+		}
+	}
+}
