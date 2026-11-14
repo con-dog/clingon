@@ -64,3 +64,20 @@ func MissingTools(tools []string) []Missing {
 	}
 	return out
 }
+
+// Tools is each program the packs' commands and modules need, and whether it
+// was on PATH when Load last looked: what it hid went by this.
+type Tools map[string]bool
+
+// Moved looks for each again and reports whether any has come or gone: one
+// installed since, or removed. Then it's as they are now, so the next look
+// reports only what's new.
+func (t Tools) Moved() bool {
+	moved := false
+	for tool, was := range t {
+		if _, err := exec.LookPath(tool); (err == nil) != was {
+			t[tool], moved = !was, true
+		}
+	}
+	return moved
+}

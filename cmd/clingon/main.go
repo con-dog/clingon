@@ -377,7 +377,7 @@ func menu(args []string) error {
 	m := ui.New(ui.Options{
 		Config:  cfg,
 		Builtin: builtinSections,
-		Reload:  reloader(),
+		Reload:  reloader(cfg),
 		Send:    func(cmd string) error { return c.Send(*pane, cmd) },
 		Dir:     func() string { return c.Path(*pane) },
 		// After a command from the menu finishes, focus comes back here,
@@ -623,17 +623,22 @@ func check() error {
 	return nil
 }
 
-// reloader returns a function that reloads the packs, or returns nil,
-// nil when nothing in the config folder has changed since the last call.
-func reloader() func() (*config.Config, error) {
-	seen := config.Fingerprint()
+// reloader returns a function that reloads the packs, or returns nil, nil
+// when there's nothing new since the last call: no file in the config folder
+// has changed, and no program a pack needs has been installed or removed
+// (what `brew install jq` hid till now, it shows). cfg is what's loaded now.
+func reloader(cfg *config.Config) func() (*config.Config, error) {
+	seen, tools := config.Fingerprint(), cfg.Tools
 	return func() (*config.Config, error) {
-		now := config.Fingerprint()
-		if now == seen {
+		now, moved := config.Fingerprint(), tools.Moved()
+		if now == seen && !moved {
 			return nil, nil
 		}
 		seen = now
 		cfg, _, err := config.Load()
+		if err == nil {
+			tools = cfg.Tools
+		}
 		return cfg, err
 	}
 }

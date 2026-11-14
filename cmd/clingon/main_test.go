@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -169,5 +170,64 @@ func TestAIPromptPathsExist(t *testing.T) {
 		if !found {
 			t.Errorf("the AI's prompt says %q, which isn't in the menu", p)
 		}
+	}
+}
+
+// A command hidden because its program isn't installed is shown once it is
+// (`brew install jq`, mid-session), and hidden again when it goes: the menu
+// loads its packs again though none of their files has changed.
+func TestReloadWhenAToolComesOrGoes(t *testing.T) {
+	dir, bin := t.TempDir(), t.TempDir()
+	t.Setenv("CLINGON_CONFIG", dir)
+	t.Setenv("PATH", bin)
+	pack := filepath.Join(dir, "packs", "mine", "work")
+	if err := os.MkdirAll(pack, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{
+		config.PackInfoFile: "---\nmenu: other\n---\n\n# Work\n",
+		"data.md":           "# Data\n\n## Always\n\n```sh\necho hi\n```\n\n## Pretty\n\n```sh needs=clingon-test-tool\nclingon-test-tool .\n```\n",
+	} {
+		if err := os.WriteFile(filepath.Join(pack, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shown := func(cfg *config.Config) bool {
+		for _, s := range cfg.Sections {
+			for _, c := range s.All() {
+				if c.Name == "Pretty" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	cfg, _, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shown(cfg) {
+		t.Fatal("a command whose program isn't installed should be hidden")
+	}
+	reload := reloader(cfg)
+	if again, err := reload(); again != nil || err != nil {
+		t.Fatalf("nothing has changed, so nothing's loaded again: %v, %v", again, err)
+	}
+	tool := filepath.Join(bin, "clingon-test-tool")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = reload()
+	if err != nil || cfg == nil || !shown(cfg) {
+		t.Fatalf("installed: its command should be shown (%v)", err)
+	}
+	if again, _ := reload(); again != nil {
+		t.Error("loaded again with nothing new")
+	}
+	if err := os.Remove(tool); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err = reload(); err != nil || cfg == nil || shown(cfg) {
+		t.Errorf("removed: its command should be hidden again (%v)", err)
 	}
 }

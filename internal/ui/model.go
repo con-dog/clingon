@@ -647,6 +647,9 @@ func (m *Model) catchUp() {
 	if m.recheckAIKey() {
 		return
 	}
+	// What was just run may have installed a program a pack needs: the
+	// status bar looks for them again.
+	m.checkTools()
 	if !m.reload() { // a reload has looked again already
 		m.lookAgain()
 	}

@@ -31,6 +31,7 @@ var (
 // Config is packs put together: what the menu shows.
 type Config struct {
 	Sections []Section
+	Tools    Tools // what Load looked for on PATH, to hide what can't run
 }
 
 // PackInfoFile says what a pack is called, where the menu shows it and how it
@@ -760,7 +761,9 @@ func digits(s string) string {
 }
 
 // keepAvailable hides commands and groups whose required tools aren't on
-// PATH, then any section left with no commands.
+// PATH, then any section left with no commands. What it looked for, and
+// whether each was there, is kept in Tools: the menu loads again when one
+// comes or goes.
 func (c *Config) keepAvailable() {
 	have := map[string]bool{}
 	found := func(tool string) bool {
@@ -803,4 +806,5 @@ func (c *Config) keepAvailable() {
 		}
 	}
 	c.Sections = sections
+	c.Tools = have
 }

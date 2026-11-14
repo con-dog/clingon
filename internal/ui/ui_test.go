@@ -5044,3 +5044,35 @@ func TestTakingARowClearsTheFilterEverywhere(t *testing.T) {
 		t.Errorf("gone into a blank from a filtered list: still filtered by %q", m.list.query())
 	}
 }
+
+// A pack's missing program is looked for again when a command finishes (it may
+// have installed it) and when you come back to the menu: the status bar stops
+// saying it's needed without your having to leave the pack and come back.
+func TestMissingToolsAreLookedForAgain(t *testing.T) {
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	m := New(Options{Config: &config.Config{Sections: []config.Section{
+		{Name: "Nope", Icon: "•", Category: config.Other, Needs: []string{"clingon-test-tool"}, Commands: []config.Command{{Name: "Go", Cmd: "x"}}},
+	}}, Send: func(string) error { return nil }, Shell: func() ShellState { return ShellState{} }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.showSection(&m.opt.Config.Sections[0])
+	needs := func() bool { return strings.Contains(ansi.Strip(m.barBody(120)), "Needs clingon-test-tool") }
+	if !needs() {
+		t.Fatalf("the bar should say what's missing: %q", ansi.Strip(m.barBody(120)))
+	}
+	tool := filepath.Join(bin, "clingon-test-tool")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(idleMsg{seq: -1}) // the command that installed it has finished
+	if needs() {
+		t.Errorf("installed, it's no longer missing: %q", ansi.Strip(m.barBody(120)))
+	}
+	if err := os.Remove(tool); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(tea.FocusMsg{}) // removed from another window; you come back
+	if !needs() {
+		t.Errorf("gone again, it's missing again: %q", ansi.Strip(m.barBody(120)))
+	}
+}
