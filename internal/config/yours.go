@@ -93,9 +93,6 @@ func moduleFiles(dir string) []string {
 	return out
 }
 
-// ModuleFiles lists the module files in a pack's folder.
-func ModuleFiles(dir string) []string { return moduleFiles(dir) }
-
 func moduleSlug(file string) string {
 	return strings.TrimSuffix(filepath.Base(file), ".md")
 }

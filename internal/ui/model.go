@@ -1854,13 +1854,6 @@ func (m *Model) recipeIDs() []string {
 	return ids
 }
 
-// recipeSaved says whether these same steps are saved already: then there's
-// nothing to ask, however many times it's run.
-func (m *Model) recipeSaved() bool {
-	ids := m.recipeIDs()
-	return slices.ContainsFunc(m.savedRecipes(), func(r config.Recipe) bool { return slices.Equal(r.Steps, ids) })
-}
-
 // askName asks what to save the current recipe as: the box starts with the
 // name of the recipe it came from, to save over, or empty.
 func (m *Model) askName() tea.Cmd {
@@ -4299,13 +4292,4 @@ func newCode() string {
 		b[i] = letters[rand.IntN(len(letters))]
 	}
 	return string(b)
-}
-
-// rightAligned is a heading with a note at the far right, faint, as the
-// filter's row shows the list's size; the note goes when there's no room.
-func rightAligned(heading, note string, w int) string {
-	if note == "" || ansi.StringWidth(heading)+1+ansi.StringWidth(note) > w {
-		return heading
-	}
-	return heading + strings.Repeat(" ", w-ansi.StringWidth(heading)-ansi.StringWidth(note)) + faintStyle.Render(note)
 }

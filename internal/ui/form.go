@@ -2066,13 +2066,6 @@ func (f *PackForm) preview(w, h int) []string {
 	return append(append(out, ""), filePreview(file, md[file], on, near, w, max(h-len(out)-1, 3))...)
 }
 
-func fit2(lines []string, h int) []string {
-	if len(lines) > h {
-		return lines[:h]
-	}
-	return lines
-}
-
 // filePreview is a pack's file, coloured, h lines at most: the
 // lines in on marked, each with a bar in the gutter on a band of the
 // window's own colour, scrolled into view. Every line has the panel's
@@ -2354,15 +2347,6 @@ func (f *PackForm) footer(w int) []string {
 // issueChip is a problem as an orange chip, like the status bar's.
 func issueChip(msg string, w int) string {
 	return stepStyle.Background(orange).Render(ansi.Truncate(" ISSUE: "+msg+" ", w, "…"))
-}
-
-func lineCount(s string) int { return strings.Count(s, "\n") + 1 }
-
-func padLines(s string, n int) string {
-	if c := lineCount(s); c < n {
-		s += strings.Repeat("\n", n-c)
-	}
-	return s
 }
 
 // clonePack is a copy of p to go back to, every slice its own.

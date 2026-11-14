@@ -85,10 +85,6 @@ func slotIcon(icon string) string {
 const Logo = `█▀▀ █   █ █▄ █ █▀▀ █▀█ █▄ █
 █▄▄ █▄▄ █ █ ▀█ █▄█ █▄█ █ ▀█`
 
-// Banner renders the logo with up to three lines of text beside it. Text
-// that doesn't fit whole is left out; below the logo's width it's just a name.
-func Banner(width int, side ...string) string { return banner(width, -1, side...) }
-
 // LogoWidth is the logo's width in cells.
 var LogoWidth = ansi.StringWidth(strings.SplitN(Logo, "\n", 2)[0])
 

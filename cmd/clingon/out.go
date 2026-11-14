@@ -74,11 +74,6 @@ func outln(a ...any) {
 	_, _ = fmt.Fprintln(stdout(), a...)
 }
 
-func outf(format string, a ...any) {
-	flushSaid()
-	_, _ = fmt.Fprintf(stdout(), format, a...)
-}
-
 func errf(format string, a ...any) { _, _ = fmt.Fprintf(stderr(), format, a...) }
 
 // said is what say has held for one card, and saidTitle what that's headed.
