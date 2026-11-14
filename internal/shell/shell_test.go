@@ -297,3 +297,86 @@ func TestShellsMarkEachPrompt(t *testing.T) {
 		}
 	}
 }
+
+// A PROMPT_COMMAND of yours that ends in a ; ("history -a;", as many do), and
+// a `set -u`, leave clingon's prompt working: it's drawn, and each prompt is
+// still marked, which is how the menu knows a command has finished.
+func TestBashPromptSurvivesYourPromptCommandAndSetU(t *testing.T) {
+	for name, rc := range map[string]string{
+		"a trailing ;": "PROMPT_COMMAND='history -a;'\n",
+		"; and more":   "PROMPT_COMMAND='history -a; starship_precmd; '\nstarship_precmd() { PS1='STARSHIP$ '; }\n",
+		"set -u":       "set -u\n",
+		"none":         "unset PROMPT_COMMAND\n",
+	} {
+		screen := run(t, "bash", ".bash_profile", rc,
+			`a=$(wc -c < "$CLINGON_READY")`, "true",
+			`b=$(wc -c < "$CLINGON_READY")`, `echo "marks: $((b - a)) more; done"-bash`)
+		flat := strings.ReplaceAll(screen, "\n", "")
+		if !strings.Contains(flat, "marks: 2 more") || strings.Contains(screen, "syntax error") || strings.Contains(screen, "unbound variable") || strings.Contains(screen, "STARSHIP$") {
+			t.Errorf("%s: the prompt should come up, marked each time, with nothing going wrong:\n%s", name, screen)
+		}
+	}
+}
+
+// A `setopt nounset` in your .zshrc doesn't stop clingon's: its prompt comes
+// up and each one is marked.
+func TestZshPromptSurvivesNounset(t *testing.T) {
+	screen := run(t, "zsh", ".zshrc", "setopt nounset\n",
+		`a=$(wc -c < "$CLINGON_READY")`, "true",
+		`b=$(wc -c < "$CLINGON_READY")`, `echo "marks: $((b - a)) more; done"-zsh`)
+	if !strings.Contains(strings.ReplaceAll(screen, "\n", ""), "marks: 2 more") || strings.Contains(screen, "parameter not set") {
+		t.Errorf("the prompt should come up, marked each time:\n%s", screen)
+	}
+}
+
+// A .zshrc that makes zle-line-init its own (oh-my-zsh's does) can be sourced
+// again, or the widget made at the prompt: each prompt is still marked, or the
+// menu would wait for ever for a command that has finished. And the widget
+// that took it still runs.
+func TestZshPromptIsMarkedAfterZleLineInitIsTaken(t *testing.T) {
+	const theirs = `zle-line-init() { print -n u >>| $HOME/mine }; zle -N zle-line-init`
+	for name, c := range map[string]struct{ rc, taken string }{
+		"the .zshrc sourced again": {theirs + "\n", "source ~/.zshrc"},
+		"made at the prompt":       {"", theirs},
+	} {
+		screen := run(t, "zsh", ".zshrc", c.rc, c.taken,
+			`a=$(wc -c < "$CLINGON_READY") u=$(wc -c < ~/mine)`, "true",
+			`b=$(wc -c < "$CLINGON_READY") v=$(wc -c < ~/mine)`, `echo "marks: $((b - a)) more, yours $((v - u)); done"-zsh`)
+		if !strings.Contains(strings.ReplaceAll(screen, "\n", ""), "marks: 2 more, yours 2") {
+			t.Errorf("%s: each prompt should be marked, and their widget run:\n%s", name, screen)
+		}
+	}
+}
+
+// Your .bashrc sourced again may set PROMPT_COMMAND (and PS1) afresh, as many
+// do: clingon's prompt is still drawn and each prompt still marked, or the
+// menu would wait for ever for a command that has finished. What you set
+// PROMPT_COMMAND to still runs, and the file's own exit status comes through.
+func TestBashPromptIsMarkedAfterYourFilesAreSourcedAgain(t *testing.T) {
+	for name, c := range map[string]struct{ rc, again string }{
+		"set outright":      {"PROMPT_COMMAND='mine=$((mine+1))'\nPS1='YOURS$ '\n", "source ~/.bash_profile"},
+		"with a dot":        {"PROMPT_COMMAND='mine=$((mine+1))'\nPS1='YOURS$ '\n", ". ~/.bash_profile"},
+		"through an alias":  {"PROMPT_COMMAND='mine=$((mine+1))'\nPS1='YOURS$ '\nalias reload='source ~/.bash_profile'\n", "reload"},
+		"added to":          {"PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND; }mine=\\$((mine+1))\"\nPS1='YOURS$ '\n", "source ~/.bash_profile"},
+		"a trailing ;":      {"PROMPT_COMMAND='mine=$((mine+1));'\nPS1='YOURS$ '\n", "source ~/.bash_profile"},
+		"starship's":        {"starship_precmd() { PS1='YOURS$ '; }\nPROMPT_COMMAND='starship_precmd; mine=$((mine+1))'\n", "source ~/.bash_profile"},
+		"unset":             {"unset PROMPT_COMMAND\nmine=$((mine+1))\nPS1='YOURS$ '\n", "source ~/.bash_profile; mine=0"},
+		"the file's status": {"PROMPT_COMMAND='mine=$((mine+1))'\nPS1='YOURS$ '\nreturn 3\n", `source ~/.bash_profile; [ $? -eq 3 ] || echo fai""led`},
+		"set -u, and no ; ": {"set -u\nPROMPT_COMMAND='mine=$((${mine-0}+1))'\nPS1='YOURS$ '\n", "source ~/.bash_profile"},
+	} {
+		screen := run(t, "bash", ".bash_profile", c.rc, c.again,
+			`a=$(wc -c < "$CLINGON_READY") u=$mine`, "true",
+			`b=$(wc -c < "$CLINGON_READY") v=$mine`, `echo "marks: $((b - a)) more, yours $((v - u)); done"-bash`)
+		flat := strings.ReplaceAll(screen, "\n", "")
+		want := "marks: 2 more, yours 2"
+		switch name {
+		case "unset":
+			want = "marks: 2 more, yours 0" // nothing of yours to run
+		case "added to":
+			want = "marks: 2 more, yours 4" // twice a prompt now: the file added it a second time, as it would anywhere
+		}
+		if !strings.Contains(flat, want) || strings.Contains(screen, "YOURS$") || strings.Contains(screen, "syntax error") || strings.Contains(screen, "unbound variable") || strings.Contains(screen, "failed") {
+			t.Errorf("%s: clingon's prompt should come up, marked each time, and yours still run:\n%s", name, screen)
+		}
+	}
+}

@@ -7,11 +7,11 @@ if [ -r ~/.bash_profile ]; then . ~/.bash_profile
 elif [ -r ~/.bash_login ]; then . ~/.bash_login
 elif [ -r ~/.profile ]; then . ~/.profile
 fi
-[ -z "$CLINGON_BIN" ] || PATH=$CLINGON_BIN:$PATH # a local build stays first
+[ -z "${CLINGON_BIN-}" ] || PATH=$CLINGON_BIN:$PATH # a local build stays first
 
 _clingon_status() { _clingon_ok=$?; }
 _clingon_prompt() {
-  local b a=$AWS_PROFILE mark='\[\e[38;5;212m\]'
+  local b a=${AWS_PROFILE-} mark='\[\e[38;5;212m\]'
   b=$(git branch --show-current 2>/dev/null)
   b=${b//\\/\\\\}; b=${b//\$/\\\$}; b=${b//\`/\\\`} # a branch name is text, never run
   a=${a//\\/\\\\}; a=${a//\$/\\\$}; a=${a//\`/\\\`} # so is a profile name
@@ -31,15 +31,47 @@ _clingon_prompt() {
   PS1="\[\e[38;5;147m\]$up\[\e[1;38;5;99m\]$here\[\e[0m\]${b:+\[\e[38;5;203m\] \356\200\204\[\e[38;5;103m\] $b\[\e[0m\]}${a:+\[\e[38;5;208m\] aws:$a\[\e[0m\]}\n$mark\342\235\257\[\e[0m\] "
   # Back at the prompt: tell the menu, which listens for it, rather than
   # having it look again and again. A builtin: no process, no wait.
-  [ -z "$CLINGON_CHANGED" ] || printf . 2>/dev/null >> "$CLINGON_CHANGED"
+  [ -z "${CLINGON_CHANGED-}" ] || printf . 2>/dev/null >> "$CLINGON_CHANGED"
   # And that the prompt's coming up: how it knows a command it sent has finished.
-  [ -z "$CLINGON_READY" ] || printf . 2>/dev/null >> "$CLINGON_READY"
+  [ -z "${CLINGON_READY-}" ] || printf . 2>/dev/null >> "$CLINGON_READY"
 }
 # Other prompts' hooks (starship's) would only redraw theirs: clingon's
-# notes the exit status first and draws last.
-if [[ $(declare -p PROMPT_COMMAND 2>/dev/null) == "declare -a"* ]]; then
-  PROMPT_COMMAND=(_clingon_status "${PROMPT_COMMAND[@]/starship_precmd}" _clingon_prompt)
-else
-  PROMPT_COMMAND=${PROMPT_COMMAND//starship_precmd/:}
-  PROMPT_COMMAND="_clingon_status;${PROMPT_COMMAND:+$PROMPT_COMMAND;}_clingon_prompt"
-fi
+# notes the exit status first and draws last. Yours go between, on a line of
+# their own: joined with ; instead, one that ends in a ; of its own
+# ("history -a;") would make ;; and bash would run none of it, clingon's
+# prompt included. (The ${x-} forms here and above are for a `set -u` of
+# yours: unset is as good as empty.)
+#
+# _clingon_hook puts PROMPT_COMMAND that way, whatever it holds: now, and
+# again whenever a file's been sourced at the prompt (the RETURN trap, below).
+# Your .bashrc sourced again may well set PROMPT_COMMAND afresh, and without
+# this clingon's prompt would go, and with it the mark that tells the menu a
+# command has finished: it would wait for ever. As it should be already, it's
+# left alone.
+_clingon_hook() {
+  local c nl=$'\n' theirs
+  if [ -n "${PROMPT_COMMAND[1]+x}" ]; then # a list of them (bash 5.1 and later)
+    local -a mid=("${PROMPT_COMMAND[@]}")
+    [[ ${mid[0]} == _clingon_status && ${mid[${#mid[@]}-1]} == _clingon_prompt ]] && return 0
+    PROMPT_COMMAND=(_clingon_status)
+    for c in "${mid[@]}"; do
+      [[ $c == _clingon_status || $c == _clingon_prompt ]] || PROMPT_COMMAND+=("${c//starship_precmd/:}")
+    done
+    PROMPT_COMMAND+=(_clingon_prompt)
+    return 0
+  fi
+  theirs=${PROMPT_COMMAND-}
+  case $theirs in "_clingon_status$nl"*"${nl}_clingon_prompt") return 0 ;; esac
+  # Clingon's own, where yours kept them (one that adds to PROMPT_COMMAND
+  # does), come off the ends, and anywhere else do nothing.
+  theirs=${theirs#"_clingon_status$nl"}
+  theirs=${theirs%"${nl}_clingon_prompt"}
+  theirs=${theirs//_clingon_status/:}
+  theirs=${theirs//_clingon_prompt/:}
+  PROMPT_COMMAND="_clingon_status$nl${theirs//starship_precmd/:}${nl}_clingon_prompt"
+}
+_clingon_hook
+# bash runs this as each file sourced at the prompt finishes (not inside a
+# function, and the file's own exit status is kept). A RETURN trap of your
+# own is left as it is.
+[ -n "$(trap -p RETURN)" ] || trap _clingon_hook RETURN
