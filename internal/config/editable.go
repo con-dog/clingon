@@ -47,6 +47,9 @@ func LoadEditable(name string) (*EditablePack, error) {
 	}
 	p := &EditablePack{Folder: name, Section: "other", Title: sectionTitle(name), dir: dir, Logo: DefaultPackLogo}
 	for _, f := range mdFiles(dir) {
+		if !isPackFile(f) { // not the pack's: a note of yours (_notes.md), or an editor's own file (.#x.md)
+			continue
+		}
 		data, err := os.ReadFile(f)
 		if err != nil {
 			return nil, err
@@ -255,7 +258,7 @@ func (p *EditablePack) Save() error {
 	}
 	files := p.Markdown()
 	for _, f := range mdFiles(dir) {
-		if _, keep := files[filepath.Base(f)]; !keep {
+		if _, keep := files[filepath.Base(f)]; !keep && isPackFile(f) { // only the pack's own: what it never read, it never removes
 			if err := os.Remove(f); err != nil {
 				return err
 			}

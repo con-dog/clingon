@@ -89,3 +89,54 @@ func TestEditablePack(t *testing.T) {
 		t.Errorf("a bad name: %v", err)
 	}
 }
+
+// Files in a pack's folder that aren't the pack's (a note of yours, an
+// editor's lock file, the Finder's ._ twin) are nothing to the pack form: it
+// opens the pack as the menu does, and saving leaves them where they are. The
+// same in recipes/: one beside your recipes doesn't hide them.
+func TestFilesThatArentThePacksAreLeftAlone(t *testing.T) {
+	mine := userDir(t)
+	if err := NewPackWithLogo("demo", "rocket", "orange"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(mine, "demo")
+	strays := map[string]string{"_notes.md": "to do: tidy this\n", ".#demo.md": "not a pack file at all", "._demo.md": "\x00\x05\x16\x07"}
+	for name, text := range strays {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, err := LoadEditable("demo")
+	if err != nil {
+		t.Fatalf("the form can't open a pack the menu can: %v", err)
+	}
+	for _, f := range p.Files {
+		if skippedName(f.Slug) {
+			t.Errorf("%s was taken as a module", f.Slug)
+		}
+	}
+	p.Description = "Changed"
+	if err := p.Save(); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range strays {
+		if got, err := os.ReadFile(filepath.Join(dir, name)); err != nil || string(got) != text {
+			t.Errorf("%s should be left as it was: %q, %v", name, got, err)
+		}
+	}
+
+	if err := SaveRecipe("Mine", []string{"a-00000000"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"_ideas.md", "._mine.md"} {
+		if err := os.WriteFile(filepath.Join(RecipesDir(), name), []byte("not a recipe"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if rs, err := Recipes(); err != nil || len(rs) != 1 || rs[0].Name != "Mine" {
+		t.Errorf("recipes: %+v, %v", rs, err)
+	}
+	if err := RemoveRecipe("Mine"); err != nil {
+		t.Error(err)
+	}
+}

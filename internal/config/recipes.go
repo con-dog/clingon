@@ -98,10 +98,18 @@ func recipeFile(name string) string {
 	return filepath.Join(RecipesDir(), strings.Trim(notSlug.ReplaceAllString(strings.ToLower(name), "-"), "-")+".md")
 }
 
+// recipeFiles are the recipes' files: every .md in recipes/ but those whose
+// names start with _ or ., as in a pack's folder (a note of yours, or a file
+// an editor or the Finder keeps beside one, which isn't a recipe and needn't
+// read as one).
+func recipeFiles() []string {
+	return slices.DeleteFunc(mdFiles(RecipesDir()), func(f string) bool { return skippedName(filepath.Base(f)) })
+}
+
 // Recipes lists your saved recipes by name.
 func Recipes() ([]Recipe, error) {
 	var rs []Recipe
-	for _, f := range mdFiles(RecipesDir()) {
+	for _, f := range recipeFiles() {
 		data, err := os.ReadFile(f)
 		if err != nil {
 			return nil, err
@@ -286,7 +294,7 @@ func saveRecipe(name string, steps, labels []string, replace bool) error {
 
 // RemoveRecipe deletes the recipe called name.
 func RemoveRecipe(name string) error {
-	for _, f := range mdFiles(RecipesDir()) {
+	for _, f := range recipeFiles() {
 		data, err := os.ReadFile(f)
 		if err != nil {
 			return err
