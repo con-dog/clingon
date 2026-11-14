@@ -230,7 +230,7 @@ func TestMenuLocksWhileShellIsBusy(t *testing.T) {
 	if bar := ansi.Strip(m.barBody(60)); strings.Contains(bar, "is running") {
 		t.Errorf("a command that's just started shouldn't flash the band, got %q", bar)
 	}
-	m.Update(busyGraceMsg{})
+	m.Update(busyGraceMsg{m.sent})
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}) // browsing still works, as usual
 	if it := m.list.selected(); it == nil || it.title != "Other" || it.disabled {
 		t.Fatalf("rows stay as they are while it runs: only running waits, got %+v", it)
@@ -5042,6 +5042,28 @@ func TestTakingARowClearsTheFilterEverywhere(t *testing.T) {
 	}
 	if m.list.filtered() {
 		t.Errorf("gone into a blank from a filtered list: still filtered by %q", m.list.query())
+	}
+}
+
+// Each command sent has its own grace before the bar says it's running: an
+// earlier command's ending doesn't cut a later one's short (a recipe's quick
+// steps would flash the band otherwise).
+func TestBusyGraceIsEachCommandsOwn(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	m := New(Options{Config: &config.Config{Sections: []config.Section{{Name: "S", Icon: "•", Category: config.Other, Commands: []config.Command{{Name: "A", Cmd: "a"}}}}},
+		Send: func(string) error { return nil }, WaitIdle: func() bool { select {} }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.finish(pending{name: "A", cmd: "a"})
+	first := m.sent
+	m.busy = ""
+	m.finish(pending{name: "B", cmd: "b"})
+	m.Update(busyGraceMsg{first})
+	if !m.quiet {
+		t.Error("the first command's grace ending shouldn't end the second's")
+	}
+	m.Update(busyGraceMsg{m.sent})
+	if m.quiet {
+		t.Error("its own grace over: the bar says it's running")
 	}
 }
 

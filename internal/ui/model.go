@@ -193,7 +193,9 @@ type noticeTick struct{ seq int }
 // says so: most are done by then, and the band would only flash.
 const busyGrace = 500 * time.Millisecond
 
-type busyGraceMsg struct{}
+// busyGraceMsg ends the grace of the command sent as the model's sent-th: a
+// later one has its own, so an earlier one's ending doesn't cut it short.
+type busyGraceMsg struct{ sent int }
 
 const noticeSeconds = 3
 
@@ -232,6 +234,7 @@ type Model struct {
 	stopped                   int          // the command the recipe stopped at, where its list starts; 0 if it didn't
 	resume                    tea.Cmd      // cursors to start blinking again, after a key brought focus back
 	quiet                     bool         // that's locked, but not worth a status bar's band yet
+	sent                      int          // how many commands the menu has sent: whose grace a busyGraceMsg ends
 	editing                   string       // what the editor in the shell is editing, while busy is that editor
 	form                      *pending     // the pack form last opened, to open again to carry on with its draft
 	formNew                   bool         // the open pack form is a new pack's: not in the menu until it's added
@@ -895,7 +898,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, introTick()
 	case busyGraceMsg:
-		m.quiet = false
+		if msg.sent == m.sent {
+			m.quiet = false
+		}
 		return m, nil
 	case formNameMsg:
 		if msg.watch != m.formWatch {
@@ -2683,7 +2688,9 @@ func (m *Model) send() tea.Cmd {
 			}
 		}
 	}
-	return tea.Batch(wait, named, tea.Tick(busyGrace, func(time.Time) tea.Msg { return busyGraceMsg{} }))
+	m.sent++
+	sent := m.sent
+	return tea.Batch(wait, named, tea.Tick(busyGrace, func(time.Time) tea.Msg { return busyGraceMsg{sent} }))
 }
 
 // awaitIdle waits, off the UI thread, for the command just sent to finish,
