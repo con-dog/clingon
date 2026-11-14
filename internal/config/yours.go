@@ -349,6 +349,15 @@ func AddCommand(pack, section, name, cmd, desc string) error {
 		return fmt.Errorf("a section's name needs a letter or digit in it (not %q)", section)
 	}
 	dir, path := PackPath(pack), filepath.Join(PackPath(pack), slug+".md")
+	// The module called that, whatever its file's called: the pack form
+	// names files commands.md, commands-2.md, … and a second module of the
+	// same name beside one would be a mistake.
+	for _, f := range moduleFiles(dir) {
+		if part, err := describeFile(f); err == nil && part.group != nil && strings.EqualFold(part.group.Name, section) {
+			path = f
+			break
+		}
+	}
 	have, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):

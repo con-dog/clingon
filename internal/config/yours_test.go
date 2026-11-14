@@ -475,3 +475,33 @@ func TestNewPackLogo(t *testing.T) {
 		t.Errorf("an unknown colour: %v", err)
 	}
 }
+
+// A command added to a module goes into the module called that, whatever
+// its file is called (the pack form's are commands.md, commands-2.md, …):
+// never into a second module of the same name beside it.
+func TestAddCommandFindsTheModuleByItsName(t *testing.T) {
+	mine := userDir(t)
+	dir := filepath.Join(mine, "work")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, PackInfoFile), newPackInfo("Work"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "commands.md"), []byte("# Deploy\n\n## Ship\n\n```sh\n./ship.sh\n```\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddCommand("work", "deploy", "Roll back", "./rollback.sh", ""); err != nil {
+		t.Fatal(err)
+	}
+	if files := moduleFiles(dir); len(files) != 1 {
+		t.Fatalf("a second module's file was made: %v", files)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "commands.md"))
+	if !strings.Contains(string(got), "## Ship") || !strings.Contains(string(got), "## Roll back") {
+		t.Errorf("commands.md:\n%s", got)
+	}
+	if err := AddCommand("work", "Logs", "Tail", "tail -f app.log", ""); err != nil || !exists(filepath.Join(dir, "logs.md")) {
+		t.Errorf("a module there isn't yet gets a file of its own: %v", err)
+	}
+}
