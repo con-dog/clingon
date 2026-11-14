@@ -111,7 +111,7 @@ func flushSaid() {
 
 // commandTitle heads a command's card: `Pack add` from `clingon pack add git`.
 func commandTitle(args []string) string {
-	if len(args) == 0 {
+	if len(args) == 0 || args[0] == "" { // `clingon ""`: nothing to name
 		return "Clingon"
 	}
 	title := args[0]

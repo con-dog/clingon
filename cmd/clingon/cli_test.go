@@ -547,6 +547,9 @@ func TestCommandTitle(t *testing.T) {
 			t.Errorf("%v: %q, want %q", args, got, want)
 		}
 	}
+	if got := commandTitle([]string{""}); got != "Clingon" { // `clingon ""`
+		t.Errorf("an empty word: %q", got)
+	}
 }
 
 // Piped, a command's output is what scripts want: no boxes, and nothing held back.
