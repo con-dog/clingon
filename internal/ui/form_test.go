@@ -1575,3 +1575,28 @@ func TestPackFormFilterGoesOnceARowIsTaken(t *testing.T) {
 		t.Errorf("every row should be back:\n%s", p)
 	}
 }
+
+// A filter nothing matches leaves no row to be on: [ and ] do nothing there.
+// And a value that's only spaces (a pack written by hand can have one) is
+// still a line, so the form draws.
+func TestFormWithNoRowsOrOnlySpaces(t *testing.T) {
+	f := newTestForm(t)
+	press(f, typed("/"))
+	for _, r := range "zzzzqq" {
+		press(f, typed(string(r)))
+	}
+	press(f, kEnter)
+	if len(f.rows) != 0 {
+		t.Skipf("the filter still matches %d rows", len(f.rows))
+	}
+	press(f, typed("]"), typed("["))
+	_ = f.view()
+	for _, v := range []string{" ", "   ", ""} {
+		if got := wrapAsTyped(v, v, 20); len(got) == 0 {
+			t.Errorf("%q wraps to no lines at all", v)
+		}
+	}
+	if got := wrapAsTyped("one two", "one two", 20); len(got) != 1 || got[0] != "one two" {
+		t.Errorf("a short value: %q", got)
+	}
+}

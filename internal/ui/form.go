@@ -214,6 +214,9 @@ func (f *PackForm) rowHelp() string {
 // jump moves to the first row of the part before (or after) the one the
 // cursor's in, as [ and ] jump between the menu's headings.
 func (f *PackForm) jump(d int) {
+	if f.sel < 0 || f.sel >= len(f.rows) { // no row to jump from: a filter nothing matches
+		return
+	}
 	start := f.sel
 	for start > 0 && !f.rows[start-1].header { // the first row of this part
 		start--
@@ -1168,7 +1171,7 @@ func wrapAsTyped(plain, styled string, w int) []string {
 			sl = sls[i]
 		}
 		ed.SetValue(pl)
-		at, end := 0, ansi.StringWidth(pl)
+		at, end, before := 0, ansi.StringWidth(pl), len(out)
 		for _, l := range strings.Split(ansi.Strip(ed.View()), "\n") {
 			n := ansi.StringWidth(strings.TrimRight(l, " "))
 			if n == 0 || at >= end {
@@ -1178,7 +1181,7 @@ func wrapAsTyped(plain, styled string, w int) []string {
 			for at += n; at < end && ansi.Cut(pl, at, at+1) == " "; at++ { // the spaces it broke at
 			}
 		}
-		if end == 0 {
+		if len(out) == before { // an empty line, or one that's only spaces: a line all the same
 			out = append(out, "")
 		}
 	}
@@ -1218,11 +1221,12 @@ func (f *PackForm) key(msg tea.KeyPressMsg) tea.Cmd {
 			k == "enter", k == "tab", k == "shift+tab", k == "esc": // done: kept (never lost); enter moves on to the next field, tab and shift-tab to the next panel
 			v := typedIn(f.input.Value())
 			r := f.editing
+			f.issue = "" // before the change: it says so here if it couldn't be written
 			if err := f.change(func() error { return r.text(v) }); err != nil {
 				f.issue, f.escOnce = err.Error(), k == "esc"
 				return nil
 			}
-			f.editing, f.input, f.issue, f.escOnce = nil, nil, "", false
+			f.editing, f.input, f.escOnce = nil, nil, false
 			f.refresh(r.key)
 			switch k {
 			case "enter":
