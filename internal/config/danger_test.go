@@ -76,3 +76,38 @@ func TestRiskyCommandsAreMarked(t *testing.T) {
 		}
 	}
 }
+
+// QuotesAt knows that a $(command) or `command` has quotes of its own,
+// whatever it sits in, and that in arithmetic nothing quotes.
+func TestQuotesAtInsideSubstitutions(t *testing.T) {
+	known := func(string) bool { return true }
+	for script, want := range map[string]string{
+		`echo <x>`:                             "0",
+		`echo "<x>" '<x>' <x>`:                 `"'0`,
+		`echo "it's <x>"`:                      `"`,
+		`echo 'say "<x>"'`:                     `'`,
+		`echo \"<x>\"`:                         "0",
+		`sleep $(( <x> * 60 ))`:                "$",
+		`sleep "$(( (<x> + 1) * 60 ))" <x>`:    "$0",
+		`echo $(( 1 + $(wc -l < '<x>') ))`:     `'`,
+		`echo "$(basename "<x>")"`:             `"`,
+		`echo "$(basename <x>)" "<x>"`:         `0"`,
+		`echo "$(cat '<x>') and <x>"`:          `'"`,
+		"echo `basename \"<x>\"` <x>":          `"0`,
+		"echo \"`basename <x>`\" '<x>'":        `0'`,
+		`echo "a $(echo "b $(echo "<x>")")"`:   `"`,
+		`(cd <x> && ls) | wc -l`:               "0",
+		`echo "$(printf '%s)' <x>)" <x> "<x>"`: `00"`,
+	} {
+		var got []byte
+		for _, q := range QuotesAt(script, "x", known) {
+			if q == 0 {
+				q = '0'
+			}
+			got = append(got, q)
+		}
+		if string(got) != want {
+			t.Errorf("%s: %q, want %q", script, got, want)
+		}
+	}
+}

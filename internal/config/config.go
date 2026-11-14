@@ -449,30 +449,76 @@ func inQuotes(script, name string, known func(string) bool) bool {
 	return false
 }
 
+// Unquotable is what QuotesAt says for a placeholder in arithmetic,
+// $(( … )): the shell reads what's there as if in double quotes, a $(command)
+// and all, and no quote put round a value changes that.
+const Unquotable byte = '$'
+
 // QuotesAt says which quote each placeholder for name sits inside in script,
-// in order: a single quote, a double quote, or 0 for none.
+// in order: a single quote, a double quote, 0 for none, or Unquotable. A
+// $(command) or `command` has quotes of its own, whatever it sits in:
+// in "$(echo "<x>")", x is inside the inner pair.
 func QuotesAt(script, name string, known func(string) bool) []byte {
-	var quote byte
+	// What's open, innermost last: the script itself, then each $( … ),
+	// $(( … )) or ` … ` inside it, with the quote open in it and how many
+	// plain brackets.
+	type level struct {
+		quote     byte
+		brackets  int
+		arith     bool
+		backticks bool
+	}
+	in := []level{{}}
 	var out []byte
 	for _, seg := range tmpl.Parse(script, known) {
 		if seg.Arg != "" {
-			if seg.Arg == name {
-				out = append(out, quote)
+			if at := in[len(in)-1]; seg.Arg == name {
+				if at.arith {
+					out = append(out, Unquotable)
+				} else {
+					out = append(out, at.quote)
+				}
 			}
 			continue
 		}
 		for i := 0; i < len(seg.Text); i++ {
-			switch c := seg.Text[i]; {
-			case quote == '\'':
+			at, c := &in[len(in)-1], seg.Text[i]
+			switch {
+			case at.quote == '\'':
 				if c == '\'' {
-					quote = 0
+					at.quote = 0
 				}
 			case c == '\\':
 				i++
-			case c == quote:
-				quote = 0
-			case quote == 0 && (c == '\'' || c == '"'):
-				quote = c
+			case c == '$' && i+1 < len(seg.Text) && seg.Text[i+1] == '(': // also inside "…"
+				i++
+				sub := level{}
+				if i+1 < len(seg.Text) && seg.Text[i+1] == '(' {
+					i++
+					sub.arith, sub.brackets = true, 1
+				}
+				in = append(in, sub)
+			case c == '`':
+				if at.backticks && len(in) > 1 {
+					in = in[:len(in)-1]
+				} else {
+					in = append(in, level{backticks: true})
+				}
+			case c == at.quote:
+				at.quote = 0
+			case at.quote != 0: // inside "…": only the above mean anything
+			case c == '\'' || c == '"':
+				if !at.arith { // they quote nothing there
+					at.quote = c
+				}
+			case c == '(' && len(in) > 1:
+				at.brackets++
+			case c == ')' && len(in) > 1 && !at.backticks:
+				if at.brackets > 0 {
+					at.brackets--
+				} else {
+					in = in[:len(in)-1]
+				}
 			}
 		}
 	}

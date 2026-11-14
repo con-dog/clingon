@@ -2128,6 +2128,7 @@ func (m *Model) accept(v string) tea.Cmd {
 	vals, shown := shellValues(c, j.vals), shellValues(c, j.vals)
 	if m.ai != nil && !m.ai.done && j.ref.section != CommandLineSection { // what the AI typed is only ever text: never shell
 		if why := aiQuote(c, j.vals, vals, shown); why != "" {
+			j.step-- // still at its last blank, as it was, to be filled in again
 			m.errMsg = "✗ " + why
 			return nil
 		}

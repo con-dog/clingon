@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -832,6 +833,99 @@ func TestAIRemembersPastTheScreensItsShown(t *testing.T) {
 	for _, tool := range aiTools() {
 		if _, ok := tool.Params["remember"]; !ok {
 			t.Errorf("%s should take remember, as every move does", tool.Name)
+		}
+	}
+}
+
+// A value the AI gives that can't be quoted for its blank (one that sits
+// both inside and outside quotes) is turned away at the blank, which goes on
+// asking: nothing's sent, and the screen still draws.
+func TestAIValueTurnedAwayAtItsBlank(t *testing.T) {
+	f := &fakeModel{moves: [][2]string{
+		{"run", `{"why":"Running it","command":"C","blanks":{"x":"a b"}}`},
+		{"done", `{"why":"Done","headline":"ok","summary":"ok"}`},
+	}}
+	m, _, sent := aiMenu(t, f, config.Command{Name: "C", Cmd: `echo <x> "<x>"`, Args: []config.Arg{{Name: "x"}}})
+	run(t, m, m.startAI("t"), func() bool { _ = m.view(); return m.ai != nil && m.ai.done })
+	if len(*sent) != 0 {
+		t.Errorf("sent %q", *sent)
+	}
+	if m.mode != modeFill || m.job == nil || m.job.step != 0 || m.arg().Name != "x" {
+		t.Errorf("it should still be asking for x: mode %v, job %+v", m.mode, m.job)
+	}
+}
+
+// A blank the AI leaves at the pack's default keeps it as the pack wrote it:
+// it's the pack's own shell (like $PWD), not text the AI typed.
+func TestAILeavesThePacksDefaultAlone(t *testing.T) {
+	c := &config.Command{Name: "Add folder to PATH", Cmd: `export PATH=<dir>:"$PATH"`, Args: []config.Arg{{Name: "dir", Default: "$PWD"}}}
+	for raw, want := range map[string]string{"$PWD": `export PATH=$PWD:"$PATH"`, "$HOME/my bin": `export PATH='$HOME/my bin':"$PATH"`} {
+		vals, shown := shellValues(c, map[string]string{"dir": raw}), shellValues(c, map[string]string{"dir": raw})
+		if why := aiQuote(c, map[string]string{"dir": raw}, vals, shown); why != "" {
+			t.Fatal(why)
+		}
+		if got := tmpl.Render(c.Cmd, c.Known, vals); got != want {
+			t.Errorf("%q: %q, want %q", raw, got, want)
+		}
+	}
+}
+
+// What the AI types into a blank never runs, wherever the blank sits: each
+// value here tries to make a file, in each kind of place a pack puts a blank
+// (bare, quoted, in a $(command), in arithmetic), and the command's then run
+// by a real bash and zsh (bare ones: no startup files, an empty folder). A
+// value that can't be made safe is turned away instead. The file's never
+// made.
+func TestAIBlanksNeverRunInARealShell(t *testing.T) {
+	scripts := []string{
+		`echo <x>`, `echo "<x>"`, `echo '<x>'`, `echo "it is <x> now"`,
+		`echo $(( <x> * 60 ))`, `echo "$(( <x> + 1 ))"`,
+		`echo $(echo <x>)`, `echo "$(echo <x>)"`, `echo "$(echo "<x>")"`, `echo "$(echo '<x>')"`,
+		"echo `echo <x>`", "echo \"`echo \"<x>\"`\"",
+		`echo "a $(echo "b $(echo "<x>")")"`, `echo $(( 1 + $(echo "<x>" | wc -c) ))`,
+		`(echo <x>) | cat`, `echo "$(printf '%s)' <x>)"`,
+	}
+	values := []string{
+		"$(touch canary)", "`touch canary`", "; touch canary", "'; touch canary; '", `"; touch canary; "`,
+		`$(touch canary)"`, "1)); touch canary; echo $((1", "a[$(touch canary)]", "x' $(touch canary) 'y", `x" $(touch canary) "y`,
+		"1 | touch canary", "$((1)); touch canary", "\\'; touch canary; \\'", "x\ntouch canary", "5", "plain words",
+	}
+	shells := map[string][]string{"/bin/bash": {"--norc", "--noprofile"}, "/bin/zsh": {"-f"}}
+	ran, refused := 0, 0
+	for _, script := range scripts {
+		c := &config.Command{Name: "C", Cmd: script, Args: []config.Arg{{Name: "x"}}}
+		for _, v := range values {
+			raw := map[string]string{"x": v}
+			vals, shown := shellValues(c, raw), shellValues(c, raw)
+			if why := aiQuote(c, raw, vals, shown); why != "" {
+				refused++
+				continue
+			}
+			line := tmpl.Render(c.Cmd, c.Known, vals)
+			for shell, flags := range shells {
+				if _, err := os.Stat(shell); err != nil {
+					continue
+				}
+				dir := t.TempDir()
+				cmd := exec.Command(shell, append(flags, "-c", line)...)
+				cmd.Dir, cmd.Env = dir, []string{"HOME=" + dir, "PATH=/usr/bin:/bin"}
+				_ = cmd.Run() // it may well fail: only what it did matters
+				ran++
+				if _, err := os.Stat(filepath.Join(dir, "canary")); err == nil {
+					t.Errorf("%s ran what the AI typed: %s with %q became %s", shell, script, v, line)
+				}
+			}
+		}
+	}
+	if ran < 200 || refused == 0 {
+		t.Errorf("%d commands run, %d values turned away: too few to have tried it", ran, refused)
+	}
+	// The built-in pack that has one: a number goes in, shell doesn't.
+	c := &config.Command{Name: "Keep awake", Cmd: "caffeinate -dims -t $(( <minutes> * 60 ))", Args: []config.Arg{{Name: "minutes"}}}
+	for v, ok := range map[string]bool{"45": true, "$(id)": false, "1 + 1": false} {
+		raw := map[string]string{"minutes": v}
+		if why := aiQuote(c, raw, shellValues(c, raw), shellValues(c, raw)); (why == "") != ok {
+			t.Errorf("minutes %q: %q", v, why)
 		}
 	}
 }

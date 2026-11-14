@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -1347,12 +1348,17 @@ func aiQuote(c *config.Command, raw, vals, shown map[string]string) string {
 	for _, a := range c.Args {
 		v := raw[a.Name]
 		switch k := a.Kind(); {
-		case v == "", k == "secret", k == "flags", k == "choose" && a.HasOption(v):
-			continue
+		case v == "", v == a.Default, k == "secret", k == "flags", k == "choose" && a.HasOption(v):
+			continue // nothing typed: the pack's own text (its default, like $PWD, is shell on purpose)
 		}
-		q, ok := quoteFor(v, config.QuotesAt(c.Cmd, a.Name, c.Known))
+		at := config.QuotesAt(c.Cmd, a.Name, c.Known)
+		q, ok := quoteFor(v, at)
 		if !ok {
-			return fmt.Sprintf("%s: %q can't go in this command safely (its blank sits both inside and outside quotes)", a.Label(), v)
+			why := "its blank sits both inside and outside quotes"
+			if slices.Contains(at, config.Unquotable) {
+				why = "its blank sits in arithmetic, $(( )), where nothing can be quoted: only a plain number or word can go there"
+			}
+			return fmt.Sprintf("%s: %q can't go in this command safely (%s)", a.Label(), v, why)
 		}
 		vals[a.Name], shown[a.Name] = q, q
 	}
@@ -1369,8 +1375,8 @@ func quoteFor(v string, at []byte) (string, bool) {
 	if len(at) == 0 {
 		return shellValue(v), true
 	}
-	for _, q := range at[1:] {
-		if q != at[0] {
+	for _, q := range at {
+		if q != at[0] || q == config.Unquotable {
 			return "", false
 		}
 	}
