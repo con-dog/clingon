@@ -497,7 +497,7 @@ func (m *Model) reload() bool {
 		return false
 	}
 	m.errMsg, m.hint = "", ""
-	query, filtering := m.list.filter.Value(), m.list.filtering
+	query, filtering, typing := m.list.filter.Value(), m.list.filtering, m.list.filter.Focused()
 	var at string
 	if it := m.list.selected(); it != nil {
 		at = it.title
@@ -516,6 +516,9 @@ func (m *Model) reload() bool {
 	}
 	m.list.filtering = filtering
 	m.list.filter.SetValue(query)
+	if typing { // the list is a new one, and so is its box: it takes what's typed as the old one did
+		m.resume = tea.Batch(m.resume, m.list.filter.Focus())
+	}
 	m.list.refilter()
 	for i, it := range m.list.view {
 		if m.list.selectable(i) && it.title == at {
@@ -753,7 +756,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Every way of not going through with a step (←, esc, "No") ends
 	// back in the list with nothing sent: that stops the recipe, and keeps it.
 	if m.run != nil && !m.run.sent && m.mode == modeBrowse {
-		if m.errMsg == "" {
+		if m.errMsg == "" && m.run.saving == "" { // adding one runs no step: nothing stopped
 			m.hint = fmt.Sprintf("Recipe stopped at step %d%s", m.run.at+1, stoppedKeys)
 		}
 		m.stopRun()
@@ -2038,7 +2041,9 @@ func (m *Model) relistRecipe() {
 	at := m.list.cursor
 	m.showSection(m.section)
 	if len(m.list.view) > 1 && m.removing == "" && m.stopped == 0 { // stopped, showSection puts it where
-		m.list.cursor = min(at, len(m.list.view)-1)
+		if i := min(at, len(m.list.view)-1); i < 0 || m.list.selectable(i) { // never onto a heading: showSection's choice stands
+			m.list.cursor = i
+		}
 	}
 }
 
@@ -3773,7 +3778,7 @@ func (m *Model) recipeWidth() int {
 	w := 2 + label
 	for i, s := range m.recipe {
 		if i > 0 {
-			w += len(" →")
+			w += ansi.StringWidth(" →") // cells, not bytes: the arrow is three of those
 		}
 		w += 1 + stepW + 1 + ansi.StringWidth(s.ref.cmd.Name)
 	}

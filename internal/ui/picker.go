@@ -607,6 +607,12 @@ func (p *picker) render(width, height int) string {
 	if len(p.view) == 0 {
 		return dimStyle.Render("  no matches")
 	}
+	// Scrolled down, and the window's since been made taller: no further
+	// down than fills it, or the rows above would stay out of sight with
+	// room for them left empty.
+	if most := max(0, len(p.view)-p.height); p.offset > most {
+		p.offset = most
+	}
 	if p.cursor >= 0 {
 		if p.cursor < p.offset {
 			p.offset = p.cursor

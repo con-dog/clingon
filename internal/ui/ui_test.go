@@ -5045,6 +5045,62 @@ func TestTakingARowClearsTheFilterEverywhere(t *testing.T) {
 	}
 }
 
+// The packs changing under an open filter (a command that added one has just
+// finished, the menu still focused) keeps the filter open and taking what's
+// typed: the rebuilt list's box has the cursor the old one had.
+func TestReloadKeepsTheFilterTyping(t *testing.T) {
+	t.Setenv("CLINGON_CONFIG", t.TempDir())
+	cfg := func(names ...string) *config.Config {
+		var cmds []config.Command
+		for _, n := range names {
+			cmds = append(cmds, config.Command{Name: n, Cmd: "run " + n})
+		}
+		return &config.Config{Sections: []config.Section{{Name: "AWS", Icon: "•", Category: config.Other, Commands: cmds}}}
+	}
+	m := New(Options{Config: cfg("alpha", "beta"), Reload: func() (*config.Config, error) { return cfg("alpha", "beta", "albatross"), nil }})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m.Update(typed("/"))
+	m.Update(typed("a"))
+	m.Update(idleMsg{seq: -1})
+	m.Update(typed("l"))
+	if got := m.list.filter.Value(); got != "al" || !m.list.filtering || !m.list.filter.Focused() {
+		t.Fatalf("after a reload the filter reads %q (open %v, focused %v), want \"al\"", got, m.list.filtering, m.list.filter.Focused())
+	}
+}
+
+// A list scrolled to its foot in a short window, the window then made taller:
+// the rows above come back into view rather than leaving the space empty.
+func TestListFillsAWindowMadeTaller(t *testing.T) {
+	var items []item
+	for i := range 30 {
+		items = append(items, item{title: fmt.Sprintf("row%02d", i)})
+	}
+	p := newPicker(items, nil, false)
+	_ = p.render(40, 10)
+	for range 29 {
+		p.move(1)
+		_ = p.render(40, 10)
+	}
+	if got := ansi.Strip(p.render(40, 10)); !strings.Contains(got, "row29") || strings.Contains(got, "row00") {
+		t.Fatalf("scrolled to the foot:\n%s", got)
+	}
+	all := ansi.Strip(p.render(40, 40))
+	if !strings.Contains(all, "row00") || !strings.Contains(all, "row29") {
+		t.Errorf("room for every row, but they aren't all shown:\n%s", all)
+	}
+	// Taller, but not enough for all: no empty rows at the foot.
+	some := strings.Split(ansi.Strip(p.render(40, 20)), "\n")
+	shown := 0
+	for _, l := range some {
+		if strings.Contains(l, "row") {
+			shown++
+		}
+	}
+	if shown < 18 {
+		t.Errorf("20 rows of room, %d rows shown:\n%s", shown, strings.Join(some, "\n"))
+	}
+}
+
 // Each command sent has its own grace before the bar says it's running: an
 // earlier command's ending doesn't cut a later one's short (a recipe's quick
 // steps would flash the band otherwise).
