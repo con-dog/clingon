@@ -10,10 +10,14 @@ package window
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	_ "embed"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,14 +30,39 @@ import (
 	"github.com/con-dog/clingon/internal/palette"
 )
 
-//go:embed font/ClingonMono-Regular.otf
-var fontFile []byte
+// Clingon Mono's two weights, gzipped (font/build.py writes them beside the
+// .otf files): well under half the size in the binary. The bold is installed
+// beside the regular: a terminal uses it for bold text, where without one it
+// would fake a bold by striking the regular twice.
+var (
+	//go:embed font/ClingonMono-Regular.otf.gz
+	fontPacked packed
+	//go:embed font/ClingonMono-Bold.otf.gz
+	fontBoldPacked packed
+)
 
-// The family's bold, installed beside it: a terminal uses it for bold text,
-// where without one it would fake a bold by striking the regular twice.
-//
-//go:embed font/ClingonMono-Bold.otf
-var fontBoldFile []byte
+// packed is a gzipped file.
+type packed []byte
+
+// holds reports whether data is the file packed holds, by the length and
+// checksum gzip ends with (its last eight bytes: the CRC-32 of the whole,
+// then its length), so telling doesn't take unpacking it.
+func (p packed) holds(data []byte) bool {
+	if len(p) < 8 {
+		return false
+	}
+	end := p[len(p)-8:]
+	return uint32(len(data)) == binary.LittleEndian.Uint32(end[4:]) && crc32.ChecksumIEEE(data) == binary.LittleEndian.Uint32(end)
+}
+
+// unpack is the file itself.
+func (p packed) unpack() ([]byte, error) {
+	z, err := gzip.NewReader(bytes.NewReader(p))
+	if err != nil {
+		return nil, err
+	}
+	return io.ReadAll(z)
+}
 
 const (
 	fontSize = 13 // fontFamily, fontPS and fontFileName are in fontname.go
@@ -71,13 +100,13 @@ func fontDir(home string) string {
 // it's there already, and removes older versions of it. It reports whether
 // it installed it just now.
 func InstallFont(home string) (bool, error) {
-	files := map[string][]byte{ // both weights: the regular, and its bold
-		filepath.Join(fontDir(home), fontFileName):     fontFile,
-		filepath.Join(fontDir(home), fontBoldFileName): fontBoldFile,
+	files := map[string]packed{ // both weights: the regular, and its bold
+		filepath.Join(fontDir(home), fontFileName):     fontPacked,
+		filepath.Join(fontDir(home), fontBoldFileName): fontBoldPacked,
 	}
 	there := true
 	for dst, want := range files {
-		if have, err := os.ReadFile(dst); err != nil || !bytes.Equal(have, want) {
+		if have, err := os.ReadFile(dst); err != nil || !want.holds(have) {
 			there = false
 		}
 	}
@@ -94,7 +123,11 @@ func InstallFont(home string) (bool, error) {
 		}
 	}
 	for dst, want := range files {
-		if err := os.WriteFile(dst, want, 0o644); err != nil {
+		font, err := want.unpack()
+		if err != nil {
+			return false, err
+		}
+		if err := os.WriteFile(dst, font, 0o644); err != nil {
 			return false, err
 		}
 	}

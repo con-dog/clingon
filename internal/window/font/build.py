@@ -34,7 +34,8 @@ the system picks a font for the character, which could be an emoji one.
 The font's name carries a hash of what went into it, so a changed font is a
 new font to the terminal, never an old one it has cached.
 
-Writes ClingonMono-Regular.otf and ClingonMono-Bold.otf (embedded in the binary),
+Writes ClingonMono-Regular.otf and ClingonMono-Bold.otf, each with a gzipped
+copy beside it (.otf.gz, the one embedded in the binary),
 internal/config/logos.go (logo names and symbol twins),
 and internal/window/fontname.go (the font's name).
 
@@ -45,6 +46,7 @@ Run after adding or changing a logo, from the repo root:
     UPDATE_LOGOS_LOCK=1 go test ./internal/config/   # after adding logos or symbols
 """
 
+import gzip
 import hashlib
 import os
 import sys
@@ -282,6 +284,11 @@ def build(src, out, weight, family, ps, files):
         if new:
             rec.string = new
     font.save(out)
+    # The binary carries it gzipped (window.go), at well under half the size.
+    # No name or time in the gzip, so the same font is the same file.
+    with open(out, "rb") as saved, open(out + ".gz", "wb") as packed:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=packed, compresslevel=9, mtime=0) as z:
+            z.write(saved.read())
     return logos, twins, filling
 
 
