@@ -1,0 +1,338 @@
+[
+  {
+    "file": "01-git-pretty-log.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 13.2,
+    "lossy": 0,
+    "mb": 0.117165,
+    "mp4_mb": 0.184915,
+    "seconds": 7.15,
+    "pack": "git",
+    "module": "everyday",
+    "name": "Pretty log",
+    "template": "git log --oneline --graph --decorate -n <count> <flags>",
+    "blanks": [
+      [
+        "count",
+        true
+      ],
+      [
+        "flags",
+        true
+      ]
+    ]
+  },
+  {
+    "file": "02-git-pop-stash.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 12.78,
+    "lossy": 0,
+    "mb": 0.120397,
+    "mp4_mb": 0.189632,
+    "seconds": 7.6,
+    "pack": "git",
+    "module": "stash",
+    "name": "Pop stash",
+    "template": "git stash pop <stash>",
+    "blanks": [
+      [
+        "stash",
+        false
+      ]
+    ]
+  },
+  {
+    "file": "03-git-apply-stash.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 12.62,
+    "lossy": 0,
+    "mb": 0.124776,
+    "mp4_mb": 0.18402,
+    "seconds": 7.8,
+    "pack": "git",
+    "module": "stash",
+    "name": "Apply stash",
+    "template": "git stash apply <stash>",
+    "blanks": [
+      [
+        "stash",
+        false
+      ]
+    ]
+  },
+  {
+    "file": "04-files-folder-tree.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 10.92,
+    "lossy": 0,
+    "mb": 0.145573,
+    "mp4_mb": 0.186335,
+    "seconds": 7.25,
+    "pack": "files",
+    "module": "look-around",
+    "name": "Folder tree",
+    "template": "find <dir> -maxdepth <depth> -not -path '*/.*' -not -path '*/node_modules*' | sort | sed 's|[^/]*/|  |g'",
+    "blanks": [
+      [
+        "dir",
+        true
+      ],
+      [
+        "depth",
+        true
+      ]
+    ]
+  },
+  {
+    "file": "05-git-diff.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 10.58,
+    "lossy": 0,
+    "mb": 0.097962,
+    "mp4_mb": 0.145344,
+    "seconds": 5.15,
+    "pack": "git",
+    "module": "everyday",
+    "name": "Diff",
+    "template": "git diff",
+    "blanks": []
+  },
+  {
+    "file": "06-git-diff-staged.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 10.02,
+    "lossy": 0,
+    "mb": 0.103442,
+    "mp4_mb": 0.149418,
+    "seconds": 5.85,
+    "pack": "git",
+    "module": "everyday",
+    "name": "Diff staged",
+    "template": "git diff --staged",
+    "blanks": []
+  },
+  {
+    "file": "07-files-peek-at-a-file.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 9.38,
+    "lossy": 0,
+    "mb": 0.105902,
+    "mp4_mb": 0.170324,
+    "seconds": 8.8,
+    "pack": "files",
+    "module": "look-around",
+    "name": "Peek at a file",
+    "template": "head -n <lines> <file>",
+    "blanks": [
+      [
+        "file",
+        false
+      ],
+      [
+        "lines",
+        true
+      ]
+    ]
+  },
+  {
+    "file": "08-git-show-a-commit.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 8.96,
+    "lossy": 0,
+    "mb": 0.147969,
+    "mp4_mb": 0.200343,
+    "seconds": 7.7,
+    "pack": "git",
+    "module": "history",
+    "name": "Show a commit",
+    "template": "git show <commit>",
+    "blanks": [
+      [
+        "commit",
+        false
+      ]
+    ]
+  },
+  {
+    "file": "09-git-status.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 7.62,
+    "lossy": 0,
+    "mb": 0.101409,
+    "mp4_mb": 0.14277,
+    "seconds": 5.35,
+    "pack": "git",
+    "module": "everyday",
+    "name": "Status",
+    "template": "git status -sb",
+    "blanks": []
+  },
+  {
+    "file": "10-git-new-tag.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 7.14,
+    "lossy": 0,
+    "mb": 0.121543,
+    "mp4_mb": 0.167848,
+    "seconds": 9.25,
+    "pack": "git",
+    "module": "tags",
+    "name": "New tag",
+    "template": "git tag -a <tag> -m \"<message>\"",
+    "blanks": [
+      [
+        "tag",
+        false
+      ],
+      [
+        "message",
+        false
+      ]
+    ]
+  },
+  {
+    "file": "11-git-new-branch.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 6.4,
+    "lossy": 0,
+    "mb": 0.110659,
+    "mp4_mb": 0.170967,
+    "seconds": 8.0,
+    "pack": "git",
+    "module": "everyday",
+    "name": "New branch",
+    "template": "git switch -c <name>",
+    "blanks": [
+      [
+        "name",
+        false
+      ]
+    ]
+  },
+  {
+    "file": "12-system-folder-size.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 6.32,
+    "lossy": 0,
+    "mb": 0.132354,
+    "mp4_mb": 0.162617,
+    "seconds": 7.2,
+    "pack": "system",
+    "module": "disk",
+    "name": "Folder size",
+    "template": "du -sh <dir>",
+    "blanks": [
+      [
+        "dir",
+        false
+      ]
+    ]
+  },
+  {
+    "file": "13-git-unstage-file.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 5.54,
+    "lossy": 0,
+    "mb": 0.106739,
+    "mp4_mb": 0.161404,
+    "seconds": 7.9,
+    "pack": "git",
+    "module": "undo",
+    "name": "Unstage file",
+    "template": "git restore --staged <file>",
+    "blanks": [
+      [
+        "file",
+        false
+      ]
+    ]
+  },
+  {
+    "file": "14-git-list-tags.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 5.18,
+    "lossy": 0,
+    "mb": 0.105101,
+    "mp4_mb": 0.150782,
+    "seconds": 5.65,
+    "pack": "git",
+    "module": "tags",
+    "name": "List tags",
+    "template": "git tag --sort=-creatordate --format='%(creatordate:short)  %(refname:short)' | head -n 30",
+    "blanks": []
+  },
+  {
+    "file": "15-git-list-stashes.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 5.04,
+    "lossy": 0,
+    "mb": 0.108395,
+    "mp4_mb": 0.161139,
+    "seconds": 5.95,
+    "pack": "git",
+    "module": "stash",
+    "name": "List stashes",
+    "template": "git stash list --format='%gd  %cr  %s'",
+    "blanks": []
+  },
+  {
+    "file": "16-system-time-now-iso.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 4.88,
+    "lossy": 0,
+    "mb": 0.105367,
+    "mp4_mb": 0.14964,
+    "seconds": 6.15,
+    "pack": "system",
+    "module": "utilities",
+    "name": "Time now (ISO)",
+    "template": "date -u +%Y-%m-%dT%H:%M:%SZ",
+    "blanks": []
+  },
+  {
+    "file": "17-system-time-now-unix.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 4.8,
+    "lossy": 0,
+    "mb": 0.107973,
+    "mp4_mb": 0.142577,
+    "seconds": 6.25,
+    "pack": "system",
+    "module": "utilities",
+    "name": "Time now (Unix)",
+    "template": "date +%s",
+    "blanks": []
+  },
+  {
+    "file": "18-git-recent-branches.gif.png",
+    "width": 984,
+    "height": 638,
+    "rating": 4.7,
+    "lossy": 0,
+    "mb": 0.100972,
+    "mp4_mb": 0.15322,
+    "seconds": 6.25,
+    "pack": "git",
+    "module": "branches",
+    "name": "Recent branches",
+    "template": "git branch --sort=-committerdate --format='%(committerdate:relative)%09%(refname:short)' | head -n 15",
+    "blanks": []
+  }
+]

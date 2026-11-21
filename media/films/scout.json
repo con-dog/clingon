@@ -1,0 +1,225 @@
+[
+  {
+    "rating": 15.54,
+    "pack": "git",
+    "module": "history",
+    "name": "File history",
+    "template": "git log --follow -p -- <file>",
+    "blanks": [
+      [
+        "file",
+        false
+      ]
+    ]
+  },
+  {
+    "rating": 13.2,
+    "pack": "git",
+    "module": "everyday",
+    "name": "Pretty log",
+    "template": "git log --oneline --graph --decorate -n <count> <flags>",
+    "blanks": [
+      [
+        "count",
+        true
+      ],
+      [
+        "flags",
+        true
+      ]
+    ]
+  },
+  {
+    "rating": 12.78,
+    "pack": "git",
+    "module": "stash",
+    "name": "Pop stash",
+    "template": "git stash pop <stash>",
+    "blanks": [
+      [
+        "stash",
+        false
+      ]
+    ]
+  },
+  {
+    "rating": 12.62,
+    "pack": "git",
+    "module": "stash",
+    "name": "Apply stash",
+    "template": "git stash apply <stash>",
+    "blanks": [
+      [
+        "stash",
+        false
+      ]
+    ]
+  },
+  {
+    "rating": 10.92,
+    "pack": "files",
+    "module": "look-around",
+    "name": "Folder tree",
+    "template": "find <dir> -maxdepth <depth> -not -path '*/.*' -not -path '*/node_modules*' | sort | sed 's|[^/]*/|  |g'",
+    "blanks": [
+      [
+        "dir",
+        true
+      ],
+      [
+        "depth",
+        true
+      ]
+    ]
+  },
+  {
+    "rating": 10.58,
+    "pack": "git",
+    "module": "everyday",
+    "name": "Diff",
+    "template": "git diff",
+    "blanks": []
+  },
+  {
+    "rating": 10.02,
+    "pack": "git",
+    "module": "everyday",
+    "name": "Diff staged",
+    "template": "git diff --staged",
+    "blanks": []
+  },
+  {
+    "rating": 9.38,
+    "pack": "files",
+    "module": "look-around",
+    "name": "Peek at a file",
+    "template": "head -n <lines> <file>",
+    "blanks": [
+      [
+        "file",
+        false
+      ],
+      [
+        "lines",
+        true
+      ]
+    ]
+  },
+  {
+    "rating": 8.96,
+    "pack": "git",
+    "module": "history",
+    "name": "Show a commit",
+    "template": "git show <commit>",
+    "blanks": [
+      [
+        "commit",
+        false
+      ]
+    ]
+  },
+  {
+    "rating": 7.62,
+    "pack": "git",
+    "module": "everyday",
+    "name": "Status",
+    "template": "git status -sb",
+    "blanks": []
+  },
+  {
+    "rating": 7.14,
+    "pack": "git",
+    "module": "tags",
+    "name": "New tag",
+    "template": "git tag -a <tag> -m \"<message>\"",
+    "blanks": [
+      [
+        "tag",
+        false
+      ],
+      [
+        "message",
+        false
+      ]
+    ]
+  },
+  {
+    "rating": 6.4,
+    "pack": "git",
+    "module": "everyday",
+    "name": "New branch",
+    "template": "git switch -c <name>",
+    "blanks": [
+      [
+        "name",
+        false
+      ]
+    ]
+  },
+  {
+    "rating": 6.32,
+    "pack": "system",
+    "module": "disk",
+    "name": "Folder size",
+    "template": "du -sh <dir>",
+    "blanks": [
+      [
+        "dir",
+        false
+      ]
+    ]
+  },
+  {
+    "rating": 5.54,
+    "pack": "git",
+    "module": "undo",
+    "name": "Unstage file",
+    "template": "git restore --staged <file>",
+    "blanks": [
+      [
+        "file",
+        false
+      ]
+    ]
+  },
+  {
+    "rating": 5.18,
+    "pack": "git",
+    "module": "tags",
+    "name": "List tags",
+    "template": "git tag --sort=-creatordate --format='%(creatordate:short)  %(refname:short)' | head -n 30",
+    "blanks": []
+  },
+  {
+    "rating": 5.04,
+    "pack": "git",
+    "module": "stash",
+    "name": "List stashes",
+    "template": "git stash list --format='%gd  %cr  %s'",
+    "blanks": []
+  },
+  {
+    "rating": 4.88,
+    "pack": "system",
+    "module": "utilities",
+    "name": "Time now (ISO)",
+    "template": "date -u +%Y-%m-%dT%H:%M:%SZ",
+    "blanks": []
+  },
+  {
+    "rating": 4.8,
+    "pack": "system",
+    "module": "utilities",
+    "name": "Time now (Unix)",
+    "template": "date +%s",
+    "blanks": []
+  },
+  {
+    "rating": 4.7,
+    "pack": "git",
+    "module": "branches",
+    "name": "Recent branches",
+    "template": "git branch --sort=-committerdate --format='%(committerdate:relative)%09%(refname:short)' | head -n 15",
+    "blanks": []
+  }
+]
