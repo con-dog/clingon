@@ -54,7 +54,11 @@ for _name in ("BG", "FG", "BOLD", "CURSOR"):
     if _value.startswith("palette."):
         setattr(render, _name, _palette[_value.split(".")[1]])
 
-COLS, ROWS = 118, 32
+# The screen filmed, in cells: 135 by 31 of them, with the window drawn round
+# them, is 1120 pixels wide and 620 tall, which sits on a canvas of 1120 x 630:
+# the one size every film in the README table is.
+COLS, ROWS = 135, 31
+CANVAS = (1120, 630)
 SOCKET = "clingon-films"
 FPS = 20
 FADE = 8
@@ -79,7 +83,7 @@ def tmux(*args):
 class Sandbox:
     """A scratch home with a little shop of a repo in it, and clingon up in it."""
 
-    def __init__(self, base, name):
+    def __init__(self, base, name, model=None):
         self.home = os.path.join(base, name, "home")
         self.work = os.path.join(self.home, "Code", "shop")
         os.makedirs(self.work)
@@ -92,6 +96,10 @@ class Sandbox:
         }
         self.frames = []
         self._shop()
+        if model:  # the model the AI's chip names
+            os.makedirs(os.path.join(self.home, ".clingon", "config"), exist_ok=True)
+            with open(os.path.join(self.home, ".clingon", "config", "ai.json"), "w") as f:
+                json.dump({"model": model}, f)
         subprocess.run(["tmux", "-L", SOCKET, "kill-server"], capture_output=True)
         subprocess.run(["tmux", "-L", SOCKET, "-f", "/dev/null", "new-session", "-d", "-s", "film", "-x", str(COLS), "-y", str(ROWS), "-c", self.work, "CLINGON_WINDOW=harness exec clingon"], check=True, env=self.env)
         time.sleep(3)  # the menu, the shell's first prompt, the logo drawn in
@@ -249,6 +257,15 @@ def rate(command, box):
     return round(min(out, 14) * 0.7 - max(0, out - 20) * 0.6 + min(colours, 14) * 0.5 + len(command["blanks"]) * 1.2 - wrapped * 1.5 - len(command["name"]) * 0.08, 2)
 
 
+def framed(image):
+    """A frame on the canvas every film is the size of, centred, on the black round the window."""
+    from PIL import Image
+
+    canvas = Image.new("RGB", CANVAS, "#000000")
+    canvas.paste(image, ((CANVAS[0] - image.width) // 2, (CANVAS[1] - image.height) // 2))
+    return canvas
+
+
 def encode(pictures, out, name, budget):
     """pictures: (PIL image, frames held). Writes NAME.gif.png and NAME.mp4; returns what they came to."""
     frames = tempfile.mkdtemp(prefix="clingon-film-")
@@ -282,6 +299,20 @@ def encode(pictures, out, name, budget):
     ff("-i", master, "-vf", "format=yuv420p", "-c:v", "libx264", "-preset", "veryslow", "-crf", "16", "-tune", "animation", "-movflags", "+faststart", mp4)
     shutil.rmtree(frames)
     return {**made, "mp4_mb": os.path.getsize(mp4) / 1e6, "seconds": (count - FADE) / FPS}
+
+
+def index(out, listed):
+    """films.json, and a page to look through the films on."""
+    listed.sort(key=lambda entry: entry["file"])
+    with open(os.path.join(out, "films.json"), "w") as f:
+        json.dump(listed, f, indent=2)
+    figures = "".join(
+        '<figure><img loading="lazy" src="%s"><figcaption><b>%s</b><br>%s - %.2f MB, %d x %d, %.1f s</figcaption></figure>'
+        % (e["file"], e["file"], e.get("task") or "%s &rsaquo; %s &rsaquo; %s" % (e["pack"], e["module"], e["name"]), e["mb"], e["width"], e["height"], e["seconds"])
+        for e in listed
+    )
+    with open(os.path.join(out, "index.html"), "w") as f:
+        f.write('<!doctype html><meta charset="utf-8"><title>clingon: scouted films</title><style>body{margin:24px;background:#111;color:#ddd;font:14px/1.4 ui-monospace,Menlo,monospace}main{display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:20px}figure{margin:0}img{max-width:100%%;display:block}figcaption{padding:6px 2px;color:#aaa}b{color:#fff}</style><h1>clingon: %d films</h1><main>%s</main>' % (len(listed), figures))
 
 
 def main():
@@ -332,7 +363,7 @@ def main():
             if going:
                 continue
             per[key] = per.get(key, 0) + 1
-            pictures = [(render.draw(ansi, COLS, ROWS, 1, cursor), max(1, round(ms * FPS / 1000))) for ansi, ms, cursor in box.frames]
+            pictures = [(framed(render.draw(ansi, COLS, ROWS, 1, cursor)), max(1, round(ms * FPS / 1000))) for ansi, ms, cursor in box.frames]
             # (The first, again at the end: what the last frames dissolve into.)
             pictures.append((pictures[0][0], FADE))
             name = "%02d-%s-%s" % (len(listed) + 1, command["pack"], re.sub(r"[^a-z0-9]+", "-", command["name"].lower()).strip("-"))
@@ -340,11 +371,7 @@ def main():
             width, height = pictures[0][0].size
             listed.append({"file": name + ".gif.png", "width": width, "height": height, "rating": rating, **made, **command})
             print("%s.gif.png  %.2f MB  %d x %d, lossy %d, %.1f s  (mp4 %.2f MB)" % (name, made["mb"], width, height, made["lossy"], made["seconds"], made["mp4_mb"]), flush=True)
-        with open(os.path.join(out, "films.json"), "w") as f:
-            json.dump(listed, f, indent=2)
-        with open(os.path.join(out, "index.html"), "w") as f:
-            f.write('<!doctype html><meta charset="utf-8"><title>clingon: scouted films</title><style>body{margin:24px;background:#111;color:#ddd;font:14px/1.4 ui-monospace,Menlo,monospace}main{display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:20px}figure{margin:0}img{max-width:100%%;display:block}figcaption{padding:6px 2px;color:#aaa}b{color:#fff}</style><h1>clingon: %d scouted films</h1><main>%s</main>'
-                    % (len(listed), "".join('<figure><img loading="lazy" src="%s"><figcaption><b>%s</b><br>%s &rsaquo; %s &rsaquo; %s - %.2f MB, %d x %d</figcaption></figure>' % (e["file"], e["file"], e["pack"], e["module"], e["name"], e["mb"], e["width"], e["height"]) for e in listed)))
+        index(out, listed)
     finally:
         shutil.rmtree(base, ignore_errors=True)
 
